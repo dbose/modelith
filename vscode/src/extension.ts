@@ -1,7 +1,8 @@
 import * as path from "node:path";
 import * as vscode from "vscode";
+import type { LanguageClient } from "vscode-languageclient/node";
 import { CanvasManager } from "./canvasPanel";
-import { ModelDiagnostics } from "./diagnostics";
+import { executeLspCommand, startLsp } from "./lspClient";
 import {
   findDbtProjectDir,
   findManifestPath,
@@ -13,6 +14,7 @@ import {
 import { registerSchemas } from "./schemas";
 
 let canvas: CanvasManager;
+let client: LanguageClient | undefined;
 
 export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   const out = vscode.window.createOutputChannel("Modelith");
@@ -20,15 +22,31 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
 
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 90);
   status.text = "$(circle-outline) Modelith";
-  status.command = "modelith.validate";
+  status.command = "modelith.openPreview";
   status.show();
   ctx.subscriptions.push(status);
 
-  const diagnostics = new ModelDiagnostics(status);
-  diagnostics.register(ctx);
-
   canvas = new CanvasManager(out);
   ctx.subscriptions.push({ dispose: () => canvas.dispose() });
+
+  // Status bar reflects the LSP-published diagnostics (source: "modelith").
+  const refreshStatus = () => {
+    let errors = 0;
+    let warnings = 0;
+    for (const [, diags] of vscode.languages.getDiagnostics()) {
+      for (const d of diags) {
+        if (d.source !== "modelith") continue;
+        if (d.severity === vscode.DiagnosticSeverity.Error) errors++;
+        else if (d.severity === vscode.DiagnosticSeverity.Warning) warnings++;
+      }
+    }
+    status.text = errors
+      ? `$(error) Modelith ${errors}`
+      : warnings
+        ? `$(warning) Modelith ${warnings}`
+        : "$(check) Modelith";
+  };
+  ctx.subscriptions.push(vscode.languages.onDidChangeDiagnostics(refreshStatus));
 
   const withModelDir = async (fn: (dir: string) => Promise<void>) => {
     const dir = await findModelDir();
@@ -44,7 +62,86 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   const cmd = (id: string, fn: (...a: unknown[]) => unknown) =>
     ctx.subscriptions.push(vscode.commands.registerCommand(id, fn));
 
-  cmd("modelith.validate", () => withModelDir(async () => diagnostics.run()));
+  // --- language server (diagnostics, hover, lens, actions, lift/adopt/unmanage)
+
+  const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (root) {
+    try {
+      client = await startLsp(root);
+      ctx.subscriptions.push({ dispose: () => void client?.stop() });
+    } catch (e) {
+      out.appendLine(`[lsp] failed to start: ${e}`);
+      status.text = "$(question) Modelith";
+      status.tooltip = `Language server failed: ${e}`;
+    }
+  }
+
+  cmd("modelith.restartLsp", async () => {
+    resetMdlCache();
+    await client?.stop();
+    if (root) client = await startLsp(root);
+  });
+
+  cmd("modelith.liftModel", async (...args: unknown[]) => {
+    const uri = args[0] instanceof vscode.Uri ? args[0] : undefined;
+    const target = uri ?? vscode.window.activeTextEditor?.document.uri;
+    if (!target || !client) return;
+    await executeLspCommand(client, "mdl.lift", [target.fsPath]);
+  });
+
+  // --- preview pane: the diagram beside the SQL, following the active editor
+
+  let preview: vscode.WebviewPanel | undefined;
+  const previewFocus = (doc: vscode.TextDocument | undefined): string | undefined => {
+    if (!doc) return undefined;
+    const ext = path.extname(doc.fileName);
+    if (ext !== ".sql" && ext !== ".yaml" && ext !== ".yml") return undefined;
+    return path.basename(doc.fileName, ext);
+  };
+
+  const renderPreview = async (modelDir: string, focus: string | undefined) => {
+    const url = await canvas.externalUrl(modelDir);
+    const params = new URLSearchParams({ minimal: "1" });
+    if (focus) params.set("focus", focus);
+    const full = `${url}?${params.toString()}`;
+    preview!.webview.html = `<!DOCTYPE html><html><head><style>
+      html,body{height:100%;margin:0;background:#0b0f16}
+      iframe{border:0;width:100%;height:100%}
+    </style></head><body><iframe src="${full}" allow="clipboard-read; clipboard-write"></iframe></body></html>`;
+  };
+
+  cmd("modelith.openPreview", () =>
+    withModelDir(async (dir) => {
+      if (!preview) {
+        preview = vscode.window.createWebviewPanel(
+          "modelithPreview",
+          "◮ Model Preview",
+          { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true },
+          { enableScripts: true, retainContextWhenHidden: true },
+        );
+        preview.onDidDispose(() => (preview = undefined));
+        ctx.subscriptions.push(
+          vscode.window.onDidChangeActiveTextEditor((ed) => {
+            const focus = previewFocus(ed?.document);
+            if (preview && focus) void renderPreview(dir, focus);
+          }),
+        );
+      }
+      await renderPreview(dir, previewFocus(vscode.window.activeTextEditor?.document));
+      preview.reveal(vscode.ViewColumn.Beside, true);
+    }),
+  );
+
+  // --- CLI-backed commands (unchanged surface) ---------------------------------
+
+  cmd("modelith.validate", () =>
+    withModelDir(async (dir) => {
+      const bin = await findMdl(dir);
+      const r = await runMdl(bin, ["validate", "-m", "."], dir);
+      out.appendLine(r.stdout + r.stderr);
+      out.show(true);
+    }),
+  );
 
   cmd("modelith.openCanvas", () =>
     withModelDir(async (dir) => {
@@ -61,7 +158,6 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   cmd("modelith.generate", () =>
     withModelDir(async (dir) => {
       const bin = await findMdl(dir);
-      // generate into the dbt project when one exists next to the model
       const dbtDir = await findDbtProjectDir();
       const args = ["generate", "-m", "."];
       if (dbtDir) args.push("-o", dbtDir);
@@ -104,10 +200,6 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
           5000,
         );
         if (!clean) out.show(true);
-      } else {
-        void vscode.window
-          .showErrorMessage("Modelith: drift check failed.", "Show Output")
-          .then((a) => a && out.show());
       }
     }),
   );
@@ -117,7 +209,6 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
       const bin = await findMdl(dir);
       const r = await runMdl(bin, ["lint", "-m", ".", "--fix"], dir);
       out.appendLine(r.stdout + r.stderr);
-      diagnostics.schedule();
     }),
   );
 
@@ -137,7 +228,6 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
           path.join(dir, "logical", "entities", `${name.trim().toLowerCase().replace(/ /g, "_")}.yaml`),
         );
         void vscode.window.showTextDocument(file);
-        diagnostics.schedule();
       } else {
         void vscode.window.showErrorMessage(`Modelith: ${r.stdout || r.stderr}`);
       }
@@ -177,22 +267,17 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     }),
   );
 
-  // React to setting changes that invalidate detection.
   ctx.subscriptions.push(
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (e.affectsConfiguration("modelith.mdlPath")) resetMdlCache();
     }),
   );
 
-  // First-run niceties: schema registration + initial validation, both async
-  // and non-blocking. In a devcontainer this runs inside the container.
   const modelDir = await findModelDir();
-  if (modelDir) {
-    void registerSchemas(ctx, modelDir);
-    diagnostics.schedule();
-  }
+  if (modelDir) void registerSchemas(ctx, modelDir);
 }
 
-export function deactivate(): void {
+export function deactivate(): Thenable<void> | undefined {
   canvas?.dispose();
+  return client?.stop();
 }

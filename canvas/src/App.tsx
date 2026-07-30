@@ -50,6 +50,9 @@ function Canvas() {
   const { fitView, setCenter, getNode } = useReactFlow();
 
   const readOnly = doc?.read_only ?? true;
+  const urlParams = useMemo(() => new URLSearchParams(window.location.search), []);
+  const minimal = urlParams.get("minimal") === "1";
+  const initialFocusDone = useRef(false);
 
   const refresh = useCallback(() => {
     fetchModel().then(setDoc).catch((e) => setError(String(e)));
@@ -189,6 +192,22 @@ function Canvas() {
     [getNode, setCenter],
   );
 
+  // ?focus=<entity name>: used by the editor preview pane to centre the
+  // entity for the file the engineer is looking at.
+  useEffect(() => {
+    if (!doc || initialFocusDone.current) return;
+    const name = urlParams.get("focus");
+    if (!name) {
+      initialFocusDone.current = true;
+      return;
+    }
+    const hit = doc.entities.find((e) => e.name === name);
+    if (hit) {
+      initialFocusDone.current = true;
+      setTimeout(() => focusEntity(hit.id), 400);
+    }
+  }, [doc, urlParams, focusEntity]);
+
   const submitQuery = useCallback(() => {
     if (!doc) return;
     const q = query.trim().toLowerCase();
@@ -250,6 +269,7 @@ function Canvas() {
 
   return (
     <div className="app">
+      {!minimal && (
       <TopBar
         doc={doc}
         diagnostics={diagnostics}
@@ -267,6 +287,7 @@ function Canvas() {
         onPanelTab={(t) => setPanelTab((cur) => (cur === t ? null : t))}
         onNewEntity={() => setNewEntityOpen(true)}
       />
+      )}
       <div className="canvas-wrap">
         <ReactFlow
           nodes={nodes}

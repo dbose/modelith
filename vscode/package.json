@@ -1,26 +1,75 @@
 {
   "name": "modelith-vscode",
   "displayName": "Modelith",
-  "description": "Ontology-anchored, git-native data modeling for dbt — validate, generate, drift, and the Modelith canvas inside VS Code.",
+  "description": "Ontology-anchored, git-native data modeling for dbt \u2014 validate, generate, drift, and the Modelith canvas inside VS Code.",
   "version": "0.1.0",
   "publisher": "modelith",
   "license": "Apache-2.0",
-  "engines": { "vscode": "^1.85.0" },
-  "categories": ["Data Science", "Visualization", "Linters"],
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Data Science",
+    "Visualization",
+    "Linters"
+  ],
   "main": "./dist/extension.js",
-  "extensionKind": ["workspace"],
-  "activationEvents": ["workspaceContains:**/mdl-project.yaml"],
+  "extensionKind": [
+    "workspace"
+  ],
+  "activationEvents": [
+    "workspaceContains:**/mdl-project.yaml"
+  ],
   "contributes": {
     "commands": [
-      { "command": "modelith.validate", "title": "Modelith: Validate Model" },
-      { "command": "modelith.generate", "title": "Modelith: Generate dbt Project" },
-      { "command": "modelith.driftCheck", "title": "Modelith: Check Drift vs dbt Manifest" },
-      { "command": "modelith.lintFix", "title": "Modelith: Lint Naming (--fix)" },
-      { "command": "modelith.newEntity", "title": "Modelith: New Entity" },
-      { "command": "modelith.openCanvas", "title": "Modelith: Open Canvas" },
-      { "command": "modelith.stopServer", "title": "Modelith: Stop Canvas Server" },
-      { "command": "modelith.vendorFibo", "title": "Modelith: Vendor FIBO Ontology" },
-      { "command": "modelith.emitSemantic", "title": "Modelith: Emit Semantic Layer (OSI/MetricFlow)" }
+      {
+        "command": "modelith.validate",
+        "title": "Modelith: Validate Model"
+      },
+      {
+        "command": "modelith.generate",
+        "title": "Modelith: Generate dbt Project"
+      },
+      {
+        "command": "modelith.driftCheck",
+        "title": "Modelith: Check Drift vs dbt Manifest"
+      },
+      {
+        "command": "modelith.lintFix",
+        "title": "Modelith: Lint Naming (--fix)"
+      },
+      {
+        "command": "modelith.newEntity",
+        "title": "Modelith: New Entity"
+      },
+      {
+        "command": "modelith.openCanvas",
+        "title": "Modelith: Open Canvas"
+      },
+      {
+        "command": "modelith.stopServer",
+        "title": "Modelith: Stop Canvas Server"
+      },
+      {
+        "command": "modelith.vendorFibo",
+        "title": "Modelith: Vendor FIBO Ontology"
+      },
+      {
+        "command": "modelith.emitSemantic",
+        "title": "Modelith: Emit Semantic Layer (OSI/MetricFlow)"
+      },
+      {
+        "command": "modelith.liftModel",
+        "title": "Modelith: Lift to Logical Model"
+      },
+      {
+        "command": "modelith.openPreview",
+        "title": "Modelith: Open Model Preview to the Side"
+      },
+      {
+        "command": "modelith.restartLsp",
+        "title": "Modelith: Restart Language Server"
+      }
     ],
     "configuration": {
       "title": "Modelith",
@@ -28,7 +77,7 @@
         "modelith.mdlPath": {
           "type": "string",
           "default": "",
-          "description": "Path to the mdl executable. Empty = auto-detect (.venv/bin/mdl → mdl on PATH → `uv run mdl`)."
+          "description": "Path to the mdl executable. Empty = auto-detect (.venv/bin/mdl \u2192 mdl on PATH \u2192 `uv run mdl`)."
         },
         "modelith.modelDir": {
           "type": "string",
@@ -47,11 +96,14 @@
         },
         "modelith.canvas.display": {
           "type": "string",
-          "enum": ["tab", "external"],
+          "enum": [
+            "tab",
+            "external"
+          ],
           "default": "tab",
           "enumDescriptions": [
             "Embed the canvas in a VS Code editor tab (webview).",
-            "Open the canvas in your browser via a forwarded port — recommended for devcontainers when you want a full window."
+            "Open the canvas in your browser via a forwarded port \u2014 recommended for devcontainers when you want a full window."
           ],
           "description": "Where to show the Modelith canvas."
         },
@@ -72,7 +124,28 @@
         }
       }
     },
-    "yamlValidation": []
+    "yamlValidation": [],
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "modelith.liftModel",
+          "when": "resourceExtname == .sql",
+          "group": "modelith"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "modelith.liftModel",
+          "when": "resourceExtname == .sql",
+          "group": "modelith"
+        },
+        {
+          "command": "modelith.openPreview",
+          "when": "resourceExtname == .sql || resourceExtname == .yaml",
+          "group": "modelith"
+        }
+      ]
+    }
   },
   "scripts": {
     "build": "tsc --noEmit && node esbuild.mjs",
@@ -84,5 +157,8 @@
     "@types/vscode": "^1.85.0",
     "esbuild": "^0.24.0",
     "typescript": "^5.6.3"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
   }
 }

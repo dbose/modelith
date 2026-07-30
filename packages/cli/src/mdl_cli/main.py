@@ -574,6 +574,15 @@ def import_erwin_cmd(
 
 
 @app.command()
+def lsp() -> None:
+    """Start the Modelith language server (stdio). One server for VS Code,
+    Cursor, Windsurf, JetBrains, and CI — same engine as the CLI."""
+    from mdl_lsp.server import main as lsp_main
+
+    lsp_main()
+
+
+@app.command()
 def serve(
     model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
     host: str = typer.Option("127.0.0.1", "--host"),

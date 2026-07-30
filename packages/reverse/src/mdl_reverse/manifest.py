@@ -43,10 +43,26 @@ class ManifestModel:
     # (column, to_ref) pairs recovered from relationships tests / fk constraints
 
 
+# Manifest schema versions this reader has been exercised against. The reader is
+# raw-JSON and engine-agnostic (works for anything emitting the manifest schema,
+# dbt-core or its successors); newer versions parse best-effort with a warning.
+KNOWN_SCHEMA_VERSIONS = frozenset({7, 8, 9, 10, 11, 12, 20})
+
+
+def _schema_version_number(url: str | None) -> int | None:
+    import re
+
+    if not url:
+        return None
+    m = re.search(r"/v(\d+)\.json", url)
+    return int(m.group(1)) if m else None
+
+
 @dataclass
 class ManifestProjection:
     models: dict[str, ManifestModel]
     dbt_schema_version: str | None = None
+    warnings: list[str] = field(default_factory=list)
 
     def model_names(self) -> set[str]:
         return set(self.models)
@@ -67,6 +83,13 @@ def _project(raw: dict[str, Any]) -> ManifestProjection:
     if isinstance(meta, dict):
         schema_version = meta.get("dbt_schema_version")
 
+    warnings: list[str] = []
+    vnum = _schema_version_number(schema_version)
+    if schema_version and vnum is not None and vnum not in KNOWN_SCHEMA_VERSIONS:
+        warnings.append(
+            f"manifest schema v{vnum} is newer than this reader has been tested "
+            f"against — parsed best-effort; verify drift output"
+        )
     models: dict[str, ManifestModel] = {}
     nodes = raw.get("nodes") or {}
     # Index relationships tests by the model they test, so we can attribute them.
@@ -99,7 +122,9 @@ def _project(raw: dict[str, Any]) -> ManifestProjection:
             tags=list(node.get("tags") or []),
             relationship_tests=rel_tests_by_model.get(name, []),
         )
-    return ManifestProjection(models=models, dbt_schema_version=schema_version)
+    return ManifestProjection(
+        models=models, dbt_schema_version=schema_version, warnings=warnings
+    )
 
 
 def _extract_relationship_tests(nodes: dict[str, Any]) -> dict[str, list[tuple[str, str]]]:

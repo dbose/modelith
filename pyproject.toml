@@ -16,6 +16,7 @@ dependencies = [
     "modelith-governance",
     "modelith-adapter-collibra",
     "modelith-server",
+    "modelith-lsp",
     "modelith-cli",
 ]
 
@@ -32,6 +33,7 @@ modelith-emit-semantic = { workspace = true }
 modelith-governance = { workspace = true }
 modelith-adapter-collibra = { workspace = true }
 modelith-server = { workspace = true }
+modelith-lsp = { workspace = true }
 modelith-cli = { workspace = true }
 
 [dependency-groups]

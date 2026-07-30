@@ -147,6 +147,8 @@ class DbtEmitter:
             if pt.target == self.target
         }
         for le in sorted(self.model.logical_entities.values(), key=lambda e: e.name):
+            if le.unmanaged:
+                continue  # engineer-owned SQL (spec `mdl unmanage`)
             out.append((le, pt_by_logical.get(le.id)))
         return out
 

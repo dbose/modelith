@@ -147,10 +147,15 @@ def compute_drift(
     # Manifest models with no model counterpart -> unmanaged. Staging/intermediate
     # models are engineer-owned by design (same rule as reverse lifting §6.3), so
     # they are not drift — flagging every stg_* would bury real findings in noise.
+    deliberately_unmanaged = {
+        le.name for le in model.logical_entities.values() if le.unmanaged
+    }
     for name in sorted(manifest_names - expected_names):
         mm = manifest.models[name]
         if lifting.is_staging(name, mm.tags):
             continue
+        if name in deliberately_unmanaged:
+            continue  # engineer-owned by explicit model decision
         report.add(
             DriftItem(
                 severity=DriftSeverity.unmanaged,

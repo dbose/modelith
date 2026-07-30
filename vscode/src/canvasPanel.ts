@@ -69,6 +69,15 @@ export class CanvasManager {
     await waitForPort(this.port, 20000);
   }
 
+  /** Ensure the server runs and return its (possibly tunnelled) base URL —
+   * used by the preview pane to build focus URLs. */
+  async externalUrl(modelDir: string): Promise<string> {
+    await this.ensureServer(modelDir);
+    const local = vscode.Uri.parse(`http://127.0.0.1:${this.port}/`);
+    const external = await vscode.env.asExternalUri(local);
+    return external.toString().replace(/\/$/, "") + "/";
+  }
+
   stop(): void {
     if (this.proc && !this.proc.killed) this.proc.kill();
     this.proc = undefined;

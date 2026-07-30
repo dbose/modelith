@@ -123,6 +123,9 @@ class LogicalEntity(_Base):
     attributes: list[Attribute] = Field(default_factory=list)
     subtypes: list[ULID] = Field(default_factory=list)
     pattern: Pattern | None = None
+    # True => the emitter does NOT emit this model's SQL/contract; the file is
+    # engineer-owned forever (spec `mdl unmanage`). Entity stays in the model.
+    unmanaged: bool | None = None
 
 
 class RelationshipEnd(_Base):

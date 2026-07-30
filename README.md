@@ -19,7 +19,8 @@ the load-bearing foundation the spec requires before anything else proceeds.
 | **M5** | Neutral GovernanceGraph + Jinja mapping DSL + adapter SPI + conformance kit + Collibra adapter + three reference profiles + OpenLineage | ✅ done, tested |
 | **M6** | Read API (`mdl serve`) + web canvas: erwin-style ER cards, crow's-foot edges, auto-layout, search-jump, detail panel, 1000+ nodes | ✅ done, verified in-browser |
 | **E1–E3** | Canvas is a full **editor**: ontology browser + four-layer stack view, typed mutation commands (comment-preserving, ULID-safe, optimistic concurrency), align-to-ontology flow, drag-to-connect relationships, editable inspector, decisions panel, git diff+commit panel, `--read-only` mode | ✅ done, verified in-browser |
-| **VS Code** | Extension in `vscode/` (own npm build → .vsix): canvas as webview tab or forwarded-port browser, Problems-panel validation on save, generate/drift/lint/new-entity commands, YAML schemas, devcontainer-ready (`extensionKind: workspace`) | ✅ built + packaged |
+| **VS Code** | Extension in `vscode/` (own npm build → .vsix): canvas as webview tab or forwarded-port browser, generate/drift/lint/new-entity commands, YAML schemas, devcontainer-ready (`extensionKind: workspace`) | ✅ built + packaged |
+| **LSP** | `mdl lsp` (pygls, stdio) — one server for VS Code/Cursor/Windsurf/JetBrains/CI: drift + contract + edited-generated-block diagnostics *on the dbt files*, SME hover cards (glossary/IRI/owner), CodeLens ownership + lift, code actions (adopt column, lift model, unmanage, declare relationship), selection-scoped lifting; model preview pane follows the active editor | ✅ done, protocol-tested |
 
 ## Layout
 
@@ -34,6 +35,7 @@ packages/
   adapters/
     collibra/     # Collibra governance adapter (depends only on governance)
   server/         # read API (FastAPI) + hosts the canvas build; state stays in git
+  lsp/            # mdl lsp — language server (pygls): the engineer surface for any LSP editor
   cli/            # `mdl`
 canvas/           # web canvas source (Vite + React + React Flow); `npm run build` -> server static
 vscode/           # VS Code extension (TypeScript + esbuild); `npm run build` + `npm run package` -> .vsix

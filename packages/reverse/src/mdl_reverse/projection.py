@@ -65,6 +65,8 @@ def project_model(model: Model, target: str) -> dict[str, ExpectedModel]:
 
     out: dict[str, ExpectedModel] = {}
     for le in model.logical_entities.values():
+        if le.unmanaged:
+            continue  # engineer-owned; not part of the emitted contract surface
         pt = pt_by_logical.get(le.id)
         name = (pt.name.lower() if pt else le.name)
         cols: dict[str, ExpectedColumn] = {}

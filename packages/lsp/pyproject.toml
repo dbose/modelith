@@ -1,0 +1,26 @@
+[project]
+name = "modelith-lsp"
+version = "0.1.0"
+description = "Modelith language server — model + dbt-project intelligence for any LSP editor"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "modelith-core",
+    "modelith-reverse",
+    "modelith-ontology",
+    "modelith-emit-dbt",
+    "pygls>=2.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mdl_lsp"]
+
+[tool.uv.sources]
+modelith-core = { workspace = true }
+modelith-reverse = { workspace = true }
+modelith-ontology = { workspace = true }
+modelith-emit-dbt = { workspace = true }

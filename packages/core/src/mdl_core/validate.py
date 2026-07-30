@@ -34,39 +34,41 @@ def validate(model: Model) -> DiagnosticSet:
 def _check_referential_integrity(model: Model, diags: DiagnosticSet) -> None:
     ids = model.all_ulids()
 
-    def ref(target: str | None, code: str, ctx: str) -> None:
+    def ref(target: str | None, code: str, ctx: str, owner: str | None = None) -> None:
         if target is not None and target not in ids:
             diags.add(
                 Diagnostic(
                     code=code,
                     severity=Severity.error,
                     message=f"{ctx} references unknown ULID {target!r}",
-                    path=target,
+                    # point at the object DECLARING the bad ref, so editors can
+                    # map the diagnostic to the file the fix belongs in
+                    path=owner or target,
                 )
             )
 
     for ce in model.conceptual_entities.values():
-        ref(ce.subject_area, "MDL-E101", f"conceptual entity {ce.name!r} subject_area")
+        ref(ce.subject_area, "MDL-E101", f"conceptual entity {ce.name!r} subject_area", ce.id)
         for rb in ce.realised_by:
-            ref(rb, "MDL-E101", f"conceptual entity {ce.name!r} realised_by")
+            ref(rb, "MDL-E101", f"conceptual entity {ce.name!r} realised_by", ce.id)
 
     for le in model.logical_entities.values():
-        ref(le.realises, "MDL-E102", f"logical entity {le.name!r} realises")
+        ref(le.realises, "MDL-E102", f"logical entity {le.name!r} realises", le.id)
         for st in le.subtypes:
-            ref(st, "MDL-E102", f"logical entity {le.name!r} subtype")
+            ref(st, "MDL-E102", f"logical entity {le.name!r} subtype", le.id)
 
     for rel in model.relationships.values():
-        ref(rel.from_.entity, "MDL-E103", f"relationship {rel.name!r} from.entity")
-        ref(rel.to.entity, "MDL-E103", f"relationship {rel.name!r} to.entity")
+        ref(rel.from_.entity, "MDL-E103", f"relationship {rel.name!r} from.entity", rel.id)
+        ref(rel.to.entity, "MDL-E103", f"relationship {rel.name!r} to.entity", rel.id)
         for a in rel.from_.attributes:
-            ref(a, "MDL-E103", f"relationship {rel.name!r} from.attributes")
+            ref(a, "MDL-E103", f"relationship {rel.name!r} from.attributes", rel.id)
         for a in rel.to.attributes:
-            ref(a, "MDL-E103", f"relationship {rel.name!r} to.attributes")
+            ref(a, "MDL-E103", f"relationship {rel.name!r} to.attributes", rel.id)
 
     for pt in model.physical_tables.values():
-        ref(pt.realises, "MDL-E104", f"physical table {pt.name!r} realises")
+        ref(pt.realises, "MDL-E104", f"physical table {pt.name!r} realises", pt.id)
         for col in pt.columns:
-            ref(col.realises, "MDL-E104", f"physical table {pt.name!r} column {col.name!r}")
+            ref(col.realises, "MDL-E104", f"physical table {pt.name!r} column {col.name!r}", pt.id)
 
 
 def _check_ontology_layers(model: Model, diags: DiagnosticSet) -> None:
