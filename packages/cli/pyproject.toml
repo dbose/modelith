@@ -1,0 +1,25 @@
+[project]
+name = "modelith-cli"
+version = "0.1.0"
+description = "Modelith CLI (`mdl`)"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+dependencies = [
+    "modelith-core",
+    "modelith-emit-dbt",
+    "typer>=0.12",
+]
+
+[project.scripts]
+mdl = "mdl_cli.main:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mdl_cli"]
+
+[tool.uv.sources]
+modelith-core = { workspace = true }
+modelith-emit-dbt = { workspace = true }

@@ -1,0 +1,48 @@
+[project]
+name = "modelith"
+version = "0.1.0"
+description = "Ontology-anchored, git-native data modeling tool for dbt-core teams"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+
+# The distributable metapackage depends on the in-repo workspace members.
+dependencies = [
+    "modelith-core",
+    "modelith-emit-dbt",
+    "modelith-cli",
+]
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.uv.sources]
+modelith-core = { workspace = true }
+modelith-emit-dbt = { workspace = true }
+modelith-cli = { workspace = true }
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "hypothesis>=6.100",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# B008: typer uses call-in-default as its documented API idiom.
+# UP042: str+Enum is intentional (JSON/YAML-serialisable string enums).
+ignore = ["B008", "UP042"]
+
+[tool.ruff.lint.per-file-ignores]
+# Jinja macro signatures are strings we can't line-wrap.
+"packages/emit-dbt/src/mdl_emit_dbt/macros.py" = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["packages"]
+addopts = "-q"
