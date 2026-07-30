@@ -6,25 +6,27 @@ import ReactFlow, {
   MiniMap,
   ReactFlowProvider,
   useReactFlow,
+  type Connection,
   type Edge,
+  type EdgeTypes,
   type Node,
   type NodeTypes,
-  type EdgeTypes,
 } from "reactflow";
 import "reactflow/dist/style.css";
 
-import { fetchDiagnostics, fetchModel } from "./api";
-import { DetailPanel } from "./DetailPanel";
+import { ApiError, fetchDiagnostics, fetchModel, gitStatus, sendCommand } from "./api";
 import { EntityNode, type EntityNodeData } from "./EntityNode";
+import { Inspector } from "./Inspector";
 import { layoutGraph } from "./layout";
+import { AlignModal, NewEntityModal, RelModal } from "./modals";
 import { RelationshipEdge, type RelationshipEdgeData } from "./RelationshipEdge";
+import { SidePanel, type PanelTab } from "./SidePanel";
 import { TopBar } from "./TopBar";
 import type { DiagnosticsDoc, Entity, ModelDoc } from "./types";
 
 const nodeTypes: NodeTypes = { entity: EntityNode };
 const edgeTypes: EdgeTypes = { relationship: RelationshipEdge };
 
-// Subject-area accent palette (cycled).
 const PALETTE = ["#5eead4", "#93c5fd", "#f0abfc", "#fcd34d", "#86efac", "#fda4af", "#c4b5fd"];
 const NO_SA_COLOR = "#64748b";
 
@@ -32,13 +34,61 @@ function Canvas() {
   const [doc, setDoc] = useState<ModelDoc | null>(null);
   const [diagnostics, setDiagnostics] = useState<DiagnosticsDoc | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [showTypes, setShowTypes] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [panelTab, setPanelTab] = useState<PanelTab | null>(null);
+  const [alignFor, setAlignFor] = useState<Entity | null>(null);
+  const [newEntityOpen, setNewEntityOpen] = useState(false);
+  const [relDraft, setRelDraft] = useState<{ from: string; to: string } | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [nodes, setNodes] = useState<Node<EntityNodeData>[]>([]);
   const [edges, setEdges] = useState<Edge<RelationshipEdgeData>[]>([]);
   const layoutedRef = useRef(false);
   const { fitView, setCenter, getNode } = useReactFlow();
+
+  const readOnly = doc?.read_only ?? true;
+
+  const refresh = useCallback(() => {
+    fetchModel().then(setDoc).catch((e) => setError(String(e)));
+    fetchDiagnostics().then(setDiagnostics).catch(() => setDiagnostics(null));
+    gitStatus()
+      .then((s) => setDirty(Boolean(s.git && !s.clean)))
+      .catch(() => setDirty(false));
+    setRefreshKey((k) => k + 1);
+  }, []);
+
+  useEffect(refresh, [refresh]);
+
+  /** The single mutation path: send a command with the fingerprint we based our
+   * view on; refresh on success; surface stale-model and validation errors. */
+  const exec = useCallback(
+    async (op: string, payload: Record<string, unknown>) => {
+      if (!doc) return;
+      try {
+        const r = await sendCommand(op, payload, doc.fingerprint);
+        refresh();
+        return r;
+      } catch (e) {
+        if (e instanceof ApiError && e.status === 409) {
+          setToast("Model changed on disk — view refreshed, please retry.");
+          refresh();
+        } else {
+          setToast(e instanceof Error ? e.message : String(e));
+        }
+        throw e;
+      }
+    },
+    [doc, refresh],
+  );
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 5000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   const saColors = useMemo(() => {
     const m = new Map<string, string>();
@@ -52,13 +102,6 @@ function Canvas() {
     return m;
   }, [doc]);
 
-  // Load model + diagnostics.
-  useEffect(() => {
-    fetchModel().then(setDoc).catch((e) => setError(String(e)));
-    fetchDiagnostics().then(setDiagnostics).catch(() => setDiagnostics(null));
-  }, []);
-
-  // Build + layout graph whenever the doc, query, or selection changes.
   useEffect(() => {
     if (!doc) return;
     const q = query.trim().toLowerCase();
@@ -113,15 +156,21 @@ function Canvas() {
       }));
 
     setNodes((prev) => {
-      // Preserve user-dragged positions after the first layout.
-      if (layoutedRef.current && prev.length === newNodes.length) {
-        const posById = new Map(prev.map((n) => [n.id, n.position]));
+      const posById = new Map(prev.map((n) => [n.id, n.position]));
+      const known = newNodes.every((n) => posById.has(n.id));
+      if (layoutedRef.current && known && prev.length >= newNodes.length) {
         return newNodes.map((n) => ({ ...n, position: posById.get(n.id) ?? n.position }));
       }
+      // new entity (or first load): layout, keeping existing positions where known
       const laid = layoutGraph(newNodes, newEdges, entityIndex);
+      const merged = laid.map((n) =>
+        posById.has(n.id) && layoutedRef.current
+          ? { ...n, position: posById.get(n.id)! }
+          : n,
+      );
       layoutedRef.current = true;
       requestAnimationFrame(() => fitView({ padding: 0.15, duration: 300 }));
-      return laid;
+      return merged;
     });
     setEdges(newEdges);
   }, [doc, query, selectedId, showTypes, saColors, entityIndex, fitView]);
@@ -140,7 +189,6 @@ function Canvas() {
     [getNode, setCenter],
   );
 
-  // Enter in the search box jumps to the first match (essential at 1000+ nodes).
   const submitQuery = useCallback(() => {
     if (!doc) return;
     const q = query.trim().toLowerCase();
@@ -157,21 +205,32 @@ function Canvas() {
     if (hit) focusEntity(hit.id);
   }, [doc, query, focusEntity]);
 
-  // "/" focuses search.
+  const onConnect = useCallback(
+    (conn: Connection) => {
+      if (readOnly || !conn.source || !conn.target || conn.source === conn.target) return;
+      setRelDraft({ from: conn.source, to: conn.target });
+    },
+    [readOnly],
+  );
+
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
-      if (ev.key === "/" && document.activeElement?.tagName !== "INPUT") {
+      const tag = document.activeElement?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (ev.key === "/") {
         ev.preventDefault();
         document.getElementById("mdl-search")?.focus();
       }
+      if (ev.key === "n" && !readOnly) setNewEntityOpen(true);
       if (ev.key === "Escape") {
         setSelectedId(null);
         setQuery("");
+        setPanelTab(null);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, []);
+  }, [readOnly]);
 
   if (error) {
     return (
@@ -202,6 +261,11 @@ function Canvas() {
         onFitView={() => fitView({ padding: 0.15, duration: 300 })}
         onRelayout={relayout}
         saColors={saColors}
+        readOnly={readOnly}
+        dirty={dirty}
+        panelTab={panelTab}
+        onPanelTab={(t) => setPanelTab((cur) => (cur === t ? null : t))}
+        onNewEntity={() => setNewEntityOpen(true)}
       />
       <div className="canvas-wrap">
         <ReactFlow
@@ -214,6 +278,8 @@ function Canvas() {
           onNodeDragStop={(_, n) =>
             setNodes((prev) => prev.map((p) => (p.id === n.id ? { ...p, position: n.position } : p)))
           }
+          onConnect={onConnect}
+          nodesConnectable={!readOnly}
           minZoom={0.05}
           onlyRenderVisibleElements
           proOptions={{ hideAttribution: true }}
@@ -228,15 +294,52 @@ function Canvas() {
           />
           <Controls showInteractive={false} />
         </ReactFlow>
-        {selected && (
-          <DetailPanel
+
+        {selected && !panelTab && (
+          <Inspector
             entity={selected}
             doc={doc}
+            readOnly={readOnly}
+            exec={exec}
             onClose={() => setSelectedId(null)}
             onFocusEntity={focusEntity}
+            onAlign={setAlignFor}
           />
         )}
+        {panelTab && (
+          <SidePanel
+            tab={panelTab}
+            onClose={() => setPanelTab(null)}
+            readOnly={readOnly}
+            refreshKey={refreshKey}
+            onModelChanged={refresh}
+            onFocusEntity={(id) => {
+              setPanelTab(null);
+              focusEntity(id);
+            }}
+          />
+        )}
+        {toast && <div className="toast">{toast}</div>}
       </div>
+
+      {alignFor && <AlignModal entity={alignFor} exec={exec} onClose={() => setAlignFor(null)} />}
+      {newEntityOpen && (
+        <NewEntityModal
+          doc={doc}
+          exec={exec}
+          onClose={() => setNewEntityOpen(false)}
+          onCreated={(id) => requestAnimationFrame(() => focusEntity(id))}
+        />
+      )}
+      {relDraft && (
+        <RelModal
+          doc={doc}
+          fromId={relDraft.from}
+          toId={relDraft.to}
+          exec={exec}
+          onClose={() => setRelDraft(null)}
+        />
+      )}
     </div>
   );
 }

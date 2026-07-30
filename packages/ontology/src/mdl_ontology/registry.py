@@ -181,6 +181,39 @@ class OntologyRegistry:
         results.sort(key=lambda t: (-t[0], t[1].label or ""))
         return [r for _, r in results[:limit]]
 
+    def describe(self, ref: str) -> dict | None:
+        """Full term card for a prefixed name or IRI: label, definition, source,
+        and skos:broader / narrower neighbours (for the canvas ontology browser)."""
+        iri = self.expand(ref) if not ref.startswith("http") else ref
+        if iri is None:
+            return None
+        subj = URIRef(iri)
+        if (subj, None, None) not in self.graph and (None, None, subj) not in self.graph:
+            return None
+
+        def _card(u: URIRef) -> dict:
+            return {
+                "iri": str(u),
+                "prefixed": self._prefixed_for(str(u)),
+                "label": self._first_literal(u, SKOS.prefLabel) or _local_name(str(u)),
+            }
+
+        broader = [
+            _card(o) for o in self.graph.objects(subj, SKOS.broader) if isinstance(o, URIRef)
+        ]
+        narrower = [
+            _card(s) for s in self.graph.subjects(SKOS.broader, subj) if isinstance(s, URIRef)
+        ]
+        return {
+            "iri": iri,
+            "prefixed": self._prefixed_for(iri),
+            "label": self._first_literal(subj, SKOS.prefLabel) or _local_name(iri),
+            "definition": self._first_literal(subj, SKOS.definition),
+            "source": self._source_for(iri),
+            "broader": sorted(broader, key=lambda c: c["label"]),
+            "narrower": sorted(narrower, key=lambda c: c["label"]),
+        }
+
     def _first_literal(self, subj, pred) -> str | None:
         for o in self.graph.objects(subj, pred):
             return str(o)

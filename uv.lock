@@ -624,6 +624,8 @@ source = { editable = "packages/server" }
 dependencies = [
     { name = "fastapi" },
     { name = "modelith-core" },
+    { name = "modelith-ontology" },
+    { name = "modelith-reverse" },
     { name = "uvicorn" },
 ]
 
@@ -631,6 +633,8 @@ dependencies = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.110" },
     { name = "modelith-core", editable = "packages/core" },
+    { name = "modelith-ontology", editable = "packages/ontology" },
+    { name = "modelith-reverse", editable = "packages/reverse" },
     { name = "uvicorn", specifier = ">=0.29" },
 ]
 

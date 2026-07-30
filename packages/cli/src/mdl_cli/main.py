@@ -288,6 +288,125 @@ def ontology_check(
         raise typer.Exit(1)
 
 
+@ontology_app.command("vendor")
+def ontology_vendor(
+    source: str = typer.Argument("fibo", help="Vocabulary to vendor (fibo)"),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    url: str = typer.Option(
+        "https://spec.edmcouncil.org/fibo/ontology/master/latest/prod.fibo-quickstart.ttl",
+        "--url",
+        help="Override the download URL",
+    ),
+) -> None:
+    """Download and pin a full industry vocabulary (spec §3.2).
+
+    FIBO ships as the QuickFIBO single-file production release (MIT licence).
+    The download is recorded in .mdl/lock.yaml; declare it in mdl-project.yaml's
+    ontology_stack with `path: ontologies/industry/<name>`."""
+    import urllib.request
+
+    from mdl_ontology.lock import Lock
+
+    dest = model_dir / "ontologies" / "industry" / source
+    dest.mkdir(parents=True, exist_ok=True)
+    out = dest / f"{source}.ttl"
+    typer.secho(f"downloading {url} …", fg=typer.colors.CYAN)
+    with urllib.request.urlopen(url, timeout=120) as resp:  # noqa: S310
+        out.write_bytes(resp.read())
+    lock = Lock.load(model_dir)
+    lock.vocabularies[source] = url
+    lock.save(model_dir)
+    typer.secho(
+        f"vendored {source} -> {out} ({out.stat().st_size // 1024} KB); pinned in .mdl/lock.yaml",
+        fg=typer.colors.GREEN,
+    )
+
+
+new_app = typer.Typer(help="Scaffold model objects (mints ULIDs for you).")
+app.add_typer(new_app, name="new")
+
+
+@new_app.command("entity")
+def new_entity(
+    name: str = typer.Argument(...),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    subject_area: str = typer.Option(None, "--subject-area", help="Subject area ULID"),
+    definition: str = typer.Option(None, "--definition"),
+    layer: str = typer.Option(None, "--layer", help="industry|core|domain|specialised"),
+) -> None:
+    """Create a conceptual + logical entity pair."""
+    from mdl_server.commands import CommandError, apply_command
+
+    try:
+        result = apply_command(
+            model_dir,
+            "create_entity",
+            {"name": name, "subject_area": subject_area, "definition": definition, "layer": layer},
+        )
+    except CommandError as e:
+        typer.secho(str(e), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from e
+    typer.secho(f"created entity {name!r} ({result.created_id})", fg=typer.colors.GREEN)
+
+
+@new_app.command("subject-area")
+def new_subject_area(
+    name: str = typer.Argument(...),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    definition: str = typer.Option(None, "--definition"),
+) -> None:
+    from mdl_server.commands import apply_command
+
+    result = apply_command(
+        model_dir, "create_subject_area", {"name": name, "definition": definition}
+    )
+    typer.secho(f"created subject area {name!r} ({result.created_id})", fg=typer.colors.GREEN)
+
+
+decisions_app = typer.Typer(help="Review the reverse-engineering decision ledger (§6.2).")
+app.add_typer(decisions_app, name="decisions")
+
+
+@decisions_app.command("list")
+def decisions_list(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    pending: bool = typer.Option(False, "--pending", help="Only unreviewed proposals"),
+) -> None:
+    ledger = DecisionLedger.load(model_dir)
+    items = ledger.pending() if pending else list(ledger.decisions.values())
+    for d in items:
+        mark = {"accepted": "✓", "rejected": "✗", "proposed": "?"}[d.verdict.value]
+        typer.echo(f"  {mark} [{d.confidence.value:11}] {d.signal_key}  {d.subject}")
+    if not items:
+        typer.secho("no decisions", fg=typer.colors.GREEN)
+
+
+@decisions_app.command("accept")
+def decisions_accept(
+    signal_key: str = typer.Argument(...),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+) -> None:
+    _set_decision(model_dir, signal_key, Verdict.accepted)
+
+
+@decisions_app.command("reject")
+def decisions_reject(
+    signal_key: str = typer.Argument(...),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+) -> None:
+    _set_decision(model_dir, signal_key, Verdict.rejected)
+
+
+def _set_decision(model_dir: Path, signal_key: str, verdict: Verdict) -> None:
+    ledger = DecisionLedger.load(model_dir)
+    if signal_key not in ledger.decisions:
+        typer.secho(f"no decision {signal_key!r}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+    ledger.set_verdict(signal_key, verdict)
+    ledger.save(model_dir)
+    typer.secho(f"{verdict.value}: {ledger.decisions[signal_key].subject}", fg=typer.colors.GREEN)
+
+
 @emit_app.command("semantic")
 def emit_semantic(
     fmt: str = typer.Option("metricflow", "--format", help="metricflow|osi"),
@@ -386,14 +505,19 @@ def serve(
     model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
     host: str = typer.Option("127.0.0.1", "--host"),
     port: int = typer.Option(4800, "--port", "-p"),
+    read_only: bool = typer.Option(
+        False, "--read-only", help="Disable editing (viewer only, for shared deployments)"
+    ),
 ) -> None:
-    """Serve the read API + web canvas (spec §13.5: read-only, state stays in git)."""
+    """Serve the web canvas + API. Editing writes the working tree; git owns state."""
     from mdl_server.app import serve as run_server
 
+    mode = "read-only" if read_only else "editable"
     typer.secho(
-        f"Modelith canvas: http://{host}:{port}  (model: {model_dir})", fg=typer.colors.CYAN
+        f"Modelith canvas ({mode}): http://{host}:{port}  (model: {model_dir})",
+        fg=typer.colors.CYAN,
     )
-    run_server(model_dir, host=host, port=port)
+    run_server(model_dir, host=host, port=port, read_only=read_only)
 
 
 def _gov_adapter(sandbox: bool, base_url: str | None, token: str | None):

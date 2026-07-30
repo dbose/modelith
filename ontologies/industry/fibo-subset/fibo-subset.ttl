@@ -1,0 +1,247 @@
+# Curated FIBO subset for Modelith demos, tests, and offline use.
+# ~60 classes from the Financial Industry Business Ontology (EDM Council, MIT
+# licence), hand-curated across FND / FBC / SEC / IND / BE / DER modules.
+# For the full ontology run:  mdl ontology vendor fibo
+# Upstream: https://spec.edmcouncil.org/fibo/  (QuickFIBO production release)
+
+@prefix rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl:   <http://www.w3.org/2002/07/owl#> .
+@prefix skos:  <http://www.w3.org/2004/02/skos/core#> .
+@prefix fibo-fnd-pty-pty: <https://spec.edmcouncil.org/fibo/ontology/FND/Parties/Parties/> .
+@prefix fibo-fnd-pty-rl:  <https://spec.edmcouncil.org/fibo/ontology/FND/Parties/Roles/> .
+@prefix fibo-fnd-agr-ctr: <https://spec.edmcouncil.org/fibo/ontology/FND/Agreements/Contracts/> .
+@prefix fibo-fnd-acc-cur: <https://spec.edmcouncil.org/fibo/ontology/FND/Accounting/CurrencyAmount/> .
+@prefix fibo-fnd-dt-fd:   <https://spec.edmcouncil.org/fibo/ontology/FND/DatesAndTimes/FinancialDates/> .
+@prefix fibo-fbc-fi-fi:   <https://spec.edmcouncil.org/fibo/ontology/FBC/FinancialInstruments/FinancialInstruments/> .
+@prefix fibo-fbc-pas-fpas: <https://spec.edmcouncil.org/fibo/ontology/FBC/ProductsAndServices/FinancialProductsAndServices/> .
+@prefix fibo-fbc-fct-fse: <https://spec.edmcouncil.org/fibo/ontology/FBC/FunctionalEntities/FinancialServicesEntities/> .
+@prefix fibo-sec-sec-id:  <https://spec.edmcouncil.org/fibo/ontology/SEC/Securities/SecuritiesIdentification/> .
+@prefix fibo-sec-sec-iss: <https://spec.edmcouncil.org/fibo/ontology/SEC/Securities/SecuritiesIssuance/> .
+@prefix fibo-sec-eq-eq:   <https://spec.edmcouncil.org/fibo/ontology/SEC/Equities/EquityInstruments/> .
+@prefix fibo-sec-dbt-dbt: <https://spec.edmcouncil.org/fibo/ontology/SEC/Debt/DebtInstruments/> .
+@prefix fibo-sec-fund:    <https://spec.edmcouncil.org/fibo/ontology/SEC/Funds/Funds/> .
+@prefix fibo-der-drc-bsc: <https://spec.edmcouncil.org/fibo/ontology/DER/DerivativesContracts/DerivativesBasics/> .
+@prefix fibo-der-rtd-irswp: <https://spec.edmcouncil.org/fibo/ontology/DER/RateDerivatives/IRSwaps/> .
+@prefix fibo-be-le-lp:    <https://spec.edmcouncil.org/fibo/ontology/BE/LegalEntities/LegalPersons/> .
+@prefix fibo-be-le-lei:   <https://spec.edmcouncil.org/fibo/ontology/BE/LegalEntities/LEIEntities/> .
+@prefix fibo-ind-ind-ind: <https://spec.edmcouncil.org/fibo/ontology/IND/Indicators/Indicators/> .
+@prefix fibo-ind-mkt-mkt: <https://spec.edmcouncil.org/fibo/ontology/IND/MarketIndices/BasketIndices/> .
+
+### FND — Parties, agreements, money, dates ################################
+
+fibo-fnd-pty-pty:Party a owl:Class, skos:Concept ;
+    skos:prefLabel "Party" ;
+    skos:definition "A person or organization that can enter into legal relations, such as agreements or obligations." .
+
+fibo-fnd-pty-pty:PartyInRole a owl:Class, skos:Concept ;
+    skos:prefLabel "Party In Role" ;
+    skos:broader fibo-fnd-pty-pty:Party ;
+    skos:definition "A relative concept that ties a party to a specific role it stands in, such as counterparty, issuer, or guarantor." .
+
+fibo-fnd-pty-pty:IndependentParty a owl:Class, skos:Concept ;
+    skos:prefLabel "Independent Party" ;
+    skos:broader fibo-fnd-pty-pty:Party ;
+    skos:definition "A party that exists independently of the roles it plays, such as a person or an organization." .
+
+fibo-fnd-pty-rl:AgentInRole a owl:Class, skos:Concept ;
+    skos:prefLabel "Agent In Role" ;
+    skos:definition "A party acting in a specific capacity on behalf of another party." .
+
+fibo-fnd-agr-ctr:Contract a owl:Class, skos:Concept ;
+    skos:prefLabel "Contract" ;
+    skos:definition "A voluntary, deliberate agreement between two or more competent parties to which the law attaches enforceable obligations." .
+
+fibo-fnd-agr-ctr:ContractParty a owl:Class, skos:Concept ;
+    skos:prefLabel "Contract Party" ;
+    skos:broader fibo-fnd-pty-pty:PartyInRole ;
+    skos:definition "A party that enters into and is bound by the terms of a contract." .
+
+fibo-fnd-agr-ctr:ContractualCommitment a owl:Class, skos:Concept ;
+    skos:prefLabel "Contractual Commitment" ;
+    skos:broader fibo-fnd-agr-ctr:Contract ;
+    skos:definition "A commitment made by a contract party under the terms of a contract." .
+
+fibo-fnd-acc-cur:Currency a owl:Class, skos:Concept ;
+    skos:prefLabel "Currency" ;
+    skos:definition "A medium of exchange, defined by reference to the geopolitical entity or monetary union that issues it, e.g. ISO 4217 currencies." .
+
+fibo-fnd-acc-cur:MonetaryAmount a owl:Class, skos:Concept ;
+    skos:prefLabel "Monetary Amount" ;
+    skos:definition "An amount of money expressed as a number together with a currency." .
+
+fibo-fnd-acc-cur:MonetaryPrice a owl:Class, skos:Concept ;
+    skos:prefLabel "Monetary Price" ;
+    skos:broader fibo-fnd-acc-cur:MonetaryAmount ;
+    skos:definition "A price expressed as a monetary amount, typically quoted per unit of some financial instrument or commodity." .
+
+fibo-fnd-acc-cur:ExchangeRate a owl:Class, skos:Concept ;
+    skos:prefLabel "Exchange Rate" ;
+    skos:definition "The rate at which one currency is exchanged for another at a given point in time." .
+
+fibo-fnd-dt-fd:SettlementDate a owl:Class, skos:Concept ;
+    skos:prefLabel "Settlement Date" ;
+    skos:definition "The date on which a trade or obligation is due to be settled by delivery or payment." .
+
+fibo-fnd-dt-fd:TradeDate a owl:Class, skos:Concept ;
+    skos:prefLabel "Trade Date" ;
+    skos:definition "The date on which a transaction is executed, as distinct from the date on which it settles." .
+
+### FBC — Financial instruments, products, service entities #################
+
+fibo-fbc-fi-fi:FinancialInstrument a owl:Class, skos:Concept ;
+    skos:prefLabel "Financial Instrument" ;
+    skos:broader fibo-fnd-agr-ctr:Contract ;
+    skos:definition "A written contract that gives rise to both a financial asset of one entity and a financial liability or equity instrument of another entity." .
+
+fibo-fbc-fi-fi:Security a owl:Class, skos:Concept ;
+    skos:prefLabel "Security" ;
+    skos:broader fibo-fbc-fi-fi:FinancialInstrument ;
+    skos:definition "A transferable financial instrument that represents an ownership position, a creditor relationship, or rights to ownership." .
+
+fibo-fbc-fi-fi:DebtInstrument a owl:Class, skos:Concept ;
+    skos:prefLabel "Debt Instrument" ;
+    skos:broader fibo-fbc-fi-fi:FinancialInstrument ;
+    skos:definition "A financial instrument evidencing monies owed by the issuer to the holder on terms as specified." .
+
+fibo-fbc-fi-fi:EquityInstrument a owl:Class, skos:Concept ;
+    skos:prefLabel "Equity Instrument" ;
+    skos:broader fibo-fbc-fi-fi:FinancialInstrument ;
+    skos:definition "A financial instrument representing an ownership interest in an entity, i.e. shares." .
+
+fibo-fbc-fi-fi:DerivativeInstrument a owl:Class, skos:Concept ;
+    skos:prefLabel "Derivative Instrument" ;
+    skos:broader fibo-fbc-fi-fi:FinancialInstrument ;
+    skos:definition "A financial instrument that confers rights or obligations whose value derives from one or more underlying assets, rates, or indices." .
+
+fibo-fbc-fi-fi:CashInstrument a owl:Class, skos:Concept ;
+    skos:prefLabel "Cash Instrument" ;
+    skos:broader fibo-fbc-fi-fi:FinancialInstrument ;
+    skos:definition "A financial instrument whose value is determined directly by markets and that is readily transferable, such as deposits and currency." .
+
+fibo-fbc-pas-fpas:FinancialProduct a owl:Class, skos:Concept ;
+    skos:prefLabel "Financial Product" ;
+    skos:definition "A product provided to consumers and businesses by financial institutions, such as accounts, loans, and investment products." .
+
+fibo-fbc-fct-fse:FinancialInstitution a owl:Class, skos:Concept ;
+    skos:prefLabel "Financial Institution" ;
+    skos:broader fibo-be-le-lp:LegalEntity ;
+    skos:definition "An organization licensed to provide financial services, such as a bank, broker-dealer, or asset manager." .
+
+fibo-fbc-fct-fse:Custodian a owl:Class, skos:Concept ;
+    skos:prefLabel "Custodian" ;
+    skos:broader fibo-fnd-pty-pty:PartyInRole ;
+    skos:definition "A financial institution that holds customers' securities and other assets for safekeeping." .
+
+fibo-fbc-fct-fse:ClearingHouse a owl:Class, skos:Concept ;
+    skos:prefLabel "Clearing House" ;
+    skos:broader fibo-fbc-fct-fse:FinancialInstitution ;
+    skos:definition "A financial institution that provides clearing and settlement services for financial transactions." .
+
+### SEC — Securities, identification, equities, debt, funds #################
+
+fibo-sec-sec-id:SecurityIdentifier a owl:Class, skos:Concept ;
+    skos:prefLabel "Security Identifier" ;
+    skos:definition "An identifier for a security, such as an ISIN, CUSIP, or SEDOL, issued under an identification scheme." .
+
+fibo-sec-sec-id:InternationalSecuritiesIdentificationNumber a owl:Class, skos:Concept ;
+    skos:prefLabel "ISIN" ;
+    skos:broader fibo-sec-sec-id:SecurityIdentifier ;
+    skos:definition "A 12-character alphanumeric identifier for a security defined by ISO 6166." .
+
+fibo-sec-sec-iss:Issuer a owl:Class, skos:Concept ;
+    skos:prefLabel "Issuer" ;
+    skos:broader fibo-fnd-pty-pty:PartyInRole ;
+    skos:definition "A party that issues, or proposes to issue, a security or other financial instrument." .
+
+fibo-sec-eq-eq:Share a owl:Class, skos:Concept ;
+    skos:prefLabel "Share" ;
+    skos:broader fibo-fbc-fi-fi:EquityInstrument ;
+    skos:definition "An equity instrument representing a fractional ownership interest in an entity." .
+
+fibo-sec-eq-eq:CommonShare a owl:Class, skos:Concept ;
+    skos:prefLabel "Common Share" ;
+    skos:broader fibo-sec-eq-eq:Share ;
+    skos:definition "A share that confers voting rights and residual claim on assets after all obligations are met." .
+
+fibo-sec-eq-eq:PreferredShare a owl:Class, skos:Concept ;
+    skos:prefLabel "Preferred Share" ;
+    skos:broader fibo-sec-eq-eq:Share ;
+    skos:definition "A share that ranks ahead of common shares for dividends and liquidation, typically without voting rights." .
+
+fibo-sec-dbt-dbt:Bond a owl:Class, skos:Concept ;
+    skos:prefLabel "Bond" ;
+    skos:broader fibo-fbc-fi-fi:DebtInstrument ;
+    skos:definition "A debt instrument under which the issuer owes the holder a debt and is obliged to pay interest and repay principal at maturity." .
+
+fibo-sec-dbt-dbt:GovernmentBond a owl:Class, skos:Concept ;
+    skos:prefLabel "Government Bond" ;
+    skos:broader fibo-sec-dbt-dbt:Bond ;
+    skos:definition "A bond issued by a national government, such as a UK gilt or US Treasury." .
+
+fibo-sec-dbt-dbt:CorporateBond a owl:Class, skos:Concept ;
+    skos:prefLabel "Corporate Bond" ;
+    skos:broader fibo-sec-dbt-dbt:Bond ;
+    skos:definition "A bond issued by a corporation to raise financing." .
+
+fibo-sec-fund:InvestmentFund a owl:Class, skos:Concept ;
+    skos:prefLabel "Investment Fund" ;
+    skos:definition "A collective investment vehicle that pools capital from investors to invest according to a stated strategy." .
+
+fibo-sec-fund:PensionFund a owl:Class, skos:Concept ;
+    skos:prefLabel "Pension Fund" ;
+    skos:broader fibo-sec-fund:InvestmentFund ;
+    skos:definition "A fund established to pay retirement benefits, investing contributions on behalf of scheme members." .
+
+fibo-sec-fund:FundUnit a owl:Class, skos:Concept ;
+    skos:prefLabel "Fund Unit" ;
+    skos:broader fibo-fbc-fi-fi:EquityInstrument ;
+    skos:definition "A unit representing a proportional interest in an investment fund." .
+
+fibo-sec-fund:FundManager a owl:Class, skos:Concept ;
+    skos:prefLabel "Fund Manager" ;
+    skos:broader fibo-fnd-pty-pty:PartyInRole ;
+    skos:definition "A party responsible for implementing a fund's investment strategy and managing its portfolio." .
+
+### DER — Derivatives ########################################################
+
+fibo-der-drc-bsc:DerivativeContract a owl:Class, skos:Concept ;
+    skos:prefLabel "Derivative Contract" ;
+    skos:broader fibo-fbc-fi-fi:DerivativeInstrument ;
+    skos:definition "A contract whose value is based on one or more underlying assets, rates, or indices." .
+
+fibo-der-drc-bsc:Swap a owl:Class, skos:Concept ;
+    skos:prefLabel "Swap" ;
+    skos:broader fibo-der-drc-bsc:DerivativeContract ;
+    skos:definition "A derivative contract in which counterparties exchange cash flows of one instrument for those of another." .
+
+fibo-der-rtd-irswp:InterestRateSwap a owl:Class, skos:Concept ;
+    skos:prefLabel "Interest Rate Swap" ;
+    skos:broader fibo-der-drc-bsc:Swap ;
+    skos:definition "A swap in which counterparties exchange interest rate cash flows, typically fixed for floating, on a notional amount." .
+
+### BE — Legal entities ######################################################
+
+fibo-be-le-lp:LegalEntity a owl:Class, skos:Concept ;
+    skos:prefLabel "Legal Entity" ;
+    skos:broader fibo-fnd-pty-pty:IndependentParty ;
+    skos:definition "A partnership, corporation, or other organization having legal capacity to enter into contracts and be sued." .
+
+fibo-be-le-lei:LegalEntityIdentifier a owl:Class, skos:Concept ;
+    skos:prefLabel "Legal Entity Identifier" ;
+    skos:definition "A 20-character alphanumeric code defined by ISO 17442 that uniquely identifies a legal entity engaged in financial transactions." .
+
+### IND — Indicators & indices ###############################################
+
+fibo-ind-ind-ind:InterestRate a owl:Class, skos:Concept ;
+    skos:prefLabel "Interest Rate" ;
+    skos:definition "An amount charged, expressed as a percentage of principal per period, by a lender to a borrower for the use of assets." .
+
+fibo-ind-ind-ind:MarketRate a owl:Class, skos:Concept ;
+    skos:prefLabel "Market Rate" ;
+    skos:broader fibo-ind-ind-ind:InterestRate ;
+    skos:definition "A rate determined by supply and demand in a market, used as a benchmark for pricing." .
+
+fibo-ind-mkt-mkt:MarketIndex a owl:Class, skos:Concept ;
+    skos:prefLabel "Market Index" ;
+    skos:definition "A statistical measure of change in a securities market, computed from the prices of selected constituents." .

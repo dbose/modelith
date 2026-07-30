@@ -1,3 +1,4 @@
+import type { PanelTab } from "./SidePanel";
 import type { DiagnosticsDoc, ModelDoc } from "./types";
 
 export function TopBar({
@@ -11,6 +12,11 @@ export function TopBar({
   onFitView,
   onRelayout,
   saColors,
+  readOnly,
+  dirty,
+  panelTab,
+  onPanelTab,
+  onNewEntity,
 }: {
   doc: ModelDoc;
   diagnostics: DiagnosticsDoc | null;
@@ -22,9 +28,24 @@ export function TopBar({
   onFitView: () => void;
   onRelayout: () => void;
   saColors: Map<string, string>;
+  readOnly: boolean;
+  dirty: boolean;
+  panelTab: PanelTab | null;
+  onPanelTab: (t: PanelTab) => void;
+  onNewEntity: () => void;
 }) {
   const errors = diagnostics?.items.filter((d) => d.severity === "error").length ?? 0;
   const warnings = diagnostics?.items.filter((d) => d.severity === "warning").length ?? 0;
+
+  const tabBtn = (tab: PanelTab, label: string, title: string, badge?: boolean) => (
+    <button
+      className={"tool-btn" + (panelTab === tab ? " active" : "") + (badge ? " badged" : "")}
+      onClick={() => onPanelTab(tab)}
+      title={title}
+    >
+      {label}
+    </button>
+  );
 
   return (
     <header className="topbar">
@@ -32,6 +53,7 @@ export function TopBar({
         <span className="logo">{"◮"}</span>
         <span className="brand-name">Modelith</span>
         <span className="project-name">{doc.project.name}</span>
+        {readOnly && <span className="chip">read-only</span>}
       </div>
 
       <input
@@ -69,7 +91,21 @@ export function TopBar({
       </div>
 
       <div className="actions">
-        <button className={"tool-btn" + (showTypes ? " active" : "")} onClick={onToggleTypes} title="Toggle data types">
+        {!readOnly && (
+          <button className="tool-btn primary" onClick={onNewEntity} title="New entity (n)">
+            {"+ Entity"}
+          </button>
+        )}
+        {tabBtn("ontology", "⬡", "Ontology browser")}
+        {tabBtn("layers", "≣", "Four-layer stack & coverage")}
+        {tabBtn("changes", "±", dirty ? "Uncommitted changes!" : "Changes", dirty)}
+        {tabBtn("decisions", "⚖", "Decision ledger")}
+        <span className="divider" />
+        <button
+          className={"tool-btn" + (showTypes ? " active" : "")}
+          onClick={onToggleTypes}
+          title="Toggle data types"
+        >
           {"{T}"}
         </button>
         <button className="tool-btn" onClick={onRelayout} title="Auto-layout">

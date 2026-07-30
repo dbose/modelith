@@ -6,6 +6,8 @@ requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 dependencies = [
     "modelith-core",
+    "modelith-ontology",
+    "modelith-reverse",
     "fastapi>=0.110",
     "uvicorn>=0.29",
 ]
@@ -20,3 +22,5 @@ artifacts = ["src/mdl_server/static"]
 
 [tool.uv.sources]
 modelith-core = { workspace = true }
+modelith-ontology = { workspace = true }
+modelith-reverse = { workspace = true }

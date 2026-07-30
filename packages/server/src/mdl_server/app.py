@@ -16,6 +16,9 @@ from fastapi.staticfiles import StaticFiles
 from mdl_core.diagnostics import Severity
 from mdl_core.repo import ModelRepo
 from mdl_core.validate import validate
+from mdl_server import commands
+from mdl_server.git_api import git_router
+from mdl_server.ontology_api import ontology_router
 from mdl_server.projection import project
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -37,7 +40,7 @@ def _dir_fingerprint(model_dir: Path) -> tuple:
     return (n, mtime, size)
 
 
-def create_app(model_dir: Path) -> FastAPI:
+def create_app(model_dir: Path, *, read_only: bool = False) -> FastAPI:
     model_dir = Path(model_dir)
     app = FastAPI(title="Modelith", docs_url="/api/docs", openapi_url="/api/openapi.json")
     cache: dict = {"fingerprint": None, "repo": None}
@@ -55,7 +58,11 @@ def create_app(model_dir: Path) -> FastAPI:
     @app.get("/api/model")
     def get_model() -> JSONResponse:
         repo = _load()
-        return JSONResponse(project(repo.model))
+        doc = project(repo.model)
+        doc["fingerprint"] = commands.dir_fingerprint(model_dir)
+        doc["read_only"] = read_only
+        doc["domains"] = sorted(d.name for d in repo.model.domains.values())
+        return JSONResponse(doc)
 
     @app.get("/api/entities/{ulid}")
     def get_entity(ulid: str) -> JSONResponse:
@@ -87,7 +94,74 @@ def create_app(model_dir: Path) -> FastAPI:
 
     @app.get("/api/health")
     def health() -> dict:
-        return {"status": "ok", "model_dir": str(model_dir)}
+        return {"status": "ok", "model_dir": str(model_dir), "read_only": read_only}
+
+    # Ontology read API (E1) — always available.
+    app.include_router(ontology_router(model_dir, lambda: _load().model))
+
+    @app.get("/api/decisions")
+    def decisions() -> JSONResponse:
+        from mdl_reverse.ledger import DecisionLedger
+
+        ledger = DecisionLedger.load(model_dir)
+        return JSONResponse(
+            {
+                "decisions": [
+                    {
+                        "signal_key": d.signal_key,
+                        "kind": d.kind,
+                        "signal": d.signal,
+                        "confidence": d.confidence.value,
+                        "subject": d.subject,
+                        "verdict": d.verdict.value,
+                    }
+                    for d in sorted(
+                        ledger.decisions.values(), key=lambda x: (x.verdict.value, x.subject)
+                    )
+                ]
+            }
+        )
+
+    # Mutation + git APIs (E2) — omitted entirely in read-only mode.
+    if not read_only:
+
+        @app.post("/api/decisions/{signal_key}/verdict")
+        def set_verdict(signal_key: str, body: dict) -> JSONResponse:
+            from mdl_reverse.ledger import DecisionLedger, Verdict
+
+            ledger = DecisionLedger.load(model_dir)
+            if signal_key not in ledger.decisions:
+                raise HTTPException(status_code=404, detail=f"no decision {signal_key}")
+            try:
+                verdict = Verdict(body.get("verdict", ""))
+            except ValueError as e:
+                raise HTTPException(status_code=422, detail="verdict: accepted|rejected") from e
+            ledger.set_verdict(signal_key, verdict)
+            ledger.save(model_dir)
+            return JSONResponse({"ok": True})
+
+        @app.post("/api/command")
+        def command(body: dict) -> JSONResponse:
+            op = body.get("op", "")
+            payload = body.get("payload") or {}
+            base_fp = body.get("fingerprint")
+            try:
+                result = commands.apply_command(model_dir, op, payload, base_fp)
+            except commands.StaleModelError as e:
+                return JSONResponse({"ok": False, "error": str(e)}, status_code=409)
+            except commands.CommandError as e:
+                return JSONResponse({"ok": False, "error": str(e)}, status_code=422)
+            cache["repo"] = None  # bust the model cache
+            return JSONResponse(
+                {
+                    "ok": True,
+                    "fingerprint": result.fingerprint,
+                    "created_id": result.created_id,
+                    "diagnostics": result.diagnostics,
+                }
+            )
+
+        app.include_router(git_router(model_dir))
 
     # Static canvas build. Mounted last so /api/* wins.
     if STATIC_DIR.exists():
@@ -103,7 +177,11 @@ def create_app(model_dir: Path) -> FastAPI:
     return app
 
 
-def serve(model_dir: Path, *, host: str = "127.0.0.1", port: int = 4800) -> None:
+def serve(
+    model_dir: Path, *, host: str = "127.0.0.1", port: int = 4800, read_only: bool = False
+) -> None:
     import uvicorn
 
-    uvicorn.run(create_app(model_dir), host=host, port=port, log_level="warning")
+    uvicorn.run(
+        create_app(model_dir, read_only=read_only), host=host, port=port, log_level="warning"
+    )

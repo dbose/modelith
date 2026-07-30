@@ -18,6 +18,7 @@ the load-bearing foundation the spec requires before anything else proceeds.
 | **M4** | Generic ontology registry (FIBO = one example) + four-layer validation + RDF/SHACL + OSI 0.1.1 emit/import + MetricFlow + erwin XML import | ✅ done, tested |
 | **M5** | Neutral GovernanceGraph + Jinja mapping DSL + adapter SPI + conformance kit + Collibra adapter + three reference profiles + OpenLineage | ✅ done, tested |
 | **M6** | Read API (`mdl serve`) + web canvas: erwin-style ER cards, crow's-foot edges, auto-layout, search-jump, detail panel, 1000+ nodes | ✅ done, verified in-browser |
+| **E1–E3** | Canvas is a full **editor**: ontology browser + four-layer stack view, typed mutation commands (comment-preserving, ULID-safe, optimistic concurrency), align-to-ontology flow, drag-to-connect relationships, editable inspector, decisions panel, git diff+commit panel, `--read-only` mode | ✅ done, verified in-browser |
 | +   | VS Code extension (standalone + devcontainer) — see `docs/vscode-plan.md` | ⬜ planned |
 
 ## Layout
@@ -180,3 +181,27 @@ An erwin-grade ER diagram with modern UX, served read-only from the model repo
 Rebuild the canvas after changes: `cd canvas && npm install && npm run build`
 (the production bundle is committed under `packages/server/.../static`, so
 `mdl serve` works from a plain Python install with no Node toolchain).
+
+## Canvas editor (E1–E3)
+
+`mdl serve` is a **full editor** by default (`--read-only` for shared viewers).
+The canvas never writes files directly: every UI action is a typed semantic
+command (`POST /api/command`) that mutates the raw YAML nodes comment-preservingly,
+mints ULIDs server-side at creation, re-validates, and returns fresh diagnostics.
+Commands carry the directory fingerprint they were based on — an external
+`git pull` or IDE edit makes the command fail with "model changed on disk" instead
+of clobbering. Git remains the only state: edits accumulate in the working tree
+and the **Changes panel** shows the real diff with Commit/Discard.
+
+- **Ontology browser** (⬡): search the loaded vocabularies (any RDF/Turtle —
+  FIBO subset ships in-repo; `mdl ontology vendor fibo` pins the full QuickFIBO
+  production release), term cards with definitions, broader/narrower navigation.
+- **Layers view** (≣): the four-layer stack (industry/core/domain/specialised)
+  with each model term's upward alignment and the live CDO coverage banner.
+- **Align flow**: Inspector → "Align…" → search picker → predicate + layer →
+  the entity's YAML gains its `ontology:` block.
+- **Editing**: rename (ULID fixed, file follows), definitions, stewardship,
+  subject areas, patterns, attribute CRUD, drag handle-to-handle to draw a
+  relationship (cardinality modal), delete with cascade confirmation.
+- **Decisions panel** (⚖): accept/reject reverse-engineering proposals.
+- CLI twins: `mdl new entity|subject-area`, `mdl decisions list|accept|reject`.

@@ -73,6 +73,72 @@ export interface ModelDoc {
   relationships: Relationship[];
   physical: PhysicalTable[];
   counts: { entities: number; relationships: number; attributes: number };
+  fingerprint: string;
+  read_only: boolean;
+  domains: string[];
+}
+
+// --- ontology (E1) ---
+
+export interface TermCard {
+  iri: string;
+  prefixed: string;
+  label: string;
+  definition: string | null;
+  source: string;
+}
+
+export interface TermDetail extends TermCard {
+  broader: { iri: string; prefixed: string; label: string }[];
+  narrower: { iri: string; prefixed: string; label: string }[];
+}
+
+export interface StackTerm {
+  id: string;
+  name: string;
+  kind: string;
+  definition: string | null;
+  no_industry_equivalent: boolean;
+  aligned_to: { ref: string; predicate: string | null; resolved: boolean; label: string } | null;
+}
+
+export interface StackDoc {
+  layers: Record<"industry" | "core" | "domain" | "specialised", StackTerm[]>;
+  external_terms: TermCard[];
+  vocabularies: string[];
+}
+
+export interface CoverageDoc {
+  coverage_pct: number;
+  total_core: number;
+  core_with_industry: number;
+  core_exempt: number;
+  core_uncovered: string[];
+}
+
+// --- editing (E2/E3) ---
+
+export interface CommandResponse {
+  ok: boolean;
+  fingerprint: string;
+  created_id: string | null;
+  diagnostics: Diagnostic[];
+  error?: string;
+}
+
+export interface GitStatus {
+  git: boolean;
+  clean?: boolean;
+  dirty: { state: string; path: string }[];
+}
+
+export interface Decision {
+  signal_key: string;
+  kind: string;
+  signal: string;
+  confidence: string;
+  subject: string;
+  verdict: "proposed" | "accepted" | "rejected";
 }
 
 export interface Diagnostic {
