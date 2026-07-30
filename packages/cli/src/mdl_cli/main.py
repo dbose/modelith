@@ -73,23 +73,58 @@ def init(
 def validate(
     model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
     severity: str = typer.Option("error", help="Gate severity: error|warn"),
+    fmt: str = typer.Option("text", "--format", help="text|json (json maps ULIDs to files)"),
 ) -> None:
     """Validate the model (schema, refs, ontology, naming)."""
     repo = _load(model_dir)
     diags = run_validate(repo.model)
-    for d in diags.items:
-        color = {
-            Severity.error: typer.colors.RED,
-            Severity.warning: typer.colors.YELLOW,
-            Severity.info: typer.colors.BLUE,
-        }[d.severity]
-        typer.secho(f"{d.code} [{d.severity.value}] {d.message}", fg=color)
+
+    if fmt == "json":
+        import json as _json
+
+        # ULID -> owning file, including attribute ULIDs (they live in their
+        # entity's file) so editors can map diagnostics to locations.
+        ulid_file: dict[str, str] = dict(
+            (u, rel) for rel, u in repo.file_ulid.items()
+        )
+        for le in repo.model.logical_entities.values():
+            owner = repo.path_for_ulid(le.id)
+            if owner:
+                for a in le.attributes:
+                    ulid_file.setdefault(a.id, owner)
+        typer.echo(
+            _json.dumps(
+                {
+                    "diagnostics": [
+                        {
+                            "code": d.code,
+                            "severity": d.severity.value,
+                            "message": d.message,
+                            "path": d.path,
+                            "file": ulid_file.get(d.path or "", None),
+                        }
+                        for d in diags.items
+                    ],
+                    "has_errors": diags.has(Severity.error),
+                }
+            )
+        )
+    else:
+        for d in diags.items:
+            color = {
+                Severity.error: typer.colors.RED,
+                Severity.warning: typer.colors.YELLOW,
+                Severity.info: typer.colors.BLUE,
+            }[d.severity]
+            typer.secho(f"{d.code} [{d.severity.value}] {d.message}", fg=color)
 
     gate = Severity.error if severity == "error" else Severity.warning
     if diags.has(gate):
-        typer.secho("validation failed", fg=typer.colors.RED, err=True)
+        if fmt != "json":
+            typer.secho("validation failed", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
-    typer.secho("validation passed", fg=typer.colors.GREEN)
+    if fmt != "json":
+        typer.secho("validation passed", fg=typer.colors.GREEN)
 
 
 @app.command()
@@ -440,6 +475,44 @@ def emit_semantic(
         typer.secho(f"wrote {fmt} to {out}", fg=typer.colors.GREEN)
     else:
         typer.echo(text)
+
+
+@export_app.command("json-schema")
+def export_json_schema(
+    out: Path = typer.Option(Path("schemas"), "--out", "-o", help="Output directory"),
+) -> None:
+    """Export JSON Schemas for model YAML files (one per object kind), generated
+    from the pydantic IR. Editors map them via yaml.schemas for completion and
+    inline validation."""
+    import json as _json
+
+    from mdl_core.ir import (
+        ConceptualEntity,
+        Domain,
+        LogicalEntity,
+        PhysicalTable,
+        ProjectConfig,
+        Relationship,
+        SubjectArea,
+        Term,
+    )
+
+    kinds = {
+        "conceptual_entity": ConceptualEntity,
+        "subject_area": SubjectArea,
+        "term": Term,
+        "logical_entity": LogicalEntity,
+        "domain": Domain,
+        "relationship": Relationship,
+        "physical_table": PhysicalTable,
+        "project": ProjectConfig,
+    }
+    out.mkdir(parents=True, exist_ok=True)
+    for name, cls in kinds.items():
+        schema = cls.model_json_schema()
+        schema["$schema"] = "http://json-schema.org/draft-07/schema#"
+        (out / f"{name}.schema.json").write_text(_json.dumps(schema, indent=2))
+    typer.secho(f"wrote {len(kinds)} schemas to {out}", fg=typer.colors.GREEN)
 
 
 @export_app.command("rdf")

@@ -1,0 +1,88 @@
+{
+  "name": "modelith-vscode",
+  "displayName": "Modelith",
+  "description": "Ontology-anchored, git-native data modeling for dbt — validate, generate, drift, and the Modelith canvas inside VS Code.",
+  "version": "0.1.0",
+  "publisher": "modelith",
+  "license": "Apache-2.0",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Data Science", "Visualization", "Linters"],
+  "main": "./dist/extension.js",
+  "extensionKind": ["workspace"],
+  "activationEvents": ["workspaceContains:**/mdl-project.yaml"],
+  "contributes": {
+    "commands": [
+      { "command": "modelith.validate", "title": "Modelith: Validate Model" },
+      { "command": "modelith.generate", "title": "Modelith: Generate dbt Project" },
+      { "command": "modelith.driftCheck", "title": "Modelith: Check Drift vs dbt Manifest" },
+      { "command": "modelith.lintFix", "title": "Modelith: Lint Naming (--fix)" },
+      { "command": "modelith.newEntity", "title": "Modelith: New Entity" },
+      { "command": "modelith.openCanvas", "title": "Modelith: Open Canvas" },
+      { "command": "modelith.stopServer", "title": "Modelith: Stop Canvas Server" },
+      { "command": "modelith.vendorFibo", "title": "Modelith: Vendor FIBO Ontology" },
+      { "command": "modelith.emitSemantic", "title": "Modelith: Emit Semantic Layer (OSI/MetricFlow)" }
+    ],
+    "configuration": {
+      "title": "Modelith",
+      "properties": {
+        "modelith.mdlPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the mdl executable. Empty = auto-detect (.venv/bin/mdl → mdl on PATH → `uv run mdl`)."
+        },
+        "modelith.modelDir": {
+          "type": "string",
+          "default": "",
+          "description": "Model repo directory (contains mdl-project.yaml). Empty = auto-discover in the workspace."
+        },
+        "modelith.dbtProjectDir": {
+          "type": "string",
+          "default": "",
+          "description": "dbt project directory (contains dbt_project.yml). Used for generate output and drift manifest discovery. Empty = auto-discover."
+        },
+        "modelith.manifestPath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to manifest.json for drift. Empty = <dbtProjectDir>/target/manifest.json."
+        },
+        "modelith.canvas.display": {
+          "type": "string",
+          "enum": ["tab", "external"],
+          "default": "tab",
+          "enumDescriptions": [
+            "Embed the canvas in a VS Code editor tab (webview).",
+            "Open the canvas in your browser via a forwarded port — recommended for devcontainers when you want a full window."
+          ],
+          "description": "Where to show the Modelith canvas."
+        },
+        "modelith.canvas.port": {
+          "type": "number",
+          "default": 0,
+          "description": "Port for the embedded canvas server. 0 = pick a free port."
+        },
+        "modelith.canvas.readOnly": {
+          "type": "boolean",
+          "default": false,
+          "description": "Serve the canvas in read-only (viewer) mode."
+        },
+        "modelith.validateOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run `mdl validate` when a model YAML file is saved and surface MDL-* diagnostics in Problems."
+        }
+      }
+    },
+    "yamlValidation": []
+  },
+  "scripts": {
+    "build": "tsc --noEmit && node esbuild.mjs",
+    "typecheck": "tsc --noEmit",
+    "package": "npx @vscode/vsce package --no-dependencies"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.3"
+  }
+}

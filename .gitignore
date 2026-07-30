@@ -13,3 +13,7 @@ htmlcov/
 target/
 # canvas toolchain (the production build IS committed, under packages/server/.../static)
 canvas/node_modules/
+# vscode extension toolchain (source is committed; artifacts are not)
+vscode/node_modules/
+vscode/dist/
+vscode/*.vsix

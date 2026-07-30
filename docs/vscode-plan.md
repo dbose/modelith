@@ -1,3 +1,15 @@
+# VS Code integration — IMPLEMENTED (see vscode/)
+
+> Original plan retained below for history. Status: shipped in `vscode/` with
+> its own npm build (esbuild), packaged as .vsix. Features: canvas as a webview
+> tab or external browser via forwarded port (`modelith.canvas.display`),
+> Problems-panel diagnostics on save (`mdl validate --format json`), generate /
+> drift-check / lint-fix / new-entity / vendor-fibo / emit-semantic commands,
+> YAML schemas from the pydantic IR registered with redhat.vscode-yaml,
+> auto-discovery of mdl-project.yaml + dbt_project.yml, mdl detection
+> (.venv → PATH → uv run), `extensionKind: ["workspace"]` so the extension host
+> runs inside devcontainers. Devcontainer template: profiles/devcontainer/.
+
 # VS Code integration plan (standalone + devcontainer)
 
 You asked for Modelith to integrate with VS Code, both standalone and in

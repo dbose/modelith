@@ -1,0 +1,26 @@
+{
+  "name": "dbt + Modelith",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": { "version": "20" }
+  },
+  "postCreateCommand": "pipx install uv && uv tool install modelith && mdl validate -m model || true",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "modelith.modelith-vscode",
+        "redhat.vscode-yaml",
+        "innoverio.vscode-dbt-power-user"
+      ],
+      "settings": {
+        "modelith.modelDir": "model",
+        "modelith.dbtProjectDir": "transform",
+        "modelith.canvas.display": "tab"
+      }
+    }
+  },
+  "forwardPorts": [4800],
+  "portsAttributes": {
+    "4800": { "label": "Modelith canvas", "onAutoForward": "silent" }
+  }
+}

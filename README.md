@@ -19,7 +19,7 @@ the load-bearing foundation the spec requires before anything else proceeds.
 | **M5** | Neutral GovernanceGraph + Jinja mapping DSL + adapter SPI + conformance kit + Collibra adapter + three reference profiles + OpenLineage | ✅ done, tested |
 | **M6** | Read API (`mdl serve`) + web canvas: erwin-style ER cards, crow's-foot edges, auto-layout, search-jump, detail panel, 1000+ nodes | ✅ done, verified in-browser |
 | **E1–E3** | Canvas is a full **editor**: ontology browser + four-layer stack view, typed mutation commands (comment-preserving, ULID-safe, optimistic concurrency), align-to-ontology flow, drag-to-connect relationships, editable inspector, decisions panel, git diff+commit panel, `--read-only` mode | ✅ done, verified in-browser |
-| +   | VS Code extension (standalone + devcontainer) — see `docs/vscode-plan.md` | ⬜ planned |
+| **VS Code** | Extension in `vscode/` (own npm build → .vsix): canvas as webview tab or forwarded-port browser, Problems-panel validation on save, generate/drift/lint/new-entity commands, YAML schemas, devcontainer-ready (`extensionKind: workspace`) | ✅ built + packaged |
 
 ## Layout
 
@@ -36,6 +36,7 @@ packages/
   server/         # read API (FastAPI) + hosts the canvas build; state stays in git
   cli/            # `mdl`
 canvas/           # web canvas source (Vite + React + React Flow); `npm run build` -> server static
+vscode/           # VS Code extension (TypeScript + esbuild); `npm run build` + `npm run package` -> .vsix
 profiles/
   ci/             # shippable CI workflow templates (mdl-validate, mdl-drift, mdl-gov-sync)
   governance/     # three reference governance-profile.yaml (collibra-oob, dbt-analytics, minimal)
@@ -205,3 +206,33 @@ and the **Changes panel** shows the real diff with Commit/Discard.
   relationship (cardinality modal), delete with cascade confirmation.
 - **Decisions panel** (⚖): accept/reject reverse-engineering proposals.
 - CLI twins: `mdl new entity|subject-area`, `mdl decisions list|accept|reject`.
+
+## VS Code (standalone + devcontainer)
+
+The extension lives in [`vscode/`](vscode/) with its own build:
+
+```bash
+cd vscode && npm install && npm run build && npm run package   # -> modelith-vscode-0.1.0.vsix
+```
+
+Open a git repo containing a Modelith model (and typically a dbt project next to
+it, e.g. `model/` + `transform/`) — the extension activates on
+`mdl-project.yaml`, auto-discovers both directories, and detects `mdl`
+(`.venv/bin/mdl` → PATH → `uv run mdl`).
+
+- **Canvas**: `Modelith: Open Canvas` spawns a managed `mdl serve` on a free
+  port. `modelith.canvas.display` chooses **`tab`** (webview editor tab) or
+  **`external`** (your browser via a forwarded port). Both resolve through
+  `asExternalUri`, so devcontainers and SSH remotes tunnel automatically.
+- **Validation**: on save, `mdl validate --format json` maps `MDL-*` diagnostics
+  to the offending YAML lines in the Problems panel; a status-bar chip shows
+  ✓ / error count.
+- **Commands**: Generate dbt Project (into the discovered dbt dir, honouring
+  protected regions/merge exit codes), Check Drift vs dbt Manifest (breaking
+  drift → error notification), Lint `--fix`, New Entity, Vendor FIBO, Emit
+  Semantic, Stop Canvas Server.
+- **YAML completion**: `mdl export json-schema` output is registered with the
+  Red Hat YAML extension per model glob.
+- **Devcontainer**: `extensionKind: ["workspace"]` runs the extension host
+  *inside* the container, next to `mdl`/dbt/credentials (spec §1.2). A template
+  ships in [`profiles/devcontainer/`](profiles/devcontainer/devcontainer.json).
