@@ -55,7 +55,7 @@ _DUCKDB_TYPES = {
     "bool": "BOOLEAN",
     "date": "DATE",
     "timestamp": "TIMESTAMP",
-    "decimal": "DECIMAL(38,0)",
+    "decimal": "DECIMAL(38,2)",
     "identifier_bigint": "BIGINT",
     "lei_code": "VARCHAR(20)",
 }
@@ -70,7 +70,7 @@ _SNOWFLAKE_TYPES = {
     "bool": "BOOLEAN",
     "date": "DATE",
     "timestamp": "TIMESTAMP_NTZ",
-    "decimal": "NUMBER(38,0)",
+    "decimal": "NUMBER(38,2)",
     "identifier_bigint": "NUMBER(38,0)",
     "lei_code": "VARCHAR(20)",
 }
@@ -85,7 +85,7 @@ _REDSHIFT_TYPES = {
     "bool": "BOOLEAN",
     "date": "DATE",
     "timestamp": "TIMESTAMP",
-    "decimal": "NUMERIC(38,0)",
+    "decimal": "NUMERIC(38,2)",
     "identifier_bigint": "BIGINT",
     "lei_code": "VARCHAR(20)",
 }
@@ -100,7 +100,7 @@ _ICEBERG_TYPES = {
     "bool": "BOOLEAN",
     "date": "DATE",
     "timestamp": "TIMESTAMP",
-    "decimal": "DECIMAL(38,0)",
+    "decimal": "DECIMAL(38,2)",
     "identifier_bigint": "BIGINT",
     "lei_code": "STRING",
 }
@@ -115,7 +115,7 @@ _TRINO_TYPES = {
     "bool": "BOOLEAN",
     "date": "DATE",
     "timestamp": "TIMESTAMP",
-    "decimal": "DECIMAL(38,0)",
+    "decimal": "DECIMAL(38,2)",
     "identifier_bigint": "BIGINT",
     "lei_code": "VARCHAR(20)",
 }

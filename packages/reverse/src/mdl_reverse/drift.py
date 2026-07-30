@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from mdl_core.ir import Model
+from mdl_reverse import lifting
 from mdl_reverse.manifest import ManifestProjection
 from mdl_reverse.projection import ExpectedModel, project_model
 
@@ -100,7 +101,7 @@ class DriftReport:
 # breaking today, but the distinction drives the message and future auto-cast logic.
 _FAMILIES: dict[str, list[str]] = {
     # ordered widest-last; index = width within the family
-    "numeric": ["BOOLEAN", "INTEGER", "BIGINT", "DECIMAL(38,0)", "DOUBLE"],
+    "numeric": ["BOOLEAN", "INTEGER", "BIGINT", "DECIMAL(38,0)", "DECIMAL(38,2)", "DOUBLE"],
     "string": ["VARCHAR(20)", "VARCHAR"],
     "temporal": ["DATE", "TIMESTAMP"],
 }
@@ -143,8 +144,13 @@ def compute_drift(
             )
         )
 
-    # Manifest models with no model counterpart -> unmanaged.
+    # Manifest models with no model counterpart -> unmanaged. Staging/intermediate
+    # models are engineer-owned by design (same rule as reverse lifting §6.3), so
+    # they are not drift — flagging every stg_* would bury real findings in noise.
     for name in sorted(manifest_names - expected_names):
+        mm = manifest.models[name]
+        if lifting.is_staging(name, mm.tags):
+            continue
         report.add(
             DriftItem(
                 severity=DriftSeverity.unmanaged,
@@ -228,7 +234,9 @@ def _diff_metadata(exp: ExpectedModel, man, report: DriftReport) -> None:
                 detail=f"contract enforced in model but not in dbt for {exp.name!r}",
             )
         )
-    if (exp.description or None) != (man.description or None):
+    # Whitespace-normalised: YAML folded scalars carry trailing newlines that a
+    # manifest string does not.
+    if (exp.description or "").strip() != (man.description or "").strip():
         report.add(
             DriftItem(
                 severity=DriftSeverity.cosmetic,

@@ -35,6 +35,7 @@ _SQL_TO_BASE = {
     "DATE": "date",
     "TIMESTAMP": "timestamp",
     "DECIMAL(38,0)": "decimal",
+    "DECIMAL(38,2)": "decimal",
     "VARCHAR(20)": "lei_code",
 }
 

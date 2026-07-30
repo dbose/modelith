@@ -26,7 +26,7 @@ hashed as (
 )
 select
     hashed.*,
-    current_timestamp                        as {{ valid_from }},
+    cast(current_timestamp as timestamp)     as {{ valid_from }},
     cast(null as timestamp)                  as {{ valid_to }},
     true                                     as {{ is_current }}
 from hashed
@@ -51,7 +51,7 @@ _HUB_MACRO = """\
 select distinct
     {{ dbt_utils_surrogate_key([business_key]) }} as hub_hashkey,
     {{ business_key }},
-    current_timestamp as load_dts
+    cast(current_timestamp as timestamp) as load_dts
 from {{ source_relation }}
 {% endmacro %}
 """

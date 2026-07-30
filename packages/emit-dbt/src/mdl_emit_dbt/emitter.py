@@ -22,6 +22,7 @@ from pathlib import Path
 from mdl_core.fingerprint import content_hash, fingerprint_subgraph
 from mdl_core.ir import LogicalEntity, Model, PhysicalTable
 from mdl_core.merge import MergeOutcome, MergeResult, merge_file
+from mdl_core.patterns import PATTERN_SYSTEM_COLUMNS
 from mdl_core.regions import ParsedFile, Region, RegionKind, render
 from mdl_core.state import FileState, GenerationState
 from mdl_core.yaml_io import dump_str
@@ -30,6 +31,9 @@ from mdl_emit_dbt.platforms import get_adapter
 
 EMITTER_VERSION = "0.1.0"
 SPEC_TAG = "v1"
+
+# Pattern system columns are single-sourced in core (shared with drift/reverse).
+_PATTERN_SYSTEM_COLUMNS = PATTERN_SYSTEM_COLUMNS
 
 
 @dataclass
@@ -222,7 +226,7 @@ class DbtEmitter:
             f"        md5(cast({bk} as varchar)) as mdl_scd_id,\n"
             f"        md5(cast({tracked_sql} as varchar)) as mdl_row_hash\n"
             f"    from source\n)\n"
-            f"select\n    hashed.*,\n    current_timestamp as valid_from,\n"
+            f"select\n    hashed.*,\n    cast(current_timestamp as timestamp) as valid_from,\n"
             f"    cast(null as timestamp) as valid_to,\n    true as is_current\n"
             f"from hashed"
         )
@@ -284,6 +288,18 @@ class DbtEmitter:
                     ]
                 columns.append(col)
 
+            # Pattern system columns must be part of the enforced contract: the
+            # emitted SQL produces them, and dbt's assert_columns_equivalent fails
+            # on any undeclared column (found dogfooding against real dbt 1.12).
+            for name_, base in _PATTERN_SYSTEM_COLUMNS.get(le.pattern or "", []):
+                columns.append(
+                    {
+                        "name": name_,
+                        "data_type": self.adapter.map_base_type(base),
+                        "meta": {"mdl_system": True},
+                    }
+                )
+
             meta = {"mdl_ulid": le.id}
             ce = self.model.conceptual_entities.get(le.realises) if le.realises else None
             if ce:
@@ -302,6 +318,9 @@ class DbtEmitter:
                 "meta": meta,
                 "columns": columns,
             }
+            # Business definition flows into dbt docs (and back through drift).
+            if ce and ce.definition:
+                model_entry["description"] = ce.definition.strip()
             models_yaml.append(model_entry)
 
         doc = {"version": 2, "models": models_yaml}

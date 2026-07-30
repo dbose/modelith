@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from mdl_core.ir import LogicalEntity, Model
+from mdl_core.patterns import PATTERN_SYSTEM_COLUMNS
 
 
 @dataclass
@@ -44,7 +45,7 @@ _TYPE_MAP = {
     "bool": "BOOLEAN",
     "date": "DATE",
     "timestamp": "TIMESTAMP",
-    "decimal": "DECIMAL(38,0)",
+    "decimal": "DECIMAL(38,2)",
     "identifier_bigint": "BIGINT",
     "lei_code": "VARCHAR(20)",
 }
@@ -75,6 +76,13 @@ def project_model(model: Model, target: str) -> dict[str, ExpectedModel]:
                 data_type=_map_type(base),
                 nullable=attr.nullable,
                 is_business_key=(attr.role == "business_key"),
+            )
+        # The pattern's transformation adds system columns; the emitter declares
+        # them in the contract, so drift must expect them too (single-sourced in
+        # core.patterns — found dogfooding when SCD2 columns showed as drift).
+        for col_name, base in PATTERN_SYSTEM_COLUMNS.get(le.pattern or "", []):
+            cols[col_name] = ExpectedColumn(
+                name=col_name, data_type=_map_type(base), nullable=True
             )
         ce = model.conceptual_entities.get(le.realises) if le.realises else None
         out[name] = ExpectedModel(
