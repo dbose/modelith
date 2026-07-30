@@ -44,6 +44,8 @@ ignore = ["B008", "UP042"]
 [tool.ruff.lint.per-file-ignores]
 # Jinja macro signatures are strings we can't line-wrap.
 "packages/emit-dbt/src/mdl_emit_dbt/macros.py" = ["E501"]
+# Test fixtures embed 26-char ULID literals that push lines past the limit.
+"packages/*/tests/*.py" = ["E501"]
 
 [tool.ruff.lint.isort]
 # Test-local helper modules imported by bare name (added to sys.path in conftest).

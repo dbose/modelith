@@ -10,14 +10,24 @@ from mdl_reverse.drift import (
     DriftSeverity,
     compute_drift,
 )
+from mdl_reverse.ledger import Confidence, Decision, DecisionLedger, Verdict
 from mdl_reverse.manifest import ManifestColumn, ManifestModel, read_manifest
+from mdl_reverse.reverse import ReverseResult, reverse
+from mdl_reverse.schema_reader import read_schema_yml
 
 __all__ = [
     "read_manifest",
+    "read_schema_yml",
     "ManifestModel",
     "ManifestColumn",
     "compute_drift",
     "DriftReport",
     "DriftItem",
     "DriftSeverity",
+    "reverse",
+    "ReverseResult",
+    "DecisionLedger",
+    "Decision",
+    "Verdict",
+    "Confidence",
 ]

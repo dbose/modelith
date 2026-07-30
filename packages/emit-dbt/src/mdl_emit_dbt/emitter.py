@@ -170,7 +170,7 @@ class DbtEmitter:
 
     def _model_body(self, le: LogicalEntity, pt: PhysicalTable | None) -> str:
         materialization = pt.materialization if pt else "view"
-        config = f"{{{{ config(materialized='{materialization}') }}}}\n"
+        config = self._config_call(le, materialization)
         cols = [a.name for a in le.attributes] or ["1 as placeholder"]
         source_name = f"stg_{le.name}"
 
@@ -198,6 +198,22 @@ class DbtEmitter:
         sql += f"select\n    {col_list}\nfrom source"
         return config + sql
 
+    def _config_call(self, le: LogicalEntity, materialization: str) -> str:
+        """Build a deterministic `{{ config(...) }}` including platform physical
+        options (cluster_by / dist / sort / partition) from the adapter (§7.2)."""
+        parts = [f"materialized='{materialization}'"]
+        opts = self.adapter.physical_options(le)
+        for key in sorted(opts):
+            val = opts[key]
+            if isinstance(val, bool):
+                parts.append(f"{key}={val}")
+            elif isinstance(val, list):
+                inner = ", ".join(f"'{v}'" for v in val)
+                parts.append(f"{key}=[{inner}]")
+            else:
+                parts.append(f"{key}='{val}'")
+        return "{{ config(" + ", ".join(parts) + ") }}\n"
+
     def _inline_scd2(self, source: str, bk: str, tracked: list[str]) -> str:
         tracked_sql = " || '-' || ".join(tracked) if tracked else "''"
         return (
@@ -220,6 +236,13 @@ class DbtEmitter:
         models_yaml = []
         ulids: list[str] = []
         fp_objs: list[object] = []
+
+        # Map (from_entity_ulid, from_attr_ulid) -> to_model_name, for relationships
+        # the platform can't enforce as FKs. Attached to the column's `tests:` so dbt
+        # actually verifies the relationship (§7.1) and reverse can recover it (§6.2).
+        rel_tests, rel_objs = self._relationship_tests(caps)
+        fp_objs.extend(rel_objs)
+        ulids.extend(r.id for r in rel_objs)
 
         for le, pt, name in entries:
             ulids.append(le.id)
@@ -249,6 +272,16 @@ class DbtEmitter:
                     col["meta"] = {"mdl_ulid": attr.id, "ontology_iri": attr.ontology.aligns_to}
                 else:
                     col["meta"] = {"mdl_ulid": attr.id}
+                to_model = rel_tests.get((le.id, attr.id))
+                if to_model:
+                    col["tests"] = [
+                        {
+                            "relationships": {
+                                "to": f"ref('{to_model}')",
+                                "field": _pk_of(self.model, to_model),
+                            }
+                        }
+                    ]
                 columns.append(col)
 
             meta = {"mdl_ulid": le.id}
@@ -271,12 +304,6 @@ class DbtEmitter:
             }
             models_yaml.append(model_entry)
 
-        # Relationships that the platform can't enforce -> dbt relationships tests.
-        for rel in sorted(self.model.relationships.values(), key=lambda r: r.name):
-            if rel.enforce.dbt_test == "relationships" and not caps.foreign_key:
-                ulids.append(rel.id)
-                fp_objs.append(rel)
-
         doc = {"version": 2, "models": models_yaml}
         yaml_text = dump_str(doc)
 
@@ -290,6 +317,41 @@ class DbtEmitter:
             regions=[gen, Region(RegionKind.literal, "\n"), Region(RegionKind.user, "")]
         )
         return render(parsed, "#"), ulids, fp
+
+    def _relationship_tests(self, caps) -> tuple[dict[tuple[str, str], str], list]:
+        """Return {(from_entity_ulid, from_attr_ulid) -> to_model_name} plus the
+        Relationship objects contributing, for relationships the platform can't
+        enforce as real FK constraints."""
+        tests: dict[tuple[str, str], str] = {}
+        objs = []
+        le_name = {le.id: le.name for le in self.model.logical_entities.values()}
+        pt_name = {
+            pt.realises: pt.name.lower()
+            for pt in self.model.physical_tables.values()
+            if pt.target == self.target
+        }
+        for rel in sorted(self.model.relationships.values(), key=lambda r: r.name):
+            if rel.enforce.dbt_test != "relationships" or caps.foreign_key:
+                continue
+            from_entity = rel.from_.entity
+            from_attr = rel.from_.attributes[0] if rel.from_.attributes else None
+            to_entity = rel.to.entity
+            to_model = pt_name.get(to_entity) or le_name.get(to_entity)
+            if from_attr and to_model:
+                tests[(from_entity, from_attr)] = to_model
+                objs.append(rel)
+        return tests, objs
+
+
+def _pk_of(model, to_model_name: str) -> str:
+    """Business-key column name of the referenced model, for the relationships
+    test `field`. Falls back to `id`."""
+    for le in model.logical_entities.values():
+        if le.name == to_model_name:
+            for a in le.attributes:
+                if a.role == "business_key":
+                    return a.name
+    return "id"
 
 
 def _business_key(le: LogicalEntity) -> str | None:

@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
@@ -121,11 +120,7 @@ def test_p4_rename_by_ulid_no_orphans(model_dir: Path):
     assert renamed is not None and renamed.name == "TradingPartner"
 
 
-# --- Property 2: reverse(generate(M)) ~= M  (reverse pkg lands in M3) ----------
-
-
-@pytest.mark.xfail(reason="reverse engineering package is M3; see spec §12", strict=True)
-def test_p2_reverse_roundtrip():  # pragma: no cover
-    from mdl_reverse import reverse  # noqa: F401
-
-    raise AssertionError("not yet implemented")
+# --- Property 2: reverse(generate(M)) ~= M -----------------------------------
+# Implemented in M3; the real round-trip + lossy-set assertions live in
+# packages/reverse/tests/test_reverse_roundtrip.py (that package depends on both
+# emit-dbt and reverse, so the test belongs there, not here).

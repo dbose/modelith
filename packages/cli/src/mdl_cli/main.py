@@ -18,9 +18,13 @@ from mdl_core.repo import ModelRepo
 from mdl_core.validate import validate as run_validate
 from mdl_emit_dbt.emitter import DbtEmitter
 from mdl_reverse.drift import DriftSeverity, compute_drift
+from mdl_reverse.ledger import DecisionLedger, Verdict
 from mdl_reverse.manifest import read_manifest
 from mdl_reverse.reconcile import reconcile
 from mdl_reverse.render import render_json, render_markdown, render_text
+from mdl_reverse.reverse import reverse as run_reverse
+from mdl_reverse.schema_reader import read_schema_yml
+from mdl_reverse.writer import write_model as write_reversed
 
 app = typer.Typer(help="Modelith: ontology-anchored, git-native data modeling for dbt.")
 
@@ -115,6 +119,55 @@ def generate(
         raise typer.Exit(1)
     verb = "would write" if dry_run else "wrote"
     typer.secho(f"{verb} {len(result.files)} files to {out}", fg=typer.colors.GREEN)
+
+
+@app.command()
+def reverse(
+    project: Path = typer.Option(
+        ..., "--project", help="Path to a dbt project (manifest.json or an emitted schema.yml)"
+    ),
+    out: Path = typer.Option(Path("model"), "--out", "-o", help="Where to write the model"),
+    target: str = typer.Option("duckdb_dev", "--target", "-t"),
+    name: str = typer.Option("reversed_model", "--name"),
+    interactive: bool = typer.Option(
+        False, "--interactive", help="Prompt to accept/reject medium-confidence proposals"
+    ),
+) -> None:
+    """Reverse-engineer a dbt project into a Modelith model (spec §6)."""
+    # Accept either a manifest.json or a schema.yml (warehouse-free path).
+    if project.name.endswith(".yml") or project.name.endswith(".yaml"):
+        proj = read_schema_yml(project)
+    else:
+        from mdl_reverse.manifest import read_manifest as _rm
+
+        proj = _rm(project)
+
+    ledger = DecisionLedger.load(out)
+    result = run_reverse(
+        proj, project_name=name, target=target, ledger=ledger, interactive=interactive
+    )
+
+    if interactive:
+        _prompt_proposals(ledger, result, out, target)
+
+    write_reversed(result.model, out)
+    ledger.save(out)
+
+    typer.secho(
+        f"reversed {result.logical_count()} entities "
+        f"({len(result.excluded)} staging/intermediate excluded); "
+        f"{len(ledger.pending())} proposals pending review",
+        fg=typer.colors.GREEN,
+    )
+    for d in result.proposals:
+        mark = {"accepted": "✓", "rejected": "✗", "proposed": "?"}[d.verdict.value]
+        typer.echo(f"  {mark} [{d.confidence.value}] {d.subject}")
+
+
+def _prompt_proposals(ledger: DecisionLedger, result, out: Path, target: str) -> None:
+    for d in list(ledger.pending()):
+        ans = typer.prompt(f"Accept? [{d.confidence.value}] {d.subject} (y/n)", default="n")
+        d.verdict = Verdict.accepted if ans.lower().startswith("y") else Verdict.rejected
 
 
 @app.command()
