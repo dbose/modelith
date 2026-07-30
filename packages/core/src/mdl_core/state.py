@@ -1,17 +1,34 @@
-"""Generation state (spec §5.2).
+"""Generation state (spec §5.2; sharded per collaboration model §6.2).
 
-.mdl/state/generation.json records, per emitted file: path, contributing ULIDs,
-subgraph fingerprint, emitted content hash, emitter version, spec versions.
-This is the merge base for three-way merge (§5.3) and is committed to git.
+Records, per emitted file: path, contributing ULIDs, subgraph fingerprint,
+emitted content hash, emitter version, spec versions. This is the merge base for
+three-way merge (§5.3) and is committed to git.
+
+One monolithic generation.json is a guaranteed merge hotspot on an active repo:
+two engineers touching different models would conflict on the same file. So the
+state is SHARDED — one small JSON per emitted artifact, path-hashed:
+
+    .mdl/state/a3/f21c8e4b.json
+
+Two engineers touching different models touch different state files and never
+conflict. A legacy generation.json is read (and migrated to shards on the next
+save) so existing repos upgrade transparently.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
-STATE_REL = ".mdl/state/generation.json"
+STATE_REL = ".mdl/state"
+_LEGACY_FILE = "generation.json"
+
+
+def _shard_rel(artifact_path: str) -> str:
+    h = hashlib.sha256(artifact_path.encode("utf-8")).hexdigest()
+    return f"{h[:2]}/{h[2:12]}.json"
 
 
 @dataclass
@@ -38,19 +55,45 @@ class GenerationState:
 
     @classmethod
     def load(cls, root: Path) -> GenerationState:
-        p = root / STATE_REL
-        if not p.exists():
-            return cls()
-        data = json.loads(p.read_text(encoding="utf-8"))
-        files = {k: FileState(**v) for k, v in data.get("files", {}).items()}
+        state_dir = root / STATE_REL
+        files: dict[str, FileState] = {}
+
+        # legacy single-file format (pre-sharding)
+        legacy = state_dir / _LEGACY_FILE
+        if legacy.exists():
+            data = json.loads(legacy.read_text(encoding="utf-8"))
+            files.update({k: FileState(**v) for k, v in data.get("files", {}).items()})
+
+        if state_dir.exists():
+            for shard in sorted(state_dir.glob("*/*.json")):
+                try:
+                    v = json.loads(shard.read_text(encoding="utf-8"))
+                    fs = FileState(**v)
+                    files[fs.path] = fs
+                except (json.JSONDecodeError, TypeError):
+                    continue  # a corrupt shard costs one regeneration, not a crash
         return cls(files=files)
 
     def save(self, root: Path) -> None:
-        p = root / STATE_REL
-        p.parent.mkdir(parents=True, exist_ok=True)
-        data = {"files": {k: asdict(v) for k, v in sorted(self.files.items())}}
-        # sort_keys + trailing newline => stable, diff-friendly, idempotent bytes
-        p.write_text(
-            json.dumps(data, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
+        state_dir = root / STATE_REL
+        state_dir.mkdir(parents=True, exist_ok=True)
+
+        wanted: set[str] = set()
+        for fs in self.files.values():
+            rel = _shard_rel(fs.path)
+            wanted.add(rel)
+            shard = state_dir / rel
+            shard.parent.mkdir(parents=True, exist_ok=True)
+            # sort_keys + newline => stable, diff-friendly, idempotent bytes
+            shard.write_text(
+                json.dumps(asdict(fs), indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+
+        # prune shards for artifacts that no longer exist + the legacy file
+        for shard in state_dir.glob("*/*.json"):
+            if str(shard.relative_to(state_dir)) not in wanted:
+                shard.unlink()
+        legacy = state_dir / _LEGACY_FILE
+        if legacy.exists():
+            legacy.unlink()

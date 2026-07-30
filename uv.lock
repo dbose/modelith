@@ -485,7 +485,7 @@ wheels = [
 [[package]]
 name = "modelith"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "modelith-adapter-collibra" },
     { name = "modelith-cli" },

@@ -26,6 +26,7 @@ def validate(model: Model) -> DiagnosticSet:
     diags = DiagnosticSet()
     _check_referential_integrity(model, diags)
     _check_ontology_layers(model, diags)
+    _check_proposed_alignments(model, diags)
     naming_diags, _ = naming_lint(model)
     diags.extend(naming_diags)
     return diags
@@ -126,3 +127,22 @@ def check_rename_orphans(model: Model, ulid: str) -> list[str]:
         if rel.from_.entity == ulid or rel.to.entity == ulid:
             orphans.append(f"relationship {rel.name}")
     return orphans
+
+
+def _check_proposed_alignments(model: Model, diags: DiagnosticSet) -> None:
+    """SME-proposed ontology alignments are warnings until an architect promotes
+    them to accepted (collaboration model §5.1)."""
+    objs = [*model.conceptual_entities.values(), *model.terms.values()]
+    for o in objs:
+        if o.ontology and o.ontology.status == "proposed":
+            diags.add(
+                Diagnostic(
+                    code="MDL-W206",
+                    severity=Severity.warning,
+                    message=(
+                        f"{o.name!r}: ontology alignment to {o.ontology.aligns_to!r} is "
+                        f"proposed — awaiting architect promotion (mdl ontology promote)"
+                    ),
+                    path=o.id,
+                )
+            )

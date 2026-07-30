@@ -412,6 +412,16 @@ def _set_unmanaged(repo: ModelRepo, p: dict) -> None:
         node.pop("unmanaged", None)
 
 
+def _promote_alignment(repo: ModelRepo, p: dict) -> None:
+    """Promote a proposed ontology alignment to accepted (collab model §5.1)."""
+    _require(p, "id")
+    _, node = _conceptual_node(repo, p["id"])
+    ont = node.get("ontology")
+    if not ont or not ont.get("aligns_to"):
+        raise CommandError("object has no ontology alignment to promote")
+    ont["status"] = "accepted"
+
+
 _HANDLERS = {
     "create_entity": _create_entity,
     "rename_entity": _rename_entity,
@@ -421,6 +431,7 @@ _HANDLERS = {
     "set_subject_area": _set_subject_area,
     "set_pattern": _set_pattern,
     "set_unmanaged": _set_unmanaged,
+    "promote_alignment": _promote_alignment,
     "create_subject_area": _create_subject_area,
     "create_term": _create_term,
     "add_attribute": _add_attribute,

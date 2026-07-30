@@ -1,0 +1,52 @@
+# Collaboration model §4: `mdl classify` runs FIRST on every PR and drives the
+# required checks + reviewers. Route A (meaning) never requires an engineer —
+# a definition fix must not queue behind a sprint.
+#
+# Copy into your repo at .github/workflows/mdl-classify.yml.
+name: mdl-classify
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  classify:
+    runs-on: ubuntu-latest
+    outputs:
+      primary: ${{ steps.classify.outputs.primary }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Install Modelith
+        run: uv tool install modelith
+      - name: Classify change routes
+        id: classify
+        run: |
+          mdl classify --base "origin/${{ github.base_ref }}" --format json > routes.json
+          cat routes.json
+          echo "primary=$(jq -r .primary routes.json)" >> "$GITHUB_OUTPUT"
+      - name: Comment routes on the PR
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: mdl-classify
+          message: |
+            ### ◮ Modelith change routes
+            ```
+            $(mdl classify --base "origin/${{ github.base_ref }}")
+            ```
+      - name: Route gates
+        run: |
+          PRIMARY=$(jq -r .primary routes.json)
+          case "$PRIMARY" in
+            A) mdl validate -m model && mdl ontology check -m model ;;
+            B) mdl validate -m model && mdl generate -m model --dry-run -o transform/warehouse ;;
+            C|B) test -f transform/warehouse/target/manifest.json && \
+                 mdl drift --manifest transform/warehouse/target/manifest.json -m model --check || true ;;
+            E) mdl gov conformance --profile governance-profile.yaml -m model ;;
+            null) echo "no route-relevant changes" ;;
+          esac

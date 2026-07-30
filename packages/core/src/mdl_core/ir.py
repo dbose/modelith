@@ -60,6 +60,9 @@ class OntologyAlignment(_Base):
     layer: OntologyLayer | None = None
     no_industry_equivalent: bool = False
     rationale: str | None = None
+    # SME-proposed alignments await architect promotion (collab model §5.1);
+    # None is treated as accepted for models predating the field.
+    status: Literal["proposed", "accepted"] | None = None
 
 
 class Stewardship(_Base):

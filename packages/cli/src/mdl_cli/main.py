@@ -61,10 +61,29 @@ def _load(model_dir: Path) -> ModelRepo:
 
 @app.command()
 def init(
-    path: Path = typer.Argument(Path("."), help="Directory to scaffold the model repo in"),
+    path: Path = typer.Argument(Path("."), help="Directory to scaffold in"),
     name: str = typer.Option("modelith_model", help="Project name"),
+    workspace: bool = typer.Option(
+        False,
+        "--workspace",
+        help="Scaffold the full collaboration topology: model/ + transform/warehouse "
+        "siblings, CODEOWNERS, .code-workspace, merge driver (collab model §2.1)",
+    ),
+    git_hooks: bool = typer.Option(
+        False, "--git-hooks", help="Only wire the semantic merge driver (§6.1)"
+    ),
 ) -> None:
-    """Scaffold a model repo."""
+    """Scaffold a model repo, or a full collaboration workspace."""
+    from mdl_cli.collab import ensure_git_hooks, scaffold_workspace
+
+    if git_hooks:
+        for line in ensure_git_hooks(path):
+            typer.secho(f"  {line}", fg=typer.colors.GREEN)
+        return
+    if workspace:
+        for line in scaffold_workspace(path, name, scaffold):
+            typer.secho(f"  {line}", fg=typer.colors.GREEN)
+        return
     files = scaffold(path, project_name=name)
     typer.secho(f"Scaffolded {len(files)} files under {path}", fg=typer.colors.GREEN)
 
@@ -227,6 +246,111 @@ def _prompt_proposals(ledger: DecisionLedger, result, out: Path, target: str) ->
         d.verdict = Verdict.accepted if ans.lower().startswith("y") else Verdict.rejected
 
 
+@app.command("merge-driver")
+def merge_driver(
+    base: Path = typer.Argument(...),
+    ours: Path = typer.Argument(...),
+    theirs: Path = typer.Argument(...),
+    state: bool = typer.Option(False, "--state", help="Generation-state mode: take ours"),
+) -> None:
+    """Git merge driver: structural, ULID-keyed merge of model YAML (§6.1).
+    Two people adding different attributes merge clean; editing the same field
+    conflicts. Wire it with `mdl init --git-hooks`."""
+    from mdl_core.merge_driver import run_merge_driver
+
+    raise typer.Exit(run_merge_driver(base, ours, theirs, state=state))
+
+
+@app.command()
+def classify(
+    base: str = typer.Option("origin/main", "--base", help="Base ref for the diff"),
+    files: list[str] = typer.Option(None, "--files", help="Explicit paths (skip git diff)"),
+    model_root: str = typer.Option("model", "--model-root"),
+    transform_root: str = typer.Option("transform", "--transform-root"),
+    fmt: str = typer.Option("text", "--format", help="text|json"),
+) -> None:
+    """Classify a change set into collaboration routes A-E (§4) and print the
+    required gates + reviewers. Runs first in CI."""
+    import json as _json
+
+    from mdl_cli.collab import changed_paths, classify_paths
+
+    paths = list(files) if files else changed_paths(base)
+    c = classify_paths(paths, model_root=model_root, transform_root=transform_root)
+    if fmt == "json":
+        typer.echo(_json.dumps(c.to_dict(), indent=2))
+        return
+    if not c.routes:
+        typer.secho("no route-relevant changes", fg=typer.colors.GREEN)
+        return
+    from mdl_cli.collab import _ROUTE_META
+
+    names = {r: f"{r} ({_ROUTE_META[r]['name']})" for r in c.routes}
+    route_list = ", ".join(names[r] for r in c.routes)
+    typer.secho(f"routes: {route_list}  ->  primary {c.primary}", fg=typer.colors.CYAN)
+    typer.echo("gates:     " + "; ".join(c.gates))
+    typer.echo("reviewers: " + ", ".join(f"@{r}" for r in c.reviewers))
+    for u in c.unmatched:
+        typer.secho(f"  unmatched: {u}", fg=typer.colors.YELLOW)
+
+
+@app.command()
+def unmanage(
+    entity: str = typer.Argument(..., help="Logical entity name"),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    reason: str = typer.Option(..., "--reason", help="Why (e.g. 'hotfix INC-4821')"),
+    expires: str = typer.Option("14d", "--expires", help="Debt expiry, e.g. 14d"),
+) -> None:
+    """The debt valve (§7): hand an entity's SQL to engineers NOW, on the record.
+    Writes .mdl/debt.yaml; after expiry, drift --check escalates to breaking."""
+    from mdl_cli.collab import add_debt
+    from mdl_core.commands import CommandError, apply_command
+
+    repo = _load(model_dir)
+    le = next((e for e in repo.model.logical_entities.values() if e.name == entity), None)
+    if le is None:
+        typer.secho(f"no logical entity {entity!r}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+    days = int(expires.rstrip("d") or "14")
+    try:
+        apply_command(model_dir, "set_unmanaged", {"id": le.id, "unmanaged": True})
+    except CommandError as e:
+        typer.secho(str(e), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from e
+    entry = add_debt(model_dir, entity, reason, days)
+    typer.secho(
+        f"{entity!r} unmanaged; debt recorded (expires {entry['expires']}) — "
+        f"file a tracking issue for the owning architect",
+        fg=typer.colors.YELLOW,
+    )
+
+
+debt_app = typer.Typer(help="The committed debt ledger (§7).")
+app.add_typer(debt_app, name="debt")
+
+
+@debt_app.command("list")
+def debt_list(model_dir: Path = typer.Option(Path("."), "--model-dir", "-m")) -> None:
+    import datetime as _dt
+
+    from mdl_cli.collab import load_debt
+
+    entries = load_debt(model_dir)
+    if not entries:
+        typer.secho("no modeling debt", fg=typer.colors.GREEN)
+        return
+    today = _dt.date.today().isoformat()
+    for d in entries:
+        expired = str(d.get("expires", "")) < today
+        mark = "EXPIRED" if expired else "open"
+        color = typer.colors.RED if expired else typer.colors.YELLOW
+        typer.secho(
+            f"  [{mark}] {d['entity']}: {d['reason']} "
+            f"(since {d['created']}, expires {d['expires']})",
+            fg=color,
+        )
+
+
 @app.command()
 def drift(
     manifest: Path = typer.Option(..., "--manifest", help="Path to target/manifest.json"),
@@ -248,6 +372,24 @@ def drift(
         raise typer.Exit(4) from e
 
     report = compute_drift(repo.model, proj, tgt)
+
+    # §7: expired modeling debt escalates from warn to error in --check
+    from mdl_cli.collab import expired_debt
+    from mdl_reverse.drift import DriftItem, DriftKind
+    from mdl_reverse.drift import DriftSeverity as _DS
+
+    for d in expired_debt(model_dir):
+        report.add(
+            DriftItem(
+                severity=_DS.breaking,
+                kind=DriftKind.unmanaged_model,
+                model=str(d.get("entity")),
+                detail=(
+                    f"modeling debt EXPIRED on {d.get('expires')}: {d.get('entity')} "
+                    f"({d.get('reason')}) — re-manage or renew via the modeling review"
+                ),
+            )
+        )
 
     if fmt == "json":
         typer.echo(render_json(report))
@@ -321,6 +463,30 @@ def ontology_check(
 
     if diags.has(Severity.error):
         raise typer.Exit(1)
+
+
+@ontology_app.command("promote")
+def ontology_promote(
+    name: str = typer.Argument(..., help="Conceptual entity or term name"),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+) -> None:
+    """Promote a proposed ontology alignment to accepted (§5.1: SMEs propose,
+    architects promote)."""
+    from mdl_core.commands import CommandError, apply_command
+
+    repo = _load(model_dir)
+    candidates = [*repo.model.conceptual_entities.values(), *repo.model.terms.values()]
+    objs = {o.name: o for o in candidates}
+    obj = objs.get(name)
+    if obj is None:
+        typer.secho(f"no conceptual entity or term {name!r}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+    try:
+        apply_command(model_dir, "promote_alignment", {"id": obj.id})
+    except CommandError as e:
+        typer.secho(str(e), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from e
+    typer.secho(f"alignment on {name!r} promoted to accepted", fg=typer.colors.GREEN)
 
 
 @ontology_app.command("vendor")

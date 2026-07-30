@@ -66,6 +66,24 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
 
   const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   if (root) {
+    // Make `mdl` available in every integrated terminal (standalone AND
+    // devcontainer — the collection applies wherever the extension host runs).
+    // If detection resolved to a concrete binary (.venv or modelith.mdlPath),
+    // its directory is prepended to PATH; `uv run mdl` needs nothing extra.
+    try {
+      const bin = await findMdl(root);
+      if (path.isAbsolute(bin.cmd)) {
+        ctx.environmentVariableCollection.prepend(
+          "PATH",
+          path.dirname(bin.cmd) + path.delimiter,
+        );
+        ctx.environmentVariableCollection.description =
+          "Adds the Modelith `mdl` CLI to integrated terminals";
+      }
+    } catch (e) {
+      out.appendLine(`[mdl] detection failed: ${e}`);
+    }
+
     try {
       client = await startLsp(root);
       ctx.subscriptions.push({ dispose: () => void client?.stop() });
