@@ -1,0 +1,46 @@
+# Reference profile: Collibra out-of-the-box operating model (spec §0.2.4, §9.2).
+# Fork this for your tenant — the mapping is a declarative artifact YOU own.
+profile: collibra
+version: 1
+community: "Data Governance Council"
+
+domains:
+  logical_model: {name: "Enterprise Logical Model", type: "Business Asset Domain"}
+  physical:      {name: "Snowflake PROD",           type: "Physical Data Dictionary"}
+  glossary:      {name: "Enterprise Glossary",      type: "Glossary"}
+
+asset_types:
+  conceptual_entity:
+    target: "Business Asset"
+    domain: logical_model
+    attributes:
+      Definition: "{{ definition }}"
+      "Ontology IRI": "{{ ontology.aligns_to }}"
+      "Ontology Layer": "{{ ontology.layer }}"
+  logical_entity:
+    target: "Data Entity"
+    domain: logical_model
+  physical_table:
+    target: "Table"
+    domain: physical
+  attribute:
+    target: "Column"
+    domain: physical
+  term:
+    target: "Business Term"
+    domain: glossary
+
+relations:
+  realises:      {type: "represents / represented by", direction: source_to_target}
+  aligns_to:     {type: "is classified by / classifies"}
+  has_attribute: {type: "is part of / contains"}
+
+responsibilities:
+  owner:   {role: "Owner"}
+  steward: {role: "Data Steward"}
+
+writeback:
+  - collibra_attribute: "Data Classification"
+    model_path: "governance.classification"
+  - collibra_attribute: "Retention Period"
+    model_path: "governance.retention"

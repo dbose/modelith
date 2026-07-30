@@ -13,11 +13,14 @@ dependencies = [
     "modelith-reverse",
     "modelith-ontology",
     "modelith-emit-semantic",
+    "modelith-governance",
+    "modelith-adapter-collibra",
     "modelith-cli",
 ]
 
 [tool.uv.workspace]
-members = ["packages/*"]
+members = ["packages/*", "packages/adapters/*"]
+exclude = ["packages/adapters"]
 
 [tool.uv.sources]
 modelith-core = { workspace = true }
@@ -25,6 +28,8 @@ modelith-emit-dbt = { workspace = true }
 modelith-reverse = { workspace = true }
 modelith-ontology = { workspace = true }
 modelith-emit-semantic = { workspace = true }
+modelith-governance = { workspace = true }
+modelith-adapter-collibra = { workspace = true }
 modelith-cli = { workspace = true }
 
 [dependency-groups]

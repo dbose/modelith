@@ -1,0 +1,36 @@
+# CI template 4 (spec §11): `mdl-gov-sync` on merge to main.
+# Plan the governance sync, require approval on breaking changes, then apply.
+# `plan` never writes; `apply` refuses a plan it did not produce.
+#
+# Copy into your repo at .github/workflows/mdl-gov-sync.yml and set secrets.
+name: mdl-gov-sync
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  gov-sync:
+    runs-on: ubuntu-latest
+    environment: governance   # gate apply behind a protected environment (approval)
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Install Modelith
+        run: uv tool install modelith
+      - name: Conformance check (bespoke profile)
+        run: mdl gov conformance --profile governance-profile.yaml --model-dir model
+      - name: Plan (never writes)
+        run: mdl gov plan --profile governance-profile.yaml --model-dir model --out gov-plan.json
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gov-plan
+          path: gov-plan.json
+      # Approval happens via the `governance` environment protection rule above.
+      - name: Apply approved plan
+        run: mdl gov apply gov-plan.json --base-url "$COLLIBRA_URL" --token "$COLLIBRA_TOKEN"
+        env:
+          COLLIBRA_URL: ${{ secrets.COLLIBRA_URL }}
+          COLLIBRA_TOKEN: ${{ secrets.COLLIBRA_TOKEN }}

@@ -1,0 +1,47 @@
+# Reference profile: dbt-heavy analytics engineering (spec §0.2.4).
+# Maps to a Collibra operating model tuned for analytics teams: metrics become
+# Data Products, logical entities become Data Sets.
+profile: collibra
+version: 1
+community: "Analytics Engineering"
+
+domains:
+  models:   {name: "dbt Models",        type: "Business Asset Domain"}
+  physical: {name: "Warehouse",         type: "Physical Data Dictionary"}
+  glossary: {name: "Metrics Glossary",  type: "Glossary"}
+
+asset_types:
+  conceptual_entity:
+    target: "Data Concept"
+    domain: models
+    attributes:
+      Definition: "{{ definition }}"
+      "Ontology IRI": "{{ ontology.aligns_to }}"
+  logical_entity:
+    target: "Data Set"
+    domain: models
+  physical_table:
+    target: "Table"
+    domain: physical
+  attribute:
+    target: "Column"
+    domain: physical
+  metric:
+    target: "Data Product"
+    domain: glossary
+  term:
+    target: "Business Term"
+    domain: glossary
+
+relations:
+  realises:      {type: "represents / represented by"}
+  aligns_to:     {type: "is classified by / classifies"}
+  has_attribute: {type: "is part of / contains"}
+
+responsibilities:
+  owner:   {role: "Data Product Owner"}
+  steward: {role: "Analytics Engineer"}
+
+writeback:
+  - collibra_attribute: "Certification Status"
+    model_path: "governance.classification"

@@ -1,0 +1,24 @@
+# Reference profile: minimal (spec §0.2.4).
+# The smallest useful mapping — logical entities and their columns only. A
+# starting point to grow from.
+profile: minimal
+version: 1
+
+domains:
+  main: {name: "Data Catalog", type: "Physical Data Dictionary"}
+
+asset_types:
+  logical_entity:
+    target: "Table"
+    domain: main
+    attributes:
+      Description: "{{ definition }}"
+  attribute:
+    target: "Column"
+    domain: main
+
+relations:
+  has_attribute: {type: "contains"}
+
+responsibilities:
+  owner: {role: "Owner"}

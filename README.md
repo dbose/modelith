@@ -16,8 +16,8 @@ the load-bearing foundation the spec requires before anything else proceeds.
 | **M2** | `mdl drift --check/--reconcile` + severity classification + PR-comment/Mermaid render + CI templates | ✅ done, tested |
 | **M3** | Reverse engineering + decision ledger + interactive lifting + Snowflake/Redshift/Iceberg/Trino adapters + property 2 | ✅ done, tested |
 | **M4** | Generic ontology registry (FIBO = one example) + four-layer validation + RDF/SHACL + OSI 0.1.1 emit/import + MetricFlow + erwin XML import | ✅ done, tested |
-| M5 | GovernanceGraph + mapping DSL + adapter SPI + Collibra + OpenLineage | ⬜ |
-| M6 | Web canvas (read-only first) — **not before M5 per spec §14** | ⬜ |
+| **M5** | Neutral GovernanceGraph + Jinja mapping DSL + adapter SPI + conformance kit + Collibra adapter + three reference profiles + OpenLineage | ✅ done, tested |
+| M6 | Web canvas (read-only first) — **now unblocked (M5 complete)** | ⬜ next |
 | +   | VS Code extension (standalone + devcontainer) — see `docs/vscode-plan.md` | ⬜ planned |
 
 ## Layout
@@ -29,9 +29,13 @@ packages/
   reverse/        # manifest reader, drift + reconcile, reverse engineering, decision ledger, erwin import
   ontology/       # generic vocabulary registry, four-layer validation, RDF/OWL + SHACL export, lock
   emit-semantic/  # MetricFlow + OSI (version-isolated v0_1_1), OSI import, joinability/fan-out validation
+  governance/     # neutral GovernanceGraph, Jinja mapping DSL, adapter SPI, conformance kit, OpenLineage
+  adapters/
+    collibra/     # Collibra governance adapter (depends only on governance)
   cli/            # `mdl`
 profiles/
-  ci/             # shippable CI workflow templates (mdl-validate, mdl-drift)
+  ci/             # shippable CI workflow templates (mdl-validate, mdl-drift, mdl-gov-sync)
+  governance/     # three reference governance-profile.yaml (collibra-oob, dbt-analytics, minimal)
 ```
 
 The layering rule (spec §1.3) is honored: `core` depends on nothing else in-repo;
@@ -124,3 +128,23 @@ changes. IRIs are resolved against the loaded graph; unresolvable IRIs are error
 `.mdl/lock.yaml` pins the OSI tag, dbt version, and each vocabulary version.
 Joinability + fan-out risk (many-to-many, unaggregated measures across one-to-many)
 is validated before any semantic emission (§8).
+
+## Governance (M5)
+
+```bash
+mdl gov conformance --profile governance-profile.yaml -m model   # validate a bespoke mapping (§9.5)
+mdl gov plan --profile governance-profile.yaml -m model -o plan.json   # never writes (§9.3)
+mdl gov apply plan.json --base-url $URL --token $TOKEN           # refuses a foreign/edited plan
+mdl gov pull --profile governance-profile.yaml                   # writeback into the model (§9.4)
+mdl gov lineage -m model                                         # OpenLineage payload (§9.6)
+```
+
+Core emits a **neutral GovernanceGraph**; adapters consume it (the Collibra adapter
+imports only `governance`, never `core`). The keystone (§9.1) is the deterministic
+`external_id = mdl:<ULID>` derived from the immutable ULID — sync is idempotent, so
+re-running updates and never duplicates. The mapping is a **customer-owned
+`governance-profile.yaml`** with Jinja over the asset (no Python to customise a
+tenant); three reference profiles ship in `profiles/governance/`. The **conformance
+kit** lets a customer validate a bespoke mapping in CI without contacting us (§9.5) —
+this is what keeps the mapping layer a product, not a services line. `plan` never
+writes; `apply` refuses a plan it did not produce (signature check).

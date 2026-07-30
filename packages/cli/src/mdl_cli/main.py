@@ -9,7 +9,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import typer
+from mdl_adapter_collibra import CollibraAdapter, CollibraTransport, MockTransport
 from mdl_emit_semantic import emit_metricflow, emit_osi, import_osi, validate_joinability
+from mdl_governance import Profile, build_graph, emit_openlineage, run_conformance
 from mdl_ontology import (
     build_registry,
     check_layers,
@@ -41,10 +43,12 @@ ontology_app = typer.Typer(help="Ontology stack: search, layer/alignment checks,
 emit_app = typer.Typer(help="Emit semantic-layer artifacts.")
 export_app = typer.Typer(help="Export the model to interchange formats.")
 import_app = typer.Typer(help="Import external models into the IR.")
+gov_app = typer.Typer(help="Governance: plan/apply/pull/conformance against a catalog.")
 app.add_typer(ontology_app, name="ontology")
 app.add_typer(emit_app, name="emit")
 app.add_typer(export_app, name="export")
 app.add_typer(import_app, name="import")
+app.add_typer(gov_app, name="gov")
 
 
 def _load(model_dir: Path) -> ModelRepo:
@@ -375,6 +379,133 @@ def import_erwin_cmd(
         f"{len(model.relationships)} relationships from erwin to {out}",
         fg=typer.colors.GREEN,
     )
+
+
+def _gov_adapter(sandbox: bool, base_url: str | None, token: str | None):
+    """A Collibra adapter. Uses MockTransport for dry/sandbox plans (no live tenant),
+    or the real transport when base_url+token are given."""
+    if base_url and token:
+        return CollibraAdapter(transport=CollibraTransport(base_url, token))
+    return CollibraAdapter(transport=MockTransport())
+
+
+@gov_app.command("conformance")
+def gov_conformance(
+    profile: Path = typer.Option(..., "--profile", help="governance-profile.yaml"),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    strict: bool = typer.Option(False, "--strict", help="Fail if any present kind is unmapped"),
+) -> None:
+    """Validate a bespoke mapping against a fixture model (spec §9.5)."""
+    repo = _load(model_dir)
+    prof = Profile.load(profile)
+    result = run_conformance(repo.model, prof, strict=strict)
+    for w in result.warnings:
+        typer.secho(f"warn: {w}", fg=typer.colors.YELLOW)
+    for e in result.errors:
+        typer.secho(f"error: {e}", fg=typer.colors.RED)
+    if result.passed:
+        typer.secho(
+            f"conformance passed ({result.mapped_assets} assets mapped)", fg=typer.colors.GREEN
+        )
+    else:
+        typer.secho("conformance failed", fg=typer.colors.RED, err=True)
+        raise typer.Exit(4)
+
+
+@gov_app.command("plan")
+def gov_plan(
+    profile: Path = typer.Option(..., "--profile"),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    out: Path = typer.Option(Path("gov-plan.json"), "--out", "-o"),
+    base_url: str = typer.Option(None, "--base-url"),
+    token: str = typer.Option(None, "--token"),
+) -> None:
+    """Produce a human-reviewable sync plan. Never writes to the catalog (§9.3)."""
+    import json
+    from dataclasses import asdict
+
+    repo = _load(model_dir)
+    prof = Profile.load(profile)
+    graph = build_graph(repo.model)
+    adapter = _gov_adapter(True, base_url, token)
+    try:
+        plan = adapter.plan(graph, prof)
+    except Exception as e:  # noqa: BLE001
+        typer.secho(f"plan failed: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(4) from e
+
+    out.write_text(json.dumps(asdict(plan), indent=2, default=str), encoding="utf-8")
+    typer.secho(
+        f"plan: {len(plan.creates())} create, {len(plan.updates())} update -> {out}",
+        fg=typer.colors.GREEN,
+    )
+
+
+@gov_app.command("apply")
+def gov_apply(
+    plan_file: Path = typer.Argument(..., help="plan.json from `mdl gov plan`"),
+    base_url: str = typer.Option(None, "--base-url"),
+    token: str = typer.Option(None, "--token"),
+) -> None:
+    """Execute an approved plan (§9.3). Refuses a plan it did not produce."""
+    import json
+
+    from mdl_governance import ForeignPlanError
+    from mdl_governance.spi import ChangeType, PlannedChange, SyncPlan
+
+    data = json.loads(plan_file.read_text(encoding="utf-8"))
+    plan = SyncPlan(
+        adapter=data["adapter"],
+        profile_name=data["profile_name"],
+        changes=[
+            PlannedChange(
+                external_id=c["external_id"],
+                target_type=c["target_type"],
+                change=ChangeType(c["change"]),
+                name=c["name"],
+                attributes=c.get("attributes", {}),
+                relations=[tuple(r) for r in c.get("relations", [])],
+            )
+            for c in data["changes"]
+        ],
+        signature=data.get("signature", ""),
+    )
+    adapter = _gov_adapter(True, base_url, token)
+    try:
+        result = adapter.apply(plan)
+    except ForeignPlanError as e:
+        typer.secho(f"refused: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(4) from e
+    typer.secho(
+        f"applied {result.applied} ({result.created} created, {result.updated} updated)",
+        fg=typer.colors.GREEN,
+    )
+
+
+@gov_app.command("pull")
+def gov_pull(
+    profile: Path = typer.Option(..., "--profile"),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    base_url: str = typer.Option(None, "--base-url"),
+    token: str = typer.Option(None, "--token"),
+) -> None:
+    """Pull governance-owned fields back into the model (§9.4 writeback)."""
+    prof = Profile.load(profile)
+    adapter = _gov_adapter(True, base_url, token)
+    wb = adapter.pull(prof)
+    typer.secho(f"pulled {len(wb.values)} writeback value(s)", fg=typer.colors.GREEN)
+    for v in wb.values:
+        typer.echo(f"  {v.external_id} {v.model_path} = {v.value}")
+
+
+@gov_app.command("lineage")
+def gov_lineage(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    out: Path = typer.Option(None, "--out", "-o"),
+) -> None:
+    """Emit an OpenLineage payload (spec §9.6)."""
+    repo = _load(model_dir)
+    _emit_text(emit_openlineage(repo.model), out, "openlineage")
 
 
 def _emit_text(text: str, out: Path | None, label: str) -> None:
