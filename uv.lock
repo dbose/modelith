@@ -8,6 +8,7 @@ members = [
     "modelith-cli",
     "modelith-core",
     "modelith-emit-dbt",
+    "modelith-reverse",
 ]
 
 [[package]]
@@ -127,6 +128,18 @@ toml = [
 ]
 
 [[package]]
+name = "dbt-artifacts-parser"
+version = "0.14.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pydantic" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c5/5f/2d31b9fd61e650625e61fbff776c97c6dfaf0f8ed7b8cce7df4de6ac34a8/dbt_artifacts_parser-0.14.0.tar.gz", hash = "sha256:c4da799afa80a3c2c6c7e51c3b5d2681be9fdd53174b3909a3ce71cfb43d5148", size = 72599 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f5/d4/ba7cbf5dd88ddd9f76b27de01adf5f4e03e72ecb0866f2b9f68f465091e2/dbt_artifacts_parser-0.14.0-py3-none-any.whl", hash = "sha256:e983510193cacaf6e6152e41cccfafc6cece592899f306f3143dc2f8b15ea394", size = 95232 },
+]
+
+[[package]]
 name = "hypothesis"
 version = "6.163.0"
 source = { registry = "https://pypi.org/simple" }
@@ -229,6 +242,7 @@ dependencies = [
     { name = "modelith-cli" },
     { name = "modelith-core" },
     { name = "modelith-emit-dbt" },
+    { name = "modelith-reverse" },
 ]
 
 [package.dev-dependencies]
@@ -244,6 +258,7 @@ requires-dist = [
     { name = "modelith-cli", editable = "packages/cli" },
     { name = "modelith-core", editable = "packages/core" },
     { name = "modelith-emit-dbt", editable = "packages/emit-dbt" },
+    { name = "modelith-reverse", editable = "packages/reverse" },
 ]
 
 [package.metadata.requires-dev]
@@ -261,6 +276,7 @@ source = { editable = "packages/cli" }
 dependencies = [
     { name = "modelith-core" },
     { name = "modelith-emit-dbt" },
+    { name = "modelith-reverse" },
     { name = "typer" },
 ]
 
@@ -268,6 +284,7 @@ dependencies = [
 requires-dist = [
     { name = "modelith-core", editable = "packages/core" },
     { name = "modelith-emit-dbt", editable = "packages/emit-dbt" },
+    { name = "modelith-reverse", editable = "packages/reverse" },
     { name = "typer", specifier = ">=0.12" },
 ]
 
@@ -296,6 +313,21 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "modelith-core", editable = "packages/core" }]
+
+[[package]]
+name = "modelith-reverse"
+version = "0.1.0"
+source = { editable = "packages/reverse" }
+dependencies = [
+    { name = "dbt-artifacts-parser" },
+    { name = "modelith-core" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "dbt-artifacts-parser", specifier = ">=0.5" },
+    { name = "modelith-core", editable = "packages/core" },
+]
 
 [[package]]
 name = "packaging"

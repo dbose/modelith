@@ -1,0 +1,42 @@
+# CI template 2 (spec §11): `mdl-drift` on every dbt PR.
+# Fails on breaking drift (exit 2) and posts the classified diff as a PR comment
+# with a Mermaid diagram of the affected subgraph.
+#
+# Copy into your repo at .github/workflows/mdl-drift.yml and adjust paths.
+name: mdl-drift
+
+on:
+  pull_request:
+    paths:
+      - "models/**"
+      - "dbt_project.yml"
+
+permissions:
+  contents: read
+  pull-requests: write   # to post the drift comment
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Install Modelith + dbt
+        run: uv tool install modelith
+      - name: Compile dbt (no warehouse needed)
+        run: |
+          uv tool run --from dbt-duckdb dbt compile --empty || true
+      - name: Render drift comment
+        id: drift
+        run: |
+          mdl drift --manifest target/manifest.json --model-dir model \
+            --format mermaid > drift-comment.md || true
+          mdl drift --manifest target/manifest.json --model-dir model \
+            --format json > drift.json || true
+      - name: Post PR comment
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          path: drift-comment.md
+      - name: Gate on breaking drift
+        run: mdl drift --manifest target/manifest.json --model-dir model --check

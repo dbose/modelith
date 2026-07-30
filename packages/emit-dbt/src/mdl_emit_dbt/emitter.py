@@ -25,7 +25,6 @@ from mdl_core.merge import MergeOutcome, MergeResult, merge_file
 from mdl_core.regions import ParsedFile, Region, RegionKind, render
 from mdl_core.state import FileState, GenerationState
 from mdl_core.yaml_io import dump_str
-
 from mdl_emit_dbt import macros as macro_pkg
 from mdl_emit_dbt.platforms import get_adapter
 
@@ -229,7 +228,7 @@ class DbtEmitter:
                 fp_objs.append(pt)
             columns = []
             for attr in le.attributes:
-                dom = self.model.domains.get(attr.domain) if attr.domain else None
+                dom = self.model.domain_by_name(attr.domain)
                 sql_type = (
                     self.adapter.map_domain(dom).sql_type
                     if dom

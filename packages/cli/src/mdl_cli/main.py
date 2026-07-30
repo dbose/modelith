@@ -9,14 +9,18 @@ from __future__ import annotations
 from pathlib import Path
 
 import typer
+
+from mdl_cli.scaffold import scaffold
 from mdl_core.diagnostics import Severity
 from mdl_core.merge import MergeOutcome
 from mdl_core.naming import lint as naming_lint
 from mdl_core.repo import ModelRepo
 from mdl_core.validate import validate as run_validate
 from mdl_emit_dbt.emitter import DbtEmitter
-
-from mdl_cli.scaffold import scaffold
+from mdl_reverse.drift import DriftSeverity, compute_drift
+from mdl_reverse.manifest import read_manifest
+from mdl_reverse.reconcile import reconcile
+from mdl_reverse.render import render_json, render_markdown, render_text
 
 app = typer.Typer(help="Modelith: ontology-anchored, git-native data modeling for dbt.")
 
@@ -111,6 +115,52 @@ def generate(
         raise typer.Exit(1)
     verb = "would write" if dry_run else "wrote"
     typer.secho(f"{verb} {len(result.files)} files to {out}", fg=typer.colors.GREEN)
+
+
+@app.command()
+def drift(
+    manifest: Path = typer.Option(..., "--manifest", help="Path to target/manifest.json"),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    target: str = typer.Option(None, "--target", "-t"),
+    check: bool = typer.Option(False, "--check", help="CI gate: exit 2 on breaking drift"),
+    reconcile_: bool = typer.Option(
+        False, "--reconcile", help="Apply additive/cosmetic deltas to the model"
+    ),
+    fmt: str = typer.Option("text", "--format", help="text|json|mermaid"),
+) -> None:
+    """Compare the committed model to a compiled dbt manifest (spec §5.4)."""
+    repo = _load(model_dir)
+    tgt = target or repo.model.config.dbt_target or "duckdb_dev"
+    try:
+        proj = read_manifest(manifest)
+    except FileNotFoundError as e:
+        typer.secho(str(e), fg=typer.colors.RED, err=True)
+        raise typer.Exit(4) from e
+
+    report = compute_drift(repo.model, proj, tgt)
+
+    if fmt == "json":
+        typer.echo(render_json(report))
+    elif fmt == "mermaid":
+        typer.echo(render_markdown(report))
+    else:
+        typer.echo(render_text(report))
+
+    if reconcile_:
+        result = reconcile(repo, report, tgt)
+        repo.save()
+        typer.secho(
+            f"reconciled {len(result.applied)} delta(s); "
+            f"skipped {result.skipped_breaking} breaking",
+            fg=typer.colors.GREEN,
+        )
+        for line in result.applied:
+            typer.echo(f"  + {line}")
+
+    if check and report.has_breaking:
+        n = len(report.by_severity(DriftSeverity.breaking))
+        typer.secho(f"{n} breaking drift(s) — failing CI", fg=typer.colors.RED, err=True)
+        raise typer.Exit(2)
 
 
 def _apply_naming_fixes(repo: ModelRepo, fixes) -> None:

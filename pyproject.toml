@@ -10,6 +10,7 @@ license = { text = "Apache-2.0" }
 dependencies = [
     "modelith-core",
     "modelith-emit-dbt",
+    "modelith-reverse",
     "modelith-cli",
 ]
 
@@ -19,6 +20,7 @@ members = ["packages/*"]
 [tool.uv.sources]
 modelith-core = { workspace = true }
 modelith-emit-dbt = { workspace = true }
+modelith-reverse = { workspace = true }
 modelith-cli = { workspace = true }
 
 [dependency-groups]
@@ -42,6 +44,11 @@ ignore = ["B008", "UP042"]
 [tool.ruff.lint.per-file-ignores]
 # Jinja macro signatures are strings we can't line-wrap.
 "packages/emit-dbt/src/mdl_emit_dbt/macros.py" = ["E501"]
+
+[tool.ruff.lint.isort]
+# Test-local helper modules imported by bare name (added to sys.path in conftest).
+known-first-party = ["mdl_core", "mdl_emit_dbt", "mdl_reverse", "mdl_cli"]
+known-local-folder = ["model_builders", "manifest_fixtures", "conftest"]
 
 [tool.pytest.ini_options]
 testpaths = ["packages"]

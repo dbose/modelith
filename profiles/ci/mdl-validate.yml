@@ -1,0 +1,25 @@
+# CI template 1 (spec §11): `mdl-validate` on every model PR.
+# Runs schema/ref/ontology validation + naming lint. Gate on errors.
+#
+# Copy into your repo at .github/workflows/mdl-validate.yml and adjust paths.
+name: mdl-validate
+
+on:
+  pull_request:
+    paths:
+      - "model/**"
+      - "mdl-project.yaml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Install Modelith
+        run: uv tool install modelith
+      - name: Validate model
+        run: mdl validate --model-dir model --severity error
+      - name: Naming lint (report only)
+        run: mdl lint --model-dir model

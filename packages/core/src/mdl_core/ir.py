@@ -267,6 +267,16 @@ class Model:
             out.extend(tbl.values())
         return out
 
+    def domain_by_name(self, name: str | None) -> Domain | None:
+        """Domains are referenced from attributes by name, but indexed by ULID.
+        This resolves the name -> Domain object."""
+        if name is None:
+            return None
+        for dom in self.domains.values():
+            if dom.name == name:
+                return dom
+        return None
+
     def get(self, ulid: ULID) -> BaseModel | None:
         for tbl in (
             self.subject_areas,
