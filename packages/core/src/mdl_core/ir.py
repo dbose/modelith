@@ -182,7 +182,10 @@ class ProjectConfig(_Base):
     name: str
     dbt_target: str | None = None
     platform_targets: list[str] = Field(default_factory=list)
-    ontology_stack: list[str] = Field(default_factory=list)
+    # Each entry is a vocabulary declaration (name/layer/prefixes/path/modules);
+    # see mdl_ontology.registry.VocabularySource. Kept as dicts here so `core`
+    # stays free of any ontology dependency (layering §1.3).
+    ontology_stack: list[dict] = Field(default_factory=list)
     naming: NamingStandards = Field(default_factory=NamingStandards)
 
 

@@ -8,6 +8,8 @@ dependencies = [
     "modelith-core",
     "modelith-emit-dbt",
     "modelith-reverse",
+    "modelith-ontology",
+    "modelith-emit-semantic",
     "typer>=0.12",
 ]
 
@@ -25,3 +27,5 @@ packages = ["src/mdl_cli"]
 modelith-core = { workspace = true }
 modelith-emit-dbt = { workspace = true }
 modelith-reverse = { workspace = true }
+modelith-ontology = { workspace = true }
+modelith-emit-semantic = { workspace = true }

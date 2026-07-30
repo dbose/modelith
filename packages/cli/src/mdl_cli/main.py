@@ -9,6 +9,15 @@ from __future__ import annotations
 from pathlib import Path
 
 import typer
+from mdl_emit_semantic import emit_metricflow, emit_osi, import_osi, validate_joinability
+from mdl_ontology import (
+    build_registry,
+    check_layers,
+    coverage_report,
+    export_rdf,
+    export_shacl,
+    serialize,
+)
 
 from mdl_cli.scaffold import scaffold
 from mdl_core.diagnostics import Severity
@@ -18,6 +27,7 @@ from mdl_core.repo import ModelRepo
 from mdl_core.validate import validate as run_validate
 from mdl_emit_dbt.emitter import DbtEmitter
 from mdl_reverse.drift import DriftSeverity, compute_drift
+from mdl_reverse.erwin import import_erwin
 from mdl_reverse.ledger import DecisionLedger, Verdict
 from mdl_reverse.manifest import read_manifest
 from mdl_reverse.reconcile import reconcile
@@ -27,6 +37,14 @@ from mdl_reverse.schema_reader import read_schema_yml
 from mdl_reverse.writer import write_model as write_reversed
 
 app = typer.Typer(help="Modelith: ontology-anchored, git-native data modeling for dbt.")
+ontology_app = typer.Typer(help="Ontology stack: search, layer/alignment checks, coverage.")
+emit_app = typer.Typer(help="Emit semantic-layer artifacts.")
+export_app = typer.Typer(help="Export the model to interchange formats.")
+import_app = typer.Typer(help="Import external models into the IR.")
+app.add_typer(ontology_app, name="ontology")
+app.add_typer(emit_app, name="emit")
+app.add_typer(export_app, name="export")
+app.add_typer(import_app, name="import")
 
 
 def _load(model_dir: Path) -> ModelRepo:
@@ -214,6 +232,158 @@ def drift(
         n = len(report.by_severity(DriftSeverity.breaking))
         typer.secho(f"{n} breaking drift(s) — failing CI", fg=typer.colors.RED, err=True)
         raise typer.Exit(2)
+
+
+@ontology_app.command("search")
+def ontology_search(
+    term: str = typer.Argument(..., help="Search term"),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    limit: int = typer.Option(10, "--limit"),
+) -> None:
+    """Search loaded industry vocabularies for matching classes (spec §3.2)."""
+    repo = _load(model_dir)
+    reg = build_registry(model_dir, repo.model.config.ontology_stack)
+    loaded = reg.load()
+    if not loaded:
+        typer.secho(
+            "no vocabulary files loaded (declare ontology_stack with a `path`)",
+            fg=typer.colors.YELLOW,
+        )
+    for r in reg.search(term, limit=limit):
+        typer.echo(f"  {r.prefixed}  [{r.source}]")
+        if r.definition:
+            typer.echo(f"      {r.definition[:100]}")
+
+
+@ontology_app.command("check")
+def ontology_check(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    coverage: bool = typer.Option(True, "--coverage/--no-coverage"),
+) -> None:
+    """Layer/alignment rules + industry-coverage report (spec §3.1)."""
+    repo = _load(model_dir)
+    reg = build_registry(model_dir, repo.model.config.ontology_stack)
+    reg.load()
+    diags = check_layers(repo.model, registry=reg)
+    for d in diags.items:
+        color = typer.colors.RED if d.severity == Severity.error else typer.colors.YELLOW
+        typer.secho(f"{d.code} [{d.severity.value}] {d.message}", fg=color)
+
+    if coverage:
+        rpt = coverage_report(repo.model)
+        typer.echo("")
+        typer.secho(
+            f"industry alignment coverage: {rpt.coverage_pct}% "
+            f"({rpt.core_with_industry}+{rpt.core_exempt}/{rpt.total_core} core terms)",
+            fg=typer.colors.CYAN,
+        )
+        for name in rpt.core_uncovered:
+            typer.echo(f"  uncovered: {name}")
+
+    if diags.has(Severity.error):
+        raise typer.Exit(1)
+
+
+@emit_app.command("semantic")
+def emit_semantic(
+    fmt: str = typer.Option("metricflow", "--format", help="metricflow|osi"),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    target: str = typer.Option(None, "--target", "-t"),
+    out: Path = typer.Option(None, "--out", "-o", help="Write to a file instead of stdout"),
+) -> None:
+    """Emit MetricFlow or OSI from the logical model (spec §4, §8)."""
+    repo = _load(model_dir)
+    tgt = target or repo.model.config.dbt_target or "duckdb_dev"
+
+    # Joinability / fan-out validation before emission (spec §8).
+    jdiags = validate_joinability(repo.model)
+    for d in jdiags.items:
+        color = typer.colors.RED if d.severity == Severity.error else typer.colors.YELLOW
+        typer.secho(f"{d.code} [{d.severity.value}] {d.message}", fg=color)
+    if jdiags.has(Severity.error):
+        typer.secho(
+            "fan-out / joinability errors — fix before emitting", fg=typer.colors.RED, err=True
+        )
+        raise typer.Exit(1)
+
+    if fmt == "osi":
+        text = emit_osi(repo.model, targets=repo.model.config.platform_targets or [tgt])
+    else:
+        text = emit_metricflow(repo.model, tgt)
+
+    if out:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(text, encoding="utf-8")
+        typer.secho(f"wrote {fmt} to {out}", fg=typer.colors.GREEN)
+    else:
+        typer.echo(text)
+
+
+@export_app.command("rdf")
+def export_rdf_cmd(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    layer: str = typer.Option("conceptual", "--layer", help="conceptual|logical|all"),
+    fmt: str = typer.Option("turtle", "--format", help="turtle|xml|jsonld|nt"),
+    out: Path = typer.Option(None, "--out", "-o"),
+) -> None:
+    """Export RDF/OWL with SKOS alignments (spec §3.3)."""
+    repo = _load(model_dir)
+    reg = build_registry(model_dir, repo.model.config.ontology_stack)
+    reg.load()
+    g = export_rdf(repo.model, layer=layer, registry=reg)
+    _emit_text(serialize(g, fmt), out, "rdf")
+
+
+@export_app.command("shacl")
+def export_shacl_cmd(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    fmt: str = typer.Option("turtle", "--format"),
+    out: Path = typer.Option(None, "--out", "-o"),
+) -> None:
+    """Export SHACL shapes generated from the logical model (spec §3.3)."""
+    repo = _load(model_dir)
+    g = export_shacl(repo.model)
+    _emit_text(serialize(g, fmt), out, "shacl")
+
+
+@import_app.command("osi")
+def import_osi_cmd(
+    file: Path = typer.Argument(..., help="OSI YAML file"),
+    out: Path = typer.Option(Path("model"), "--out", "-o"),
+    name: str = typer.Option(None, "--name"),
+) -> None:
+    """Import an OSI model into the IR (spec §4.3)."""
+    model = import_osi(file.read_text(encoding="utf-8"), project_name=name)
+    write_reversed(model, out)
+    typer.secho(
+        f"imported {len(model.logical_entities)} entities from OSI to {out}",
+        fg=typer.colors.GREEN,
+    )
+
+
+@import_app.command("erwin")
+def import_erwin_cmd(
+    file: Path = typer.Argument(..., help="erwin XML export"),
+    out: Path = typer.Option(Path("model"), "--out", "-o"),
+    name: str = typer.Option(None, "--name"),
+) -> None:
+    """Import an erwin XML export into the IR (spec §6.4)."""
+    model = import_erwin(file.read_text(encoding="utf-8"), project_name=name)
+    write_reversed(model, out)
+    typer.secho(
+        f"imported {len(model.logical_entities)} entities, "
+        f"{len(model.relationships)} relationships from erwin to {out}",
+        fg=typer.colors.GREEN,
+    )
+
+
+def _emit_text(text: str, out: Path | None, label: str) -> None:
+    if out:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(text, encoding="utf-8")
+        typer.secho(f"wrote {label} to {out}", fg=typer.colors.GREEN)
+    else:
+        typer.echo(text)
 
 
 def _apply_naming_fixes(repo: ModelRepo, fixes) -> None:

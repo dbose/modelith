@@ -15,7 +15,7 @@ the load-bearing foundation the spec requires before anything else proceeds.
 | **M1** | Protected regions + generation state + three-way merge + dbt/duckdb emitter + property tests 1,3,4 | ✅ done, tested |
 | **M2** | `mdl drift --check/--reconcile` + severity classification + PR-comment/Mermaid render + CI templates | ✅ done, tested |
 | **M3** | Reverse engineering + decision ledger + interactive lifting + Snowflake/Redshift/Iceberg/Trino adapters + property 2 | ✅ done, tested |
-| M4 | MetricFlow/OSI emit + OSI import + FIBO loader + RDF/SHACL + erwin XML | ⬜ |
+| **M4** | Generic ontology registry (FIBO = one example) + four-layer validation + RDF/SHACL + OSI 0.1.1 emit/import + MetricFlow + erwin XML import | ✅ done, tested |
 | M5 | GovernanceGraph + mapping DSL + adapter SPI + Collibra + OpenLineage | ⬜ |
 | M6 | Web canvas (read-only first) — **not before M5 per spec §14** | ⬜ |
 | +   | VS Code extension (standalone + devcontainer) — see `docs/vscode-plan.md` | ⬜ planned |
@@ -24,12 +24,14 @@ the load-bearing foundation the spec requires before anything else proceeds.
 
 ```
 packages/
-  core/       # IR, ULID, YAML round-trip, validator, round-trip/merge engine (no in-repo deps)
-  emit-dbt/   # dbt-core emitter, platform adapters (duckdb/snowflake/redshift/iceberg/trino), SCD2 macros
-  reverse/    # manifest reader, drift classification + reconcile, reverse engineering, decision ledger
-  cli/        # `mdl`
+  core/           # IR, ULID, YAML round-trip, validator, round-trip/merge engine (no in-repo deps)
+  emit-dbt/       # dbt-core emitter, platform adapters (duckdb/snowflake/redshift/iceberg/trino), SCD2 macros
+  reverse/        # manifest reader, drift + reconcile, reverse engineering, decision ledger, erwin import
+  ontology/       # generic vocabulary registry, four-layer validation, RDF/OWL + SHACL export, lock
+  emit-semantic/  # MetricFlow + OSI (version-isolated v0_1_1), OSI import, joinability/fan-out validation
+  cli/            # `mdl`
 profiles/
-  ci/         # shippable CI workflow templates (mdl-validate, mdl-drift)
+  ci/             # shippable CI workflow templates (mdl-validate, mdl-drift)
 ```
 
 The layering rule (spec §1.3) is honored: `core` depends on nothing else in-repo;
@@ -97,3 +99,28 @@ rejected proposal is never re-asked unless its signal changes (§6.2).
 
 Platform adapters (spec §7.2) ship for `duckdb`, `snowflake` (clustering/transient),
 `redshift` (dist/sort), `iceberg` (partition/sort/format), `trino`.
+
+## Ontology + semantic layer (M4)
+
+```bash
+mdl ontology search "counterparty"           # rank loaded vocabulary classes (§3.2)
+mdl ontology check -m model                   # four-layer rules + CDO coverage report (§3.1)
+mdl emit semantic --format metricflow -m model
+mdl emit semantic --format osi -m model       # OSI 0.1.1, multi-dialect, ai_context (§4)
+mdl export rdf --layer all --format turtle    # RDF/OWL with SKOS alignments (§3.3)
+mdl export shacl                              # SHACL shapes from the logical model (§3.3)
+mdl import osi model.osi.yaml --out model     # lift an existing OSI semantic layer (§4.3)
+mdl import erwin model.xml --out model        # migrate from erwin (§6.4)
+```
+
+**Ontology-agnostic by design.** FIBO is only one example of an `industry`-layer
+vocabulary — ACORD, FHIR, ISO 20022, GS1, or a customer's own RDF/OWL/Turtle
+vocabulary plug in by declaration in `mdl-project.yaml` (`ontology_stack`), no code
+changes. IRIs are resolved against the loaded graph; unresolvable IRIs are errors.
+
+**OSI is version-isolated.** All OSI knowledge lives behind
+`emit-semantic/.../osi/v0_1_1/`, pinned to the tagged `osi-0.1.1-rc1` release
+(the repo's `main` is `0.2.0.dev0` DRAFT — intentionally not targeted, per §4.1).
+`.mdl/lock.yaml` pins the OSI tag, dbt version, and each vocabulary version.
+Joinability + fan-out risk (many-to-many, unaggregated measures across one-to-many)
+is validated before any semantic emission (§8).
