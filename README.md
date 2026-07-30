@@ -17,7 +17,7 @@ the load-bearing foundation the spec requires before anything else proceeds.
 | **M3** | Reverse engineering + decision ledger + interactive lifting + Snowflake/Redshift/Iceberg/Trino adapters + property 2 | ✅ done, tested |
 | **M4** | Generic ontology registry (FIBO = one example) + four-layer validation + RDF/SHACL + OSI 0.1.1 emit/import + MetricFlow + erwin XML import | ✅ done, tested |
 | **M5** | Neutral GovernanceGraph + Jinja mapping DSL + adapter SPI + conformance kit + Collibra adapter + three reference profiles + OpenLineage | ✅ done, tested |
-| M6 | Web canvas (read-only first) — **now unblocked (M5 complete)** | ⬜ next |
+| **M6** | Read API (`mdl serve`) + web canvas: erwin-style ER cards, crow's-foot edges, auto-layout, search-jump, detail panel, 1000+ nodes | ✅ done, verified in-browser |
 | +   | VS Code extension (standalone + devcontainer) — see `docs/vscode-plan.md` | ⬜ planned |
 
 ## Layout
@@ -32,7 +32,9 @@ packages/
   governance/     # neutral GovernanceGraph, Jinja mapping DSL, adapter SPI, conformance kit, OpenLineage
   adapters/
     collibra/     # Collibra governance adapter (depends only on governance)
+  server/         # read API (FastAPI) + hosts the canvas build; state stays in git
   cli/            # `mdl`
+canvas/           # web canvas source (Vite + React + React Flow); `npm run build` -> server static
 profiles/
   ci/             # shippable CI workflow templates (mdl-validate, mdl-drift, mdl-gov-sync)
   governance/     # three reference governance-profile.yaml (collibra-oob, dbt-analytics, minimal)
@@ -148,3 +150,33 @@ tenant); three reference profiles ship in `profiles/governance/`. The **conforma
 kit** lets a customer validate a bespoke mapping in CI without contacting us (§9.5) —
 this is what keeps the mapping layer a product, not a services line. `plan` never
 writes; `apply` refuses a plan it did not produce (signature check).
+
+## Canvas (M6)
+
+```bash
+mdl serve -m model          # http://127.0.0.1:4800
+```
+
+An erwin-grade ER diagram with modern UX, served read-only from the model repo
+(state stays in git — an external edit or `git pull` shows on refresh):
+
+- **Entity cards** — header with subject-area accent + pattern badge (SCD2/hub/…)
+  and ontology marker; gold-keyed primary-key section; attribute rows with type
+  chips and not-null dots.
+- **Crow's-foot relationships** — many/one prongs + mandatory/optional glyphs per
+  end, from the model's declared cardinality and optionality.
+- **Auto-layout** (dagre, left-to-right) with manual drag that persists, re-layout
+  and fit-view controls, minimap, dot-grid.
+- **Search** across entity and attribute names — matches highlight, everything
+  else dims; `Enter` jumps to the first hit; `/` focuses the box.
+- **Detail panel** — definition, ontology alignment + layer chip, stewardship,
+  attribute table, clickable relationship navigation, physical realisations, and
+  the copyable immutable ULID.
+- **Live diagnostics chip** — `mdl validate` results surfaced in the toolbar.
+- **1000+ nodes** — viewport virtualisation (only visible cards render) plus an
+  mtime-fingerprint model cache on the server (cold 1000-entity load ~4s, warm
+  requests ~30ms).
+
+Rebuild the canvas after changes: `cd canvas && npm install && npm run build`
+(the production bundle is committed under `packages/server/.../static`, so
+`mdl serve` works from a plain Python install with no Node toolchain).

@@ -381,6 +381,21 @@ def import_erwin_cmd(
     )
 
 
+@app.command()
+def serve(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    host: str = typer.Option("127.0.0.1", "--host"),
+    port: int = typer.Option(4800, "--port", "-p"),
+) -> None:
+    """Serve the read API + web canvas (spec §13.5: read-only, state stays in git)."""
+    from mdl_server.app import serve as run_server
+
+    typer.secho(
+        f"Modelith canvas: http://{host}:{port}  (model: {model_dir})", fg=typer.colors.CYAN
+    )
+    run_server(model_dir, host=host, port=port)
+
+
 def _gov_adapter(sandbox: bool, base_url: str | None, token: str | None):
     """A Collibra adapter. Uses MockTransport for dry/sandbox plans (no live tenant),
     or the real transport when base_url+token are given."""

@@ -11,3 +11,5 @@ build/
 htmlcov/
 # generated dbt projects live under target/ by default
 target/
+# canvas toolchain (the production build IS committed, under packages/server/.../static)
+canvas/node_modules/

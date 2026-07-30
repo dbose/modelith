@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "canvas",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "mdl", "serve", "-m", "model", "--port", "4800"],
+      "port": 4800
+    }
+  ]
+}

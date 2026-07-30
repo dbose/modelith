@@ -12,6 +12,7 @@ dependencies = [
     "modelith-emit-semantic",
     "modelith-governance",
     "modelith-adapter-collibra",
+    "modelith-server",
     "typer>=0.12",
 ]
 
@@ -33,3 +34,4 @@ modelith-ontology = { workspace = true }
 modelith-emit-semantic = { workspace = true }
 modelith-governance = { workspace = true }
 modelith-adapter-collibra = { workspace = true }
+modelith-server = { workspace = true }
