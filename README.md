@@ -2,7 +2,7 @@
 
 Ontology-anchored, git-native data modeling for dbt-core teams. CLI: `mdl`.
 
-See [`modelith-spec.md`](modelith-spec.md) for the full build specification.
+See [`modelith-spec.md`](modelith-spec.md) for the full build specification, [`docs/adoption-guide.md`](docs/adoption-guide.md) for a step-by-step team adoption runbook (empty repo → SMEs → architects → engineers), and [`docs/collaboration-model.md`](docs/collaboration-model.md) for the operating model.
 
 ## Status
 

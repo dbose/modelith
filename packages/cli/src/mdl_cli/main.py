@@ -556,12 +556,44 @@ def new_subject_area(
     model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
     definition: str = typer.Option(None, "--definition"),
 ) -> None:
-    from mdl_server.commands import apply_command
+    from mdl_core.commands import apply_command
 
     result = apply_command(
         model_dir, "create_subject_area", {"name": name, "definition": definition}
     )
     typer.secho(f"created subject area {name!r} ({result.created_id})", fg=typer.colors.GREEN)
+
+
+@new_app.command("term")
+def new_term(
+    name: str = typer.Argument(...),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    definition: str = typer.Option(None, "--definition"),
+    layer: str = typer.Option(
+        "domain", "--layer", help="industry|core|domain|specialised"
+    ),
+    aligns_to: str = typer.Option(None, "--aligns-to", help="Ontology IRI (e.g. fibo-...:X)"),
+    alignment: str = typer.Option("skos:closeMatch", "--alignment"),
+) -> None:
+    """Create a glossary term (the SME's primary object, route A)."""
+    from mdl_core.commands import CommandError, apply_command
+
+    try:
+        result = apply_command(
+            model_dir,
+            "create_term",
+            {
+                "name": name,
+                "definition": definition,
+                "layer": layer,
+                "aligns_to": aligns_to,
+                "alignment": alignment,
+            },
+        )
+    except CommandError as e:
+        typer.secho(str(e), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from e
+    typer.secho(f"created term {name!r} ({result.created_id})", fg=typer.colors.GREEN)
 
 
 decisions_app = typer.Typer(help="Review the reverse-engineering decision ledger (§6.2).")

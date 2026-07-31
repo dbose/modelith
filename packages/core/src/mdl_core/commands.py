@@ -266,6 +266,8 @@ def _create_term(repo: ModelRepo, p: dict) -> str:
     if p.get("aligns_to"):
         ont["aligns_to"] = p["aligns_to"]
         ont["alignment"] = p.get("alignment", "skos:closeMatch")
+        # SME-created alignments are proposals until an architect promotes (§5.1)
+        ont["status"] = p.get("status", "proposed")
     t["ontology"] = ont
     repo.add_file(f"conceptual/terms/{_slug(p['name'])}.yaml", t, t_id)
     return t_id
@@ -383,6 +385,8 @@ def _set_alignment(repo: ModelRepo, p: dict) -> None:
         ont["layer"] = p["layer"]
     elif "layer" not in ont:
         ont["layer"] = "core"
+    if "status" in p:
+        ont["status"] = p["status"]
     ont.pop("no_industry_equivalent", None)
 
 
