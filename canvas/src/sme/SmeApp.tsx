@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchGlossary, fetchModel } from "../api";
-import type { GlossaryDoc } from "../types";
+import { fetchGlossary, fetchGlossaryConfig, fetchModel } from "../api";
+import type { GlossaryConfig, GlossaryDoc } from "../types";
 import { ProposeDialog } from "./ProposeDialog";
 import { TermCard } from "./TermCard";
 import { TermEditor } from "./TermEditor";
@@ -21,6 +21,7 @@ export interface PendingChange {
 export function SmeApp() {
   const [doc, setDoc] = useState<GlossaryDoc | null>(null);
   const [readOnly, setReadOnly] = useState(true);
+  const [gcfg, setGcfg] = useState<GlossaryConfig | null>(null);
   const [projectName, setProjectName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [subjectArea, setSubjectArea] = useState<string>("");
@@ -38,12 +39,16 @@ export function SmeApp() {
 
   useEffect(load, [load]);
   useEffect(() => {
-    // read_only + project name come from /api/model
+    // read_only + project name come from /api/model; the source-of-truth switch
+    // (which meaning-fields the catalog masters) comes from /api/glossary/config.
     fetchModel()
       .then((m) => {
         setReadOnly(m.read_only);
         setProjectName(m.project.name);
       })
+      .catch(() => undefined);
+    fetchGlossaryConfig()
+      .then(setGcfg)
       .catch(() => undefined);
   }, []);
 
@@ -83,6 +88,8 @@ export function SmeApp() {
   if (!doc) return <div className="sme-splash">◮ loading glossary…</div>;
 
   const canEdit = !readOnly;
+  const catalogOwned = gcfg?.catalog_owned_fields ?? [];
+  const catalogMasters = catalogOwned.length > 0;
 
   return (
     <div className="sme">
@@ -92,6 +99,11 @@ export function SmeApp() {
           <span>Glossary</span>
           <span className="sme-project">{projectName}</span>
           {readOnly && <span className="sme-chip">read-only</span>}
+          {catalogMasters && (
+            <span className="sme-chip catalog" title={`Definitions are mastered in ${gcfg?.catalog_name}`}>
+              mirrors {gcfg?.catalog_name}
+            </span>
+          )}
         </div>
         <input
           className="sme-search"
@@ -158,6 +170,8 @@ export function SmeApp() {
                 pending={pending}
                 onStage={stageChange}
                 onDone={() => setEditing(false)}
+                catalogOwned={catalogOwned}
+                catalog={gcfg ? { name: gcfg.catalog_name, url: gcfg.catalog_url } : null}
               />
             ) : (
               <TermCard

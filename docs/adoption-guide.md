@@ -256,6 +256,59 @@ FIBO is only *one example* — ACORD, FHIR, ISO 20022, GS1, or your own RDF/Turt
 vocabulary plug in by a declaration in `model/mdl-project.yaml` (`ontology_stack`),
 no code.
 
+### 4.6 When the enterprise already runs Collibra (or Alation, …)
+
+Most large orgs already have a governance platform where business terms and
+stewardship live. Modelith does **not** try to be a second master. One setting in
+`model/mdl-project.yaml` declares who owns the word, and everything else follows:
+
+```yaml
+glossary:
+  source_of_truth: collibra          # default is "git"
+  catalog_url: https://acme.collibra.com
+  catalog_name: Collibra
+```
+
+The rule is: **one writable master, a one-way bridge, no live sync.** The thing
+that crosses the boundary is a reviewed git commit, never a live editable field —
+which is precisely what avoids the reconciliation backlog that app-to-app glossary
+sync always produces.
+
+**Pattern A — git is the master (default).** SMEs author in the glossary app
+(§4.1–4.3); on merge to `main`, CI mirrors the model out to the catalog so the
+wider org reads it in the tool they already use:
+
+```bash
+mdl gov publish --profile governance-profile.yaml -m model     # plan + apply
+mdl gov publish ... --dry-run                                  # preview, no writes
+```
+
+`publish` refuses to run when `source_of_truth: collibra` (that would overwrite the
+master) unless you pass `--force`.
+
+**Pattern B — Collibra is the master.** Set `source_of_truth: collibra`. Now the
+glossary app becomes a **read-only mirror** for the catalog-owned fields:
+definition, synonyms, and stewardship render read-only with a "mastered in
+Collibra" banner and a deep link; the SME can still *propose an ontology mapping*
+(that stays Modelith's to own). The read-only behaviour is enforced at the server,
+not just the UI — `POST /api/git/propose` returns **409** for a
+definition/synonym/stewardship edit even from a scripted client. To bring
+steward-authored catalog edits back into git for review:
+
+```bash
+mdl gov import --profile governance-profile.yaml -m model --commit
+# pulls catalog fields → applies them through the comment-preserving engine →
+# lands on branch `catalog/import` → open a PR so a steward reviews the diff
+```
+
+An import **never silently overwrites** — every value flows through the same
+mutation engine the SME app uses and arrives as a reviewable diff on a bot branch.
+
+Two reference profiles ship: `profiles/governance/collibra-oob.yaml` (the full
+out-of-the-box operating model) and `profiles/governance/collibra-glossary.yaml`
+(glossary-only, with the writeback wired for Pattern B). Fork either for your
+tenant — the mapping is a declarative artifact you own.
+
 ---
 
 ## 5. Architects — structure, in VS Code (route B)
@@ -553,7 +606,9 @@ to forget.
 | `mdl unmanage <entity> -m model --reason <r> --expires 14d` | engineer | the debt valve |
 | `mdl debt list -m model` | all | the committed debt ledger |
 | `mdl emit semantic --format osi\|metricflow -m model` | architect | semantic layer |
-| `mdl gov plan\|apply\|conformance` | governance | catalog sync |
+| `mdl gov plan\|apply\|conformance` | governance | catalog sync (low-level) |
+| `mdl gov publish --profile <p> [--dry-run]` | CI (git-master) | mirror the model → catalog |
+| `mdl gov import --profile <p> [--commit]` | governance (catalog-master) | pull catalog edits → reviewable PR |
 | `mdl merge-driver` | git (auto) | structural model-YAML merge |
 
 Exit codes (for CI): `0` ok · `1` validation error · `2` breaking drift ·

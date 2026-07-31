@@ -50,6 +50,26 @@ def _slugify(s: str) -> str:
     return s or "change"
 
 
+# Mutation ops that write the catalog-owned meaning-fields. When the glossary's
+# source of truth is Collibra, /propose refuses these — the UI hides them, but the
+# server is the real boundary (a scripted client can't smuggle a definition edit in).
+_MEANING_OPS = {"set_definition", "update_synonyms", "set_stewardship"}
+
+
+def _catalog_owns_meaning(model_dir: Path) -> tuple[bool, str]:
+    """(catalog_masters?, catalog_name) from mdl-project.yaml, loaded fresh."""
+    try:
+        from mdl_core.repo import ModelRepo
+
+        cfg = ModelRepo.load(model_dir).model.config
+        g = getattr(cfg, "glossary", None)
+        sot = getattr(g, "source_of_truth", "git") if g else "git"
+        name = getattr(g, "catalog_name", "Collibra") if g else "Collibra"
+        return sot != "git", name
+    except Exception:  # noqa: BLE001 — never let config loading break the PR flow
+        return False, "Collibra"
+
+
 def _compare_url(model_dir: Path, branch: str) -> str | None:
     """Derive a GitHub compare URL from the origin remote, for the no-gh fallback."""
     code, url = _git(model_dir, "remote", "get-url", "origin")
@@ -126,6 +146,25 @@ def git_router(model_dir: Path) -> APIRouter:
         """The SME PR flow (§5.1), atomic: branch -> apply commands through the
         shared mutation engine -> commit with Co-authored-by -> push -> open a PR.
         Degrades gracefully with no remote / no gh so the SME always gets a result."""
+        # Enforce the source-of-truth boundary. When the catalog masters meaning,
+        # refuse definition/synonym/stewardship edits here (they belong in Collibra);
+        # alignment proposals still pass. This is the server-side guard behind the UI.
+        catalog_owns, catalog_name = _catalog_owns_meaning(model_dir)
+        if catalog_owns:
+            blocked = sorted({c.op for c in body.changes if c.op in _MEANING_OPS})
+            if blocked:
+                return JSONResponse(
+                    {
+                        "ok": False,
+                        "error": (
+                            f"{', '.join(blocked)} are mastered in {catalog_name}; "
+                            f"edit them there. This glossary is a read-only mirror for "
+                            f"those fields (alignment proposals are still accepted)."
+                        ),
+                    },
+                    status_code=409,
+                )
+
         # Refuse to run on a dirty tree — we branch from a clean base.
         code, dirty = _git(model_dir, "status", "--porcelain", "--", ".")
         if code == 0 and dirty:

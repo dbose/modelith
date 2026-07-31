@@ -8,6 +8,7 @@ from mdl_core.ir import (
     Attribute,
     ConceptualEntity,
     Domain,
+    GlossaryConfig,
     LogicalEntity,
     Model,
     ObjectKind,
@@ -36,6 +37,7 @@ __all__ = [
     "PhysicalColumn",
     "PhysicalTable",
     "ProjectConfig",
+    "GlossaryConfig",
     "Model",
     "ModelRepo",
 ]

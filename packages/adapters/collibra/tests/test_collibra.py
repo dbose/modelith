@@ -91,3 +91,21 @@ def test_capabilities():
     caps = _adapter().capabilities()
     assert caps.name == "collibra"
     assert caps.supports_writeback and caps.supports_lineage
+
+
+def test_glossary_import_composes_pull_with_writeback_to_commands(model, profiles_dir):
+    """catalog -> git: pull() feeds writeback_to_commands() to produce real edits."""
+    from mdl_core.governance_import import writeback_to_commands
+
+    ce = next(c for c in model.conceptual_entities.values() if c.name == "Counterparty")
+    rows = [
+        {"attribute": "Definition", "externalId": f"mdl:{ce.id}", "value": "Catalog-authored."},
+        {"attribute": "Data Steward", "externalId": f"mdl:{ce.id}", "value": "a.hough"},
+    ]
+    adapter = _adapter(writeback_rows=rows)
+    wb = adapter.pull(Profile.load(profiles_dir / "collibra-glossary.yaml"))
+    cmds = writeback_to_commands(model, wb)
+    ops = {op for op, _ in cmds}
+    assert ops == {"set_definition", "set_stewardship"}
+    defn = next(p for op, p in cmds if op == "set_definition")
+    assert defn == {"id": ce.id, "definition": "Catalog-authored."}

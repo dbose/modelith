@@ -145,7 +145,18 @@ mdl gov plan --profile governance-profile.yaml -m model -o plan.json   # never w
 mdl gov apply plan.json --base-url $URL --token $TOKEN           # refuses a foreign/edited plan
 mdl gov pull --profile governance-profile.yaml                   # writeback into the model (§9.4)
 mdl gov lineage -m model                                         # OpenLineage payload (§9.6)
+
+# glossary source-of-truth bridge (one writable master, one-way, no live sync):
+mdl gov publish --profile governance-profile.yaml -m model       # git-master → mirror to catalog
+mdl gov import  --profile governance-profile.yaml -m model --commit  # catalog-master → reviewable PR
 ```
+
+**Who masters the glossary** is a single setting in `mdl-project.yaml`
+(`glossary.source_of_truth: git | collibra`). When `collibra`, the SME app renders
+definition/synonyms/stewardship read-only (server-enforced, not just UI) with a
+deep link, and `mdl gov import` pulls steward edits back as a reviewable bot-branch
+PR — never a silent overwrite. When `git`, `mdl gov publish` mirrors the model out
+on merge.
 
 Core emits a **neutral GovernanceGraph**; adapters consume it (the Collibra adapter
 imports only `governance`, never `core`). The keystone (§9.1) is the deterministic

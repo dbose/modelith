@@ -182,6 +182,26 @@ class NamingStandards(_Base):
     abbreviations: dict[str, str] = Field(default_factory=dict)  # word -> approved abbrev
 
 
+class GlossaryConfig(_Base):
+    """Who masters the business glossary. Decides the direction of the Collibra
+    bridge and whether the /sme app's meaning-fields are writable.
+
+    - ``git`` (default): git is the source of truth. The /sme app authors
+      definitions/synonyms/stewardship as PRs; ``mdl governance publish`` mirrors
+      them out to Collibra on merge.
+    - ``collibra``: the catalog masters those fields. The /sme app shows them
+      read-only with a deep link, leaving only alignment *proposals* (which are
+      Modelith's to own); ``mdl governance import`` brings catalog edits back in
+      as a reviewable bot PR.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    source_of_truth: Literal["git", "collibra"] = "git"
+    catalog_url: str | None = None  # e.g. https://acme.collibra.com — for deep links
+    catalog_name: str = "Collibra"  # display name for banners
+
+
 class ProjectConfig(_Base):
     model_config = ConfigDict(extra="allow")
 
@@ -193,6 +213,7 @@ class ProjectConfig(_Base):
     # stays free of any ontology dependency (layering §1.3).
     ontology_stack: list[dict] = Field(default_factory=list)
     naming: NamingStandards = Field(default_factory=NamingStandards)
+    glossary: GlossaryConfig = Field(default_factory=GlossaryConfig)
 
 
 # --- The in-memory graph ---------------------------------------------------

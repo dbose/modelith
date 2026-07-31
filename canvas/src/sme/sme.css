@@ -36,6 +36,16 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
   background: var(--pk); color: #1a1400; font-weight: 700; font-size: 13px; }
 .sme-chip { display: inline-block; font-size: 11px; padding: 2px 9px; margin: 0 4px 0 0; border-radius: 99px;
   background: rgba(148,163,184,0.14); color: var(--text-dim); }
+.sme-chip.catalog { background: rgba(251,191,36,0.16); color: #fbbf24; }
+
+/* source-of-truth: the catalog masters meaning; these fields are a read-only mirror */
+.sme-catalog-banner { border: 1px solid rgba(251,191,36,0.35); background: rgba(251,191,36,0.08);
+  border-radius: 8px; padding: 10px 12px; font-size: 13px; line-height: 1.5; color: var(--text);
+  margin: 4px 0 10px; }
+.sme-catalog-banner a { color: #fbbf24; font-weight: 600; }
+.sme-catalog-note { color: var(--text-dim); font-size: 12px; margin-top: 4px; }
+.sme-readonly-value { margin: 0; padding: 8px 10px; border-radius: 6px; background: rgba(148,163,184,0.06);
+  border: 1px dashed var(--border); color: var(--text-dim); font-size: 14px; line-height: 1.5; }
 
 /* body: nav | list | detail */
 .sme-body { flex: 1; display: grid; grid-template-columns: 220px 340px 1fr; min-height: 0; }

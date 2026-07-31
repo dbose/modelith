@@ -172,6 +172,13 @@ export interface GlossaryDoc {
   subject_areas: { id: string; name: string; definition: string | null }[];
 }
 
+export interface GlossaryConfig {
+  source_of_truth: "git" | "collibra";
+  catalog_url: string | null;
+  catalog_name: string;
+  catalog_owned_fields: string[]; // e.g. ["definition","synonyms","stewardship"] when catalog masters
+}
+
 export interface ProposeResult {
   ok: boolean;
   branch?: string;

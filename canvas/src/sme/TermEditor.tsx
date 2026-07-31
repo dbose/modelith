@@ -14,12 +14,18 @@ export function TermEditor({
   pending,
   onStage,
   onDone,
+  catalogOwned = [],
+  catalog = null,
 }: {
   term: GlossaryTerm;
   pending: PendingChange[];
   onStage: (c: PendingChange) => void;
   onDone: () => void;
+  // when the catalog masters the glossary, these fields render read-only
+  catalogOwned?: string[];
+  catalog?: { name: string; url: string | null } | null;
 }) {
+  const owns = (field: string) => catalogOwned.includes(field);
   const staged = (label: string) => pending.find((p) => p.label === label);
 
   const cur = <T,>(label: string, live: T): T => {
@@ -81,51 +87,97 @@ export function TermEditor({
         relationships, how it's built) stays with the data team.
       </p>
 
+      {(owns("definition") || owns("synonyms") || owns("stewardship")) && catalog && (
+        <div className="sme-catalog-banner">
+          Definitions, synonyms, and ownership are mastered in <b>{catalog.name}</b>.
+          Edit them there — this glossary mirrors them read-only.
+          {catalog.url && (
+            <>
+              {" "}
+              <a href={catalog.url} target="_blank" rel="noreferrer">
+                Open in {catalog.name} →
+              </a>
+            </>
+          )}
+          <div className="sme-catalog-note">You can still propose a standard mapping below.</div>
+        </div>
+      )}
+
       <label className="sme-field">
         <span>Definition</span>
-        <textarea
-          rows={4}
-          value={definition}
-          onChange={(e) => setDefinition(e.target.value)}
-          onBlur={stageDefinition}
-          placeholder="A plain-language business definition…"
-        />
+        {owns("definition") ? (
+          <p className="sme-readonly-value">{term.definition ?? "—"}</p>
+        ) : (
+          <textarea
+            rows={4}
+            value={definition}
+            onChange={(e) => setDefinition(e.target.value)}
+            onBlur={stageDefinition}
+            placeholder="A plain-language business definition…"
+          />
+        )}
       </label>
 
       <label className="sme-field">
         <span>Also called (synonyms)</span>
-        <div className="sme-syn-row">
-          {synonyms.map((s) => (
-            <span key={s} className="sme-chip removable" onClick={() => commitSynonyms(synonyms.filter((x) => x !== s))}>
-              {s} ✕
-            </span>
-          ))}
-          <input
-            value={synInput}
-            placeholder="add + Enter"
-            onChange={(e) => setSynInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && synInput.trim()) {
-                commitSynonyms([...synonyms, synInput.trim()]);
-                setSynInput("");
-              }
-            }}
-          />
-        </div>
+        {owns("synonyms") ? (
+          <div className="sme-syn-row">
+            {term.synonyms.length ? (
+              term.synonyms.map((s) => (
+                <span key={s} className="sme-chip">
+                  {s}
+                </span>
+              ))
+            ) : (
+              <span className="sme-muted">none</span>
+            )}
+          </div>
+        ) : (
+          <div className="sme-syn-row">
+            {synonyms.map((s) => (
+              <span key={s} className="sme-chip removable" onClick={() => commitSynonyms(synonyms.filter((x) => x !== s))}>
+                {s} ✕
+              </span>
+            ))}
+            <input
+              value={synInput}
+              placeholder="add + Enter"
+              onChange={(e) => setSynInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && synInput.trim()) {
+                  commitSynonyms([...synonyms, synInput.trim()]);
+                  setSynInput("");
+                }
+              }}
+            />
+          </div>
+        )}
       </label>
 
-      {!isTerm && (
-        <div className="sme-field-row">
-          <label className="sme-field">
-            <span>Owner</span>
-            <input value={owner} onChange={(e) => setOwner(e.target.value)} onBlur={() => stageStewardship(owner, steward)} />
-          </label>
-          <label className="sme-field">
-            <span>Steward</span>
-            <input value={steward} onChange={(e) => setSteward(e.target.value)} onBlur={() => stageStewardship(owner, steward)} />
-          </label>
-        </div>
-      )}
+      {!isTerm &&
+        (owns("stewardship") ? (
+          <div className="sme-field-row">
+            <label className="sme-field">
+              <span>Owner</span>
+              <p className="sme-readonly-value">{term.stewardship?.owner ?? "—"}</p>
+            </label>
+            <label className="sme-field">
+              <span>Steward</span>
+              <p className="sme-readonly-value">{term.stewardship?.steward ?? "—"}</p>
+            </label>
+          </div>
+        ) : (
+          <div className="sme-field-row">
+            <label className="sme-field">
+              <span>Owner</span>
+              <input value={owner} onChange={(e) => setOwner(e.target.value)} onBlur={() => stageStewardship(owner, steward)} />
+            </label>
+            <label className="sme-field">
+              <span>Steward</span>
+              <input value={steward} onChange={(e) => setSteward(e.target.value)} onBlur={() => stageStewardship(owner, steward)} />
+            </label>
+          </div>
+        ))}
 
       <AlignmentProposer term={term} onStage={onStage} />
 

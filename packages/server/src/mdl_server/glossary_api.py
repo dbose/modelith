@@ -51,12 +51,38 @@ def _term_card(model: Model, obj) -> dict:
     }
 
 
+# The meaning-fields the catalog masters when it is the source of truth. When
+# source_of_truth == "collibra" these are read-only in the /sme app; the alignment
+# *proposal* is deliberately NOT in this set — it's Modelith's to own either way.
+CATALOG_OWNED_FIELDS = ["definition", "synonyms", "stewardship"]
+
+
+def _glossary_config(model: Model) -> dict:
+    """The source-of-truth switch + catalog deep-link info for the /sme banner."""
+    g = getattr(model.config, "glossary", None)
+    sot = getattr(g, "source_of_truth", "git") if g else "git"
+    catalog_url = getattr(g, "catalog_url", None) if g else None
+    catalog_name = getattr(g, "catalog_name", "Collibra") if g else "Collibra"
+    catalog_owns = sot != "git"
+    return {
+        "source_of_truth": sot,
+        "catalog_url": catalog_url,
+        "catalog_name": catalog_name,
+        # fields the /sme editor must render read-only (empty when git masters)
+        "catalog_owned_fields": CATALOG_OWNED_FIELDS if catalog_owns else [],
+    }
+
+
 def glossary_router(load_model) -> APIRouter:
     """`load_model` is a callable returning the current (cached) Model."""
     router = APIRouter(prefix="/api/glossary")
 
     def _all(model: Model):
         return [*model.conceptual_entities.values(), *model.terms.values()]
+
+    @router.get("/config")
+    def config() -> JSONResponse:
+        return JSONResponse(_glossary_config(load_model()))
 
     @router.get("/terms")
     def terms(subject_area: str = "", q: str = "") -> JSONResponse:

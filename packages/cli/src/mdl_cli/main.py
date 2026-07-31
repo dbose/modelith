@@ -948,6 +948,128 @@ def gov_lineage(
     _emit_text(emit_openlineage(repo.model), out, "openlineage")
 
 
+def _source_of_truth(model) -> str:
+    g = getattr(model.config, "glossary", None)
+    return getattr(g, "source_of_truth", "git") if g else "git"
+
+
+@gov_app.command("publish")
+def gov_publish(
+    profile: Path = typer.Option(..., "--profile"),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    base_url: str = typer.Option(None, "--base-url"),
+    token: str = typer.Option(None, "--token"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Plan only; do not apply"),
+    force: bool = typer.Option(
+        False, "--force", help="Publish even when glossary.source_of_truth != git"
+    ),
+) -> None:
+    """Mirror the git-mastered model out to the catalog (plan + apply in one step).
+
+    This is the git->catalog direction: run it on merge to `main` so Collibra
+    becomes a published, read-only mirror. Refuses to run when the catalog is the
+    source of truth (that would push into the master), unless --force."""
+    repo = _load(model_dir)
+    sot = _source_of_truth(repo.model)
+    if sot != "git" and not force:
+        typer.secho(
+            f"refusing to publish: glossary.source_of_truth is {sot!r}, so the catalog "
+            f"is the master — publishing would overwrite it. Use `mdl gov import` to pull "
+            f"catalog edits in, or --force to override.",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(4)
+
+    prof = Profile.load(profile)
+    graph = build_graph(repo.model)
+    adapter = _gov_adapter(True, base_url, token)
+    try:
+        plan = adapter.plan(graph, prof)
+    except Exception as e:  # noqa: BLE001
+        typer.secho(f"plan failed: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(4) from e
+
+    typer.secho(
+        f"plan: {len(plan.creates())} create, {len(plan.updates())} update", fg=typer.colors.CYAN
+    )
+    if dry_run:
+        typer.secho("dry-run: not applied", fg=typer.colors.YELLOW)
+        return
+    result = adapter.apply(plan)
+    typer.secho(
+        f"published {result.applied} to catalog "
+        f"({result.created} created, {result.updated} updated)",
+        fg=typer.colors.GREEN,
+    )
+
+
+@gov_app.command("import")
+def gov_import(
+    profile: Path = typer.Option(..., "--profile"),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    base_url: str = typer.Option(None, "--base-url"),
+    token: str = typer.Option(None, "--token"),
+    branch: str = typer.Option("catalog/import", "--branch", help="bot branch for the import PR"),
+    commit: bool = typer.Option(
+        False, "--commit", help="Commit the writeback to a branch (default: working-tree only)"
+    ),
+) -> None:
+    """Pull catalog-mastered glossary fields back into git as a reviewable change.
+
+    This is the catalog->git direction for when Collibra is the source of truth:
+    it never silently overwrites — every imported value is applied through the
+    mutation engine (comment-preserving) and, with --commit, lands on a bot branch
+    so a steward reviews the diff before it reaches `main`."""
+    repo = _load(model_dir)
+    sot = _source_of_truth(repo.model)
+    prof = Profile.load(profile)
+    adapter = _gov_adapter(True, base_url, token)
+    wb = adapter.pull(prof)
+    if not wb.values:
+        typer.secho("nothing to import (no writeback values from catalog)", fg=typer.colors.YELLOW)
+        return
+
+    from mdl_core.commands import CommandError, apply_command
+    from mdl_core.governance_import import writeback_to_commands
+
+    cmds = writeback_to_commands(repo.model, wb)
+    if not cmds:
+        typer.secho(
+            "catalog returned values but none mapped to importable glossary fields "
+            "(definition/synonyms/stewardship). Nothing to do.",
+            fg=typer.colors.YELLOW,
+        )
+        return
+
+    applied = 0
+    for op, payload in cmds:
+        try:
+            apply_command(model_dir, op, payload)
+            applied += 1
+            typer.echo(f"  {op} {payload.get('id', '')}")
+        except CommandError as e:
+            typer.secho(f"skip {op}: {e}", fg=typer.colors.YELLOW)
+
+    note = "" if sot == "collibra" else " (note: source_of_truth is git; this is a one-off import)"
+    typer.secho(f"imported {applied} field(s) into the working tree{note}", fg=typer.colors.GREEN)
+
+    if commit:
+        import subprocess
+
+        subprocess.run(["git", "-C", str(model_dir), "checkout", "-B", branch], check=False)
+        subprocess.run(["git", "-C", str(model_dir), "add", "--", "."], check=False)
+        msg = (
+            f"Import glossary edits from {prof.profile}\n\n"
+            f"{applied} field(s) pulled from catalog."
+        )
+        subprocess.run(["git", "-C", str(model_dir), "commit", "-m", msg, "--", "."], check=False)
+        typer.secho(
+            f"committed to branch {branch} — open a PR for steward review",
+            fg=typer.colors.GREEN,
+        )
+
+
 def _emit_text(text: str, out: Path | None, label: str) -> None:
     if out:
         out.parent.mkdir(parents=True, exist_ok=True)

@@ -1,0 +1,29 @@
+# Reference profile: Collibra as the MASTER glossary (source_of_truth: collibra).
+# Use this when definitions live in Collibra and Modelith mirrors them. The
+# writeback maps catalog attributes back onto the narrow SME meaning-fields, so
+# `mdl gov import` pulls steward-authored edits into git as a reviewable PR.
+profile: collibra
+version: 1
+community: "Data Governance Council"
+
+domains:
+  glossary: {name: "Enterprise Glossary", type: "Glossary"}
+
+asset_types:
+  conceptual_entity:
+    target: "Business Asset"
+    domain: glossary
+    attributes:
+      Definition: "{{ definition }}"
+  term:
+    target: "Business Term"
+    domain: glossary
+
+# The catalog masters meaning; these flow BACK into the model on import.
+writeback:
+  - collibra_attribute: "Definition"
+    model_path: "definition"
+  - collibra_attribute: "Synonyms"
+    model_path: "synonyms"
+  - collibra_attribute: "Data Steward"
+    model_path: "stewardship.steward"
