@@ -210,6 +210,17 @@ def _set_definition(repo: ModelRepo, p: dict) -> None:
         node.pop("definition", None)
 
 
+def _update_synonyms(repo: ModelRepo, p: dict) -> None:
+    """Replace the synonym list on a conceptual entity or term (SME surface)."""
+    _require(p, "id")
+    _, node = _conceptual_node(repo, p["id"])
+    syns = [str(s).strip() for s in (p.get("synonyms") or []) if str(s).strip()]
+    if syns:
+        node["synonyms"] = syns
+    else:
+        node.pop("synonyms", None)
+
+
 def _set_stewardship(repo: ModelRepo, p: dict) -> None:
     _require(p, "id")
     _, node = _conceptual_node(repo, p["id"])
@@ -431,6 +442,7 @@ _HANDLERS = {
     "rename_entity": _rename_entity,
     "delete_entity": _delete_entity,
     "set_definition": _set_definition,
+    "update_synonyms": _update_synonyms,
     "set_stewardship": _set_stewardship,
     "set_subject_area": _set_subject_area,
     "set_pattern": _set_pattern,

@@ -141,6 +141,48 @@ export interface Decision {
   verdict: "proposed" | "accepted" | "rejected";
 }
 
+// --- glossary (SME app) ---
+
+export interface WhereUsed {
+  logical_entity: string;
+  logical_id: string;
+  unmanaged: boolean;
+  physical: { name: string; target: string; materialization: string }[];
+}
+
+export interface GlossaryTerm {
+  id: string;
+  kind: "conceptual_entity" | "term";
+  name: string;
+  definition: string | null;
+  synonyms: string[];
+  subject_area: { id: string; name?: string } | null;
+  stewardship: { owner: string | null; steward: string | null } | null;
+  ontology: {
+    aligns_to: string | null;
+    alignment: string | null;
+    layer: string | null;
+    status: string | null;
+  } | null;
+  where_used: WhereUsed[];
+}
+
+export interface GlossaryDoc {
+  terms: GlossaryTerm[];
+  subject_areas: { id: string; name: string; definition: string | null }[];
+}
+
+export interface ProposeResult {
+  ok: boolean;
+  branch?: string;
+  applied?: number;
+  pushed?: boolean;
+  pr_url?: string | null;
+  compare_url?: string | null;
+  message?: string;
+  error?: string;
+}
+
 export interface Diagnostic {
   code: string;
   severity: "error" | "warning" | "info";

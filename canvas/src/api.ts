@@ -63,3 +63,22 @@ export const gitDiscard = () => post<{ ok: boolean }>("/api/git/discard", {});
 export const fetchDecisions = () => get<{ decisions: Decision[] }>("/api/decisions");
 export const setDecisionVerdict = (signalKey: string, verdict: "accepted" | "rejected") =>
   post<{ ok: boolean }>(`/api/decisions/${signalKey}/verdict`, { verdict });
+
+// glossary (SME app)
+import type { GlossaryDoc, GlossaryTerm, ProposeResult } from "./types";
+
+export const fetchGlossary = (params: { subject_area?: string; q?: string } = {}) => {
+  const qs = new URLSearchParams();
+  if (params.subject_area) qs.set("subject_area", params.subject_area);
+  if (params.q) qs.set("q", params.q);
+  return get<GlossaryDoc>(`/api/glossary/terms?${qs.toString()}`);
+};
+export const fetchGlossaryTerm = (id: string) => get<GlossaryTerm>(`/api/glossary/term/${id}`);
+export const fetchBranch = () => get<{ branch: string | null }>("/api/git/branch");
+export const proposeChanges = (payload: {
+  user: string;
+  slug: string;
+  title: string;
+  body: string;
+  changes: { op: string; payload: Record<string, unknown> }[];
+}) => post<ProposeResult>("/api/git/propose", payload);

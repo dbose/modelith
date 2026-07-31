@@ -160,48 +160,66 @@ on.
 
 ---
 
-## 4. SMEs — meaning, via the web app (route A)
+## 4. SMEs — meaning, via the glossary app (route A)
 
-**Goal:** an SME who never touches YAML keeps the glossary correct, and a
-definition fix never queues behind a sprint.
+**Goal:** an SME who never touches git *or* a CLI keeps the glossary correct, and
+a definition fix never queues behind a sprint.
 
-### 4.1 Stand up the read-only glossary first
+The glossary app is **git-native** — it reads the repo, edits the working tree,
+and opens a pull request, all hidden behind one "Submit for review" button. The
+SME sees a glossary, not a terminal and not an ERD. It is a *client* over git;
+delete its cache and nothing is lost (the model is git).
 
-Before enabling any writes, point SMEs at the read-only canvas. The platform
-lead serves it (in the container, if devcontainer):
+### 4.1 Stand up the glossary
+
+The platform lead serves it (inside the container, if devcontainer):
 
 ```bash
-mdl serve -m model --read-only          # http://127.0.0.1:4800
+mdl glossary -m model                    # http://127.0.0.1:4810/sme
+# read-only for the onboarding week-3 gate (browse only, no editing):
+mdl glossary -m model --read-only
 ```
 
-SMEs open it, click the **⬡ Ontology** and **≣ Layers** panels, and search for
-their terms. **If they cannot find and understand a term unaided, fix the
-projection before enabling writes.** This is the week-3 readiness gate (§9).
+Start read-only. SMEs land on a **term list scoped to their subject area**,
+search, and open a term to see its definition, synonyms, steward, standard
+mapping, and **where it's used** (the dbt models that realise it). **If they
+cannot find and understand a term unaided, fix the projection before enabling
+writes.** That is the week-3 readiness gate (§9).
 
 ### 4.2 What an SME can change (deliberately narrow)
 
-Definitions, synonyms, examples, stewardship, classification, subject-area
-membership, and **ontology-alignment *proposals*.** Not cardinality, not keys,
-not materialisation. A narrow surface means you never teach an SME what an
+The app exposes exactly: **definition, synonyms, stewardship (owner/steward),
+subject-area membership, and an ontology-alignment *proposal*.** There is no
+control anywhere in the app for cardinality, keys, attributes, relationships, or
+materialisation. A narrow surface means you never teach an SME what an
 identifying relationship is, and the app never produces a PR an architect must
 reject on principle.
 
-### 4.3 The SME workflow
+### 4.3 The SME workflow (all in the app)
 
-1. Open the app on a **glossary view scoped to your subject area** (not an ERD).
-2. Find a term. See its definition, synonyms, steward, ontology alignment, and
-   *where used* — the logical entities, dbt models, and metrics that realise it.
-3. Edit a definition, add a synonym, flag a duplicate, or **propose** an
-   alignment.
-4. Click **propose**. The app opens a PR on `sme/<user>/<slug>` with a
-   plain-language body, a before/after of the definition, and a `Co-authored-by`
-   trailer so attribution is the SME.
-5. A steward reviews and merges. **No engineer is involved.**
+1. Open **http://…/sme** on a glossary scoped to your subject area (not an ERD).
+2. Find a term → see definition, synonyms, steward, standard mapping, and **where
+   it's used**.
+3. Click **Suggest an edit**. Refine the definition, add/remove synonyms, set the
+   steward, or **Propose a mapping…** to a standard. Each change is collected in a
+   change tray — nothing is written yet.
+4. Click **Submit for review**. A dialog shows a plain-language **before/after** of
+   every change; enter your name and a title, then confirm. The app:
+   - branches `sme/<user>/<slug>` from a clean base,
+   - applies your changes to the model YAML (comment-preserving),
+   - commits with your note and a **`Co-authored-by`** trailer (attribution is you),
+   - pushes and opens a **pull request** (via `gh`), or — with no `gh`/remote —
+     gives you the compare link.
+5. A **steward** reviews and merges. **No engineer is involved.** The alignment you
+   proposed rides as `status: proposed`; an architect promotes it later.
 
-### 4.4 The same acts on the CLI (for reference / scripting)
+> Verified end-to-end: an SME editing "Counterparty" via the app lands the change
+> on `sme/a-hough/clarify-counterparty` with a `Co-authored-by: a.hough` commit —
+> no git or CLI touched.
 
-The web app is just a client over these commands — a platform lead can seed the
-glossary directly:
+### 4.4 The same acts on the CLI (platform lead only, for seeding/scripting)
+
+An SME never runs these. A platform lead can seed the glossary directly:
 
 ```bash
 # a glossary term is the SME's primary object
@@ -522,7 +540,8 @@ to forget.
 |---|---|---|
 | `mdl init --workspace --name <n> .` | platform | scaffold the full topology |
 | `mdl init --git-hooks` | anyone (post-clone) | wire the semantic merge driver |
-| `mdl serve -m model [--read-only]` | all | the canvas (editor or viewer) |
+| `mdl serve -m model [--read-only]` | architect/engineer | the ER canvas (editor or viewer) |
+| `mdl glossary -m model [--read-only]` | SME (platform lead runs it) | the git-native glossary app (edits → PR) |
 | `mdl lsp` | editors (auto) | the language server |
 | `mdl new term\|entity\|subject-area <n> -m model` | SME / architect | scaffold an object (ULIDs minted) |
 | `mdl ontology search\|check\|promote\|vendor` | SME / architect | vocabulary + alignment lifecycle |

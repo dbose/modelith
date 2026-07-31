@@ -11,6 +11,32 @@ from __future__ import annotations
 from mdl_core.ir import Model
 
 
+def where_used(model: Model, conceptual_id: str) -> list[dict]:
+    """Forward-traverse a conceptual entity to the dbt models that realise it:
+    conceptual.id -> logical entities (realises == id) -> physical tables
+    (realises == logical.id). `ConceptualEntity.realised_by` exists in the IR but
+    is never populated on load, so we compute the reverse links here. This is the
+    "where used" reassurance an SME needs before editing a term."""
+    used: list[dict] = []
+    for le in sorted(model.logical_entities.values(), key=lambda e: e.name):
+        if le.realises != conceptual_id:
+            continue
+        physical = [
+            {"name": pt.name, "target": pt.target, "materialization": pt.materialization}
+            for pt in sorted(model.physical_tables.values(), key=lambda p: p.name)
+            if pt.realises == le.id
+        ]
+        used.append(
+            {
+                "logical_entity": le.name,
+                "logical_id": le.id,
+                "unmanaged": bool(le.unmanaged),
+                "physical": physical,
+            }
+        )
+    return used
+
+
 def project(model: Model) -> dict:
     sa_by_id = {sa.id: sa for sa in model.subject_areas.values()}
     ce_by_id = model.conceptual_entities

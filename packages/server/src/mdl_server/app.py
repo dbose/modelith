@@ -18,6 +18,7 @@ from mdl_core.repo import ModelRepo
 from mdl_core.validate import validate
 from mdl_server import commands
 from mdl_server.git_api import git_router
+from mdl_server.glossary_api import glossary_router
 from mdl_server.ontology_api import ontology_router
 from mdl_server.projection import project
 
@@ -96,8 +97,9 @@ def create_app(model_dir: Path, *, read_only: bool = False) -> FastAPI:
     def health() -> dict:
         return {"status": "ok", "model_dir": str(model_dir), "read_only": read_only}
 
-    # Ontology read API (E1) — always available.
+    # Ontology + glossary read APIs — always available (read-only + edit modes).
     app.include_router(ontology_router(model_dir, lambda: _load().model))
+    app.include_router(glossary_router(lambda: _load().model))
 
     @app.get("/api/decisions")
     def decisions() -> JSONResponse:
@@ -166,12 +168,16 @@ def create_app(model_dir: Path, *, read_only: bool = False) -> FastAPI:
     # Static canvas build. Mounted last so /api/* wins.
     if STATIC_DIR.exists():
         app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
+        sme_html = STATIC_DIR / "sme.html"
 
         @app.get("/{path:path}")
         def spa(path: str) -> FileResponse:
             candidate = STATIC_DIR / path
             if path and candidate.is_file():
                 return FileResponse(candidate)
+            # The SME glossary is a second SPA entry served under /sme.
+            if (path == "sme" or path.startswith("sme/")) and sme_html.exists():
+                return FileResponse(sme_html)
             return FileResponse(STATIC_DIR / "index.html")
 
     return app

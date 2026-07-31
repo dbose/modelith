@@ -800,6 +800,27 @@ def serve(
     run_server(model_dir, host=host, port=port, read_only=read_only)
 
 
+@app.command()
+def glossary(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    host: str = typer.Option("127.0.0.1", "--host"),
+    port: int = typer.Option(4810, "--port", "-p"),
+    read_only: bool = typer.Option(
+        False, "--read-only", help="Browse only — the onboarding week-3 gate"
+    ),
+) -> None:
+    """Serve the SME glossary app (git-native; edits become a PR). The SME never
+    sees git or a CLI (collaboration model §5.1)."""
+    from mdl_server.app import serve as run_server
+
+    mode = "read-only" if read_only else "propose-as-PR"
+    typer.secho(
+        f"Modelith glossary ({mode}): http://{host}:{port}/sme  (model: {model_dir})",
+        fg=typer.colors.CYAN,
+    )
+    run_server(model_dir, host=host, port=port, read_only=read_only)
+
+
 def _gov_adapter(sandbox: bool, base_url: str | None, token: str | None):
     """A Collibra adapter. Uses MockTransport for dry/sandbox plans (no live tenant),
     or the real transport when base_url+token are given."""
