@@ -1,5 +1,6 @@
 import * as cp from "node:child_process";
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 
@@ -24,6 +25,18 @@ export async function findMdl(root: string): Promise<MdlBin> {
   const venv = path.join(root, ".venv", "bin", "mdl");
   if (fs.existsSync(venv)) candidates.push({ cmd: venv, args: [], label: ".venv/bin/mdl" });
   candidates.push({ cmd: "mdl", args: [], label: "mdl (PATH)" });
+  // GUI-launched VS Code on macOS/Linux has a minimal PATH that excludes the
+  // per-user install locations a shell profile would add, so `mdl (PATH)` misses
+  // a `uv tool install modelith` / `pipx` install. Probe those well-known bins.
+  const home = process.env.HOME || os.homedir();
+  for (const abs of [
+    path.join(home, ".local", "bin", "mdl"), // uv tool install / pipx
+    path.join(home, ".local", "share", "uv", "tools", "modelith", "bin", "mdl"),
+    "/opt/homebrew/bin/mdl",
+    "/usr/local/bin/mdl",
+  ]) {
+    if (fs.existsSync(abs)) candidates.push({ cmd: abs, args: [], label: abs });
+  }
   candidates.push({ cmd: "uv", args: ["run", "mdl"], label: "uv run mdl" });
 
   for (const c of candidates) {
