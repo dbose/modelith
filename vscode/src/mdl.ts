@@ -70,13 +70,30 @@ export function runMdl(bin: MdlBin, args: string[], cwd: string): Promise<RunRes
 // --- workspace discovery -------------------------------------------------------
 
 /** The model repo dir (contains mdl-project.yaml). Setting wins; else first hit. */
+/** Resolve a relative config path against whichever workspace root actually
+ * contains `marker`. A multi-root `.code-workspace` (model + transform/warehouse
+ * + the `.` repo root) means folders[0] is often NOT the repo root, so joining a
+ * relative setting onto folders[0] can produce a bogus path like model/model.
+ * Try every root; pick the first where <root>/<configured>/<marker> exists. */
+function resolveConfiguredDir(configured: string, marker: string): string | undefined {
+  if (path.isAbsolute(configured)) return configured;
+  const roots = vscode.workspace.workspaceFolders ?? [];
+  for (const r of roots) {
+    const candidate = path.join(r.uri.fsPath, configured);
+    if (fs.existsSync(path.join(candidate, marker))) return candidate;
+  }
+  // nothing matched the marker — fall back to folders[0] join (previous behaviour)
+  const ws = roots[0];
+  return ws ? path.join(ws.uri.fsPath, configured) : undefined;
+}
+
 export async function findModelDir(): Promise<string | undefined> {
   const cfg = vscode.workspace.getConfiguration("modelith");
   const configured = cfg.get<string>("modelDir");
   const ws = vscode.workspace.workspaceFolders?.[0];
   if (!ws) return undefined;
   if (configured) {
-    return path.isAbsolute(configured) ? configured : path.join(ws.uri.fsPath, configured);
+    return resolveConfiguredDir(configured, "mdl-project.yaml");
   }
   const hits = await vscode.workspace.findFiles("**/mdl-project.yaml", "**/node_modules/**", 5);
   if (hits.length === 0) return undefined;
@@ -92,7 +109,7 @@ export async function findDbtProjectDir(): Promise<string | undefined> {
   const ws = vscode.workspace.workspaceFolders?.[0];
   if (!ws) return undefined;
   if (configured) {
-    return path.isAbsolute(configured) ? configured : path.join(ws.uri.fsPath, configured);
+    return resolveConfiguredDir(configured, "dbt_project.yml");
   }
   const hits = await vscode.workspace.findFiles(
     "**/dbt_project.yml",
