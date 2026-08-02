@@ -11,6 +11,7 @@ export function TopBar({
   onToggleTypes,
   onFitView,
   onRelayout,
+  onRefresh,
   saColors,
   readOnly,
   dirty,
@@ -27,6 +28,7 @@ export function TopBar({
   onToggleTypes: () => void;
   onFitView: () => void;
   onRelayout: () => void;
+  onRefresh: () => void;
   saColors: Map<string, string>;
   readOnly: boolean;
   dirty: boolean;
@@ -107,6 +109,13 @@ export function TopBar({
           title="Toggle data types"
         >
           {"{T}"}
+        </button>
+        <button
+          className="tool-btn"
+          onClick={onRefresh}
+          title="Refresh from disk (picks up terminal / external edits)"
+        >
+          {"⟳"}
         </button>
         <button className="tool-btn" onClick={onRelayout} title="Auto-layout">
           {"⌗"}

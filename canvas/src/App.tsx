@@ -65,6 +65,29 @@ function Canvas() {
 
   useEffect(refresh, [refresh]);
 
+  // Live-follow the model on disk: poll the fingerprint and refresh only when it
+  // changes (a `mdl new` in the terminal, another editor, git checkout). Cheap —
+  // fetches the full model only on an actual change. Skipped in minimal/focus mode.
+  useEffect(() => {
+    if (minimal) return;
+    const id = setInterval(() => {
+      fetchModel()
+        .then((m) => {
+          setDoc((cur) => {
+            if (cur && m.fingerprint === cur.fingerprint) return cur; // unchanged
+            fetchDiagnostics().then(setDiagnostics).catch(() => setDiagnostics(null));
+            gitStatus()
+              .then((s) => setDirty(Boolean(s.git && !s.clean)))
+              .catch(() => setDirty(false));
+            setRefreshKey((k) => k + 1);
+            return m;
+          });
+        })
+        .catch(() => undefined);
+    }, 3000);
+    return () => clearInterval(id);
+  }, [minimal]);
+
   /** The single mutation path: send a command with the fingerprint we based our
    * view on; refresh on success; surface stale-model and validation errors. */
   const exec = useCallback(
@@ -280,6 +303,7 @@ function Canvas() {
         onToggleTypes={() => setShowTypes((v) => !v)}
         onFitView={() => fitView({ padding: 0.15, duration: 300 })}
         onRelayout={relayout}
+        onRefresh={refresh}
         saColors={saColors}
         readOnly={readOnly}
         dirty={dirty}

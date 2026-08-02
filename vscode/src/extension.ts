@@ -143,6 +143,13 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
             const focus = previewFocus(ed?.document);
             if (preview && focus) void renderPreview(dir, focus);
           }),
+          // Re-render the preview when a model YAML is saved, so it reflects edits
+          // (from the editor, or a `mdl new`/CLI change reopened in the editor).
+          vscode.workspace.onDidSaveTextDocument((doc) => {
+            if (preview && doc.uri.fsPath.endsWith(".yaml")) {
+              void renderPreview(dir, previewFocus(vscode.window.activeTextEditor?.document));
+            }
+          }),
         );
       }
       await renderPreview(dir, previewFocus(vscode.window.activeTextEditor?.document));
