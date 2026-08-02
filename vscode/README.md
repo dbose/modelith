@@ -19,8 +19,13 @@ standalone or in a devcontainer.
   registered with the Red Hat YAML extension (if installed) per model glob.
 - **Auto-discovery** — finds `mdl-project.yaml` and `dbt_project.yml` anywhere
   in the workspace; every location is overridable in settings.
-- **mdl detection** — `.venv/bin/mdl` → `mdl` on PATH → `uv run mdl`, or set
-  `modelith.mdlPath`.
+- **mdl detection** — resolves in order: `modelith.mdlPath` (if set) →
+  `<workspace>/.venv/bin/mdl` → `mdl` on PATH → the active conda/virtualenv bin
+  (`$CONDA_PREFIX`/`$VIRTUAL_ENV`) → well-known installs (`~/.local/bin/mdl` from
+  `uv tool install`/`pipx`, homebrew, `/usr/local/bin`) → `uv run mdl`. No
+  hardcoded paths — home-relative locations use each user's own `$HOME`. If none
+  match (e.g. a nonstandard install), run `which mdl` in the integrated terminal
+  and set that as `modelith.mdlPath`.
 
 ## Devcontainers
 

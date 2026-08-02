@@ -624,6 +624,17 @@ devcontainer, the template's `postCreateCommand` handles it; the extension also
 prepends the detected `mdl` directory to every integrated terminal's PATH. As a
 fallback, set `modelith.mdlPath` in settings.
 
+**The extension reports `mdl CLI not found` even though the terminal finds it.**
+When you launch VS Code from the macOS Dock (not from a terminal), it inherits a
+minimal PATH that omits per-user install dirs your shell profile would add. The
+extension already probes the common spots — `~/.local/bin/mdl` (from
+`uv tool install`/`pipx`), the active `$CONDA_PREFIX`/`$VIRTUAL_ENV` bin, homebrew,
+`/usr/local/bin`, and `uv run mdl` — using *your own* `$HOME`, so a standard
+install just works with no configuration. If you installed somewhere nonstandard,
+run `which mdl` in the integrated terminal and paste that into `modelith.mdlPath`.
+(Never commit an absolute `mdlPath` to a shared `.code-workspace` — it's per
+machine. Prefer letting detection resolve it.)
+
 **The status bar shows `◮ Modelith ?` (question mark).**
 The language server failed to start — usually `mdl` isn't found. Check the
 **Modelith** output channel; run **Modelith: Restart Language Server** after

@@ -29,12 +29,21 @@ export async function findMdl(root: string): Promise<MdlBin> {
   // per-user install locations a shell profile would add, so `mdl (PATH)` misses
   // a `uv tool install modelith` / `pipx` install. Probe those well-known bins.
   const home = process.env.HOME || os.homedir();
-  for (const abs of [
+  const wellKnown = [
     path.join(home, ".local", "bin", "mdl"), // uv tool install / pipx
     path.join(home, ".local", "share", "uv", "tools", "modelith", "bin", "mdl"),
     "/opt/homebrew/bin/mdl",
     "/usr/local/bin/mdl",
-  ]) {
+  ];
+  // An active conda/virtualenv exports its bin via env vars even when PATH is
+  // stripped by a GUI launch — check those before the generic fallbacks.
+  if (process.env.CONDA_PREFIX) {
+    wellKnown.unshift(path.join(process.env.CONDA_PREFIX, "bin", "mdl"));
+  }
+  if (process.env.VIRTUAL_ENV) {
+    wellKnown.unshift(path.join(process.env.VIRTUAL_ENV, "bin", "mdl"));
+  }
+  for (const abs of wellKnown) {
     if (fs.existsSync(abs)) candidates.push({ cmd: abs, args: [], label: abs });
   }
   candidates.push({ cmd: "uv", args: ["run", "mdl"], label: "uv run mdl" });
@@ -46,7 +55,10 @@ export async function findMdl(root: string): Promise<MdlBin> {
     }
   }
   throw new Error(
-    "mdl CLI not found. Install Modelith (`uv tool install modelith`) or set modelith.mdlPath.",
+    "mdl CLI not found. Install it (`uv tool install modelith` or `pipx install " +
+      "modelith`), then reload. If it's installed but not detected — e.g. in a conda " +
+      "env — run `which mdl` in the integrated terminal and set that path as " +
+      "`modelith.mdlPath` in Settings.",
   );
 }
 
