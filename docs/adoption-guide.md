@@ -353,10 +353,10 @@ naming violations. This is `mdl validate` running continuously through the LSP.
 
 ### 5.3 The preview pane (not an editor)
 
-Right-click a model file → **Modelith: Open Model Preview to the Side**, or use
-the command palette. The ER diagram opens beside your YAML, like the Markdown
-preview, and re-centres on whatever entity you're editing. Read-only by design —
-your source is the text.
+Right-click a model `.yaml` file — in the Explorer or in the open editor →
+**Modelith: Open Model Preview to the Side**, or run it from the command palette.
+The ER diagram opens beside your YAML, like the Markdown preview, and re-centres
+on whatever entity you're editing. Read-only by design — your source is the text.
 
 ### 5.4 See impact before anything risky
 

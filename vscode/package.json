@@ -131,6 +131,11 @@
           "command": "modelith.liftModel",
           "when": "resourceExtname == .sql",
           "group": "modelith"
+        },
+        {
+          "command": "modelith.openPreview",
+          "when": "resourceExtname == .sql || resourceExtname == .yaml",
+          "group": "modelith"
         }
       ],
       "editor/context": [
