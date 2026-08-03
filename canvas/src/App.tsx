@@ -67,18 +67,20 @@ function Canvas() {
 
   // Live-follow the model on disk: poll the fingerprint and refresh only when it
   // changes (a `mdl new` in the terminal, another editor, git checkout). Cheap —
-  // fetches the full model only on an actual change. Skipped in minimal/focus mode.
+  // fetches the full model only on an actual change. Runs in the embedded preview
+  // pane too (minimal mode), so authoring in the terminal shows up without a reload.
   useEffect(() => {
-    if (minimal) return;
     const id = setInterval(() => {
       fetchModel()
         .then((m) => {
           setDoc((cur) => {
             if (cur && m.fingerprint === cur.fingerprint) return cur; // unchanged
-            fetchDiagnostics().then(setDiagnostics).catch(() => setDiagnostics(null));
-            gitStatus()
-              .then((s) => setDirty(Boolean(s.git && !s.clean)))
-              .catch(() => setDirty(false));
+            if (!minimal) {
+              fetchDiagnostics().then(setDiagnostics).catch(() => setDiagnostics(null));
+              gitStatus()
+                .then((s) => setDirty(Boolean(s.git && !s.clean)))
+                .catch(() => setDirty(false));
+            }
             setRefreshKey((k) => k + 1);
             return m;
           });
