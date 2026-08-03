@@ -133,6 +133,51 @@ def test_relationship_lifecycle(model_dir):
     assert rel.created_id not in ModelRepo.load(model_dir).model.relationships
 
 
+def test_create_relationship_mints_fk_column(model_dir):
+    # one-gesture FK: drawing the link creates the FK column on the source,
+    # named after the target's business key, and wires it as the from-attribute.
+    cust = apply_command(model_dir, "create_entity", {"name": "custodian"}).created_id
+    apply_command(
+        model_dir,
+        "add_attribute",
+        {
+            "entity_id": cust,
+            "name": "custodian_id",
+            "domain": "bigint",
+            "role": "business_key",
+            "nullable": False,
+        },
+    )
+    trade_id = _entity_id(model_dir, "trade")
+    rel = apply_command(
+        model_dir,
+        "create_relationship",
+        {"from_entity": trade_id, "to_entity": cust, "create_from_fk": True},
+    )
+    repo = ModelRepo.load(model_dir)
+    trade = repo.model.logical_entities[trade_id]
+    fk = next((a for a in trade.attributes if a.name == "custodian_id"), None)
+    assert fk is not None, "FK column should be minted on the source"
+    assert fk.domain == "bigint"  # inherited the target BK's domain
+    r = repo.model.relationships[rel.created_id]
+    assert r.from_.attributes == [fk.id]  # wired as the relationship's from-attribute
+
+    # idempotent: drawing a second link reuses the existing column, no duplicate
+    cust2 = apply_command(model_dir, "create_entity", {"name": "custodian2"}).created_id
+    apply_command(
+        model_dir,
+        "add_attribute",
+        {"entity_id": cust2, "name": "custodian_id", "role": "business_key"},
+    )
+    apply_command(
+        model_dir,
+        "create_relationship",
+        {"from_entity": trade_id, "to_entity": cust2, "create_from_fk": True},
+    )
+    trade = ModelRepo.load(model_dir).model.logical_entities[trade_id]
+    assert sum(1 for a in trade.attributes if a.name == "custodian_id") == 1
+
+
 def test_delete_entity_requires_cascade(model_dir):
     eid = _entity_id(model_dir, "counterparty")  # has a relationship
     with pytest.raises(CommandError, match="cascade"):

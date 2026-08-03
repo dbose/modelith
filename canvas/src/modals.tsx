@@ -249,12 +249,15 @@ export function RelModal({
   const [optionality, setOptionality] = useState("mandatory");
   if (!from || !to) return null;
 
+  // "__new__" = mint the FK column on the source in the same gesture
+  const createFk = fromAttr === "__new__";
   const create = () =>
     exec("create_relationship", {
       from_entity: from.id,
       to_entity: to.id,
-      from_attribute: fromAttr || null,
+      from_attribute: createFk ? null : fromAttr || null,
       to_attribute: toAttr || null,
+      create_from_fk: createFk,
       cardinality,
       optionality,
     }).then(onClose);
@@ -273,6 +276,9 @@ export function RelModal({
         foreign key on {from.name}
         <select value={fromAttr} onChange={(e) => setFromAttr(e.target.value)}>
           <option value="">(none)</option>
+          <option value="__new__">
+            ➕ create column{toBk ? ` "${toBk.name}"` : ""}
+          </option>
           {from.attributes.map((a) => (
             <option key={a.id} value={a.id}>
               {a.name}

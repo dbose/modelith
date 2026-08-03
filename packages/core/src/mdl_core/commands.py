@@ -364,6 +364,27 @@ def _create_relationship(repo: ModelRepo, p: dict) -> str:
     name = _slug(p.get("name") or f"{frm.name}_to_{to.name}")
     if any(r.name == name for r in repo.model.relationships.values()):
         raise CommandError(f"relationship {name!r} already exists")
+
+    from_attr = p.get("from_attribute")
+    # One-gesture FK: mint the foreign-key column on the source, named after the
+    # target's business key, with its domain — so drawing the link also creates
+    # the column (no separate add-attribute step). No-op if the column exists.
+    if p.get("create_from_fk"):
+        to_bk = next((a for a in to.attributes if a.role == "business_key"), None)
+        fk_name = _slug(p.get("from_fk_name") or (to_bk.name if to_bk else f"{to.name}_id"))
+        fk_domain = to_bk.domain if to_bk else "string"
+        existing = next((a for a in frm.attributes if a.name == fk_name), None)
+        if existing:
+            from_attr = existing.id
+        else:
+            _, frm_node = _entity_node(repo, frm.id)
+            fk_id = new_ulid()
+            frm_node.setdefault("attributes", []).append(
+                {"id": fk_id, "name": fk_name, "domain": fk_domain,
+                 "role": "attribute", "nullable": True}
+            )
+            from_attr = fk_id
+
     rel_id = new_ulid()
     rel: dict = {
         "id": rel_id,
@@ -371,7 +392,7 @@ def _create_relationship(repo: ModelRepo, p: dict) -> str:
         "name": name,
         "from": {
             "entity": frm.id,
-            "attributes": [p["from_attribute"]] if p.get("from_attribute") else [],
+            "attributes": [from_attr] if from_attr else [],
         },
         "to": {
             "entity": to.id,
