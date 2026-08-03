@@ -93,7 +93,24 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
 .attr-name.pk { color: var(--pk); font-weight: 600; }
 .attr-type { color: var(--text-dim); font-family: var(--mono); font-size: 10px; flex: none; }
 .attr-notnull { color: var(--text-dim); font-size: 8px; flex: none; }
-.port { width: 8px !important; height: 8px !important; background: var(--border-strong) !important; border: 2px solid var(--bg) !important; }
+/* Connection ports (draw.io-style): calm by default, but on node hover they grow,
+   glow accent, and cue that you can drag from them to link entities. */
+.port {
+  width: 11px !important; height: 11px !important;
+  background: var(--border-strong) !important; border: 2px solid var(--bg) !important;
+  opacity: 0.55; transition: transform 0.12s ease, background 0.12s ease, opacity 0.12s ease;
+}
+.entity-node:hover .port {
+  opacity: 1; background: var(--accent) !important; transform: scale(1.25);
+  box-shadow: 0 0 0 4px rgba(94, 234, 212, 0.18);
+  cursor: crosshair;
+}
+.port:hover { transform: scale(1.6) !important; cursor: crosshair; }
+/* hover the whole card → accent ring, so it reads as a connectable object */
+.entity-node:hover { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(94,234,212,0.25); }
+/* the live drag line while connecting */
+.react-flow__connectionline .react-flow__edge-path,
+.react-flow__connection-path { stroke: var(--accent) !important; stroke-width: 2 !important; }
 
 /* ---------- relationship edges (crow's foot) ---------- */
 .rel-path { stroke: var(--border-strong); stroke-width: 1.6; }
