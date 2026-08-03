@@ -146,6 +146,28 @@ def test_delete_entity_requires_cascade(model_dir):
     assert not any(d["severity"] == "error" for d in r.diagnostics)
 
 
+def test_delete_entity_cascades_physical_tables(model_dir):
+    # a physical table realising an entity must not be orphaned by a delete
+    from mdl_core.ids import new_ulid
+
+    eid = _entity_id(model_dir, "trade")  # no relationships in the fixture
+    pt = model_dir / "physical" / "duckdb_dev" / "tables" / "fct_trade.yaml"
+    pt.parent.mkdir(parents=True, exist_ok=True)
+    pt.write_text(
+        f"id: {new_ulid()}\nkind: physical_table\ntarget: duckdb_dev\n"
+        f"realises: {eid}\nname: FCT_TRADE\nmaterialization: table\n"
+    )
+    # without cascade → refuses (would dangle the physical realises)
+    with pytest.raises(CommandError, match="physical table"):
+        apply_command(model_dir, "delete_entity", {"id": eid})
+    assert pt.exists()  # refusal touched nothing
+    # with cascade → physical table removed, model stays valid
+    apply_command(model_dir, "delete_entity", {"id": eid, "cascade": True})
+    assert not pt.exists()
+    repo = ModelRepo.load(model_dir)
+    assert all(p.realises != eid for p in repo.model.physical_tables.values())
+
+
 def test_command_endpoint_and_read_only(model_dir):
     from fastapi.testclient import TestClient
     from mdl_server import create_app

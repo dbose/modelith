@@ -175,13 +175,24 @@ def _delete_entity(repo: ModelRepo, p: dict) -> None:
         for r in repo.model.relationships.values()
         if r.from_.entity == le.id or r.to.entity == le.id
     ]
-    if rels and not p.get("cascade"):
-        names = ", ".join(r.name for r in rels)
-        raise CommandError(f"entity has relationships ({names}); pass cascade=true")
+    # Physical tables realise this logical entity; deleting the entity without
+    # them would leave a dangling `realises` (validate would then error).
+    physicals = [pt for pt in repo.model.physical_tables.values() if pt.realises == le.id]
+    if (rels or physicals) and not p.get("cascade"):
+        blockers = [f"{len(rels)} relationship(s)"] if rels else []
+        if physicals:
+            blockers.append(f"{len(physicals)} physical table(s)")
+        raise CommandError(
+            f"entity {le.name!r} is referenced by {', '.join(blockers)}; pass cascade=true"
+        )
     for r in rels:
         rel_path = repo.path_for_ulid(r.id)
         if rel_path:
             repo.remove_file(rel_path)
+    for pt in physicals:
+        pt_path = repo.path_for_ulid(pt.id)
+        if pt_path:
+            repo.remove_file(pt_path)
     le_path = repo.path_for_ulid(le.id)
     if le_path:
         repo.remove_file(le_path)

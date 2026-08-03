@@ -597,6 +597,7 @@ to forget.
 | `mdl glossary -m model [--read-only]` | SME (platform lead runs it) | the git-native glossary app (edits → PR) |
 | `mdl lsp` | editors (auto) | the language server |
 | `mdl new term\|entity\|subject-area <n> -m model` | SME / architect | scaffold an object (ULIDs minted) |
+| `mdl delete entity <n> -m model [--cascade]` | architect | delete an entity — shows impact, confirms, validates |
 | `mdl ontology search\|check\|promote\|vendor` | SME / architect | vocabulary + alignment lifecycle |
 | `mdl validate -m model [--format json]` | all / CI | schema, refs, ontology, naming |
 | `mdl generate -m model -o transform/warehouse` | architect | emit dbt (protected regions) |

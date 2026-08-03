@@ -526,6 +526,86 @@ def ontology_vendor(
 new_app = typer.Typer(help="Scaffold model objects (mints ULIDs for you).")
 app.add_typer(new_app, name="new")
 
+delete_app = typer.Typer(help="Delete model objects (safe: shows impact, confirms).")
+app.add_typer(delete_app, name="delete")
+
+
+@delete_app.command("entity")
+def delete_entity(
+    name: str = typer.Argument(..., help="Logical entity name (e.g. benchmark)"),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    cascade: bool = typer.Option(
+        False, "--cascade", help="Also delete relationships and physical tables that reference it"
+    ),
+    yes: bool = typer.Option(False, "--yes", "-y", help="Skip the confirmation prompt"),
+) -> None:
+    """Delete an entity and its dangling references (safe by default).
+
+    Shows exactly what will be removed and asks before touching anything. The
+    conceptual entity is dropped only if nothing else realises it. Relationships
+    and physical tables that reference the entity block the delete unless
+    --cascade. Validates afterwards, so you never end with a broken model."""
+    from mdl_core.commands import CommandError, apply_command
+
+    repo = _load(model_dir)
+    le = next(
+        (e for e in repo.model.logical_entities.values() if e.name == name),
+        None,
+    )
+    if le is None:
+        typer.secho(f"no logical entity named {name!r}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    # Preflight impact: what references this entity, and what will be removed.
+    rels = [
+        r
+        for r in repo.model.relationships.values()
+        if r.from_.entity == le.id or r.to.entity == le.id
+    ]
+    physicals = [pt for pt in repo.model.physical_tables.values() if pt.realises == le.id]
+    ce = repo.model.conceptual_entities.get(le.realises) if le.realises else None
+    ce_others = (
+        [
+            x
+            for x in repo.model.logical_entities.values()
+            if x.realises == le.realises and x.id != le.id
+        ]
+        if le.realises
+        else []
+    )
+
+    typer.secho(f"Delete entity {name!r}:", fg=typer.colors.CYAN, bold=True)
+    typer.echo(f"  - logical entity  {le.name}")
+    if ce and not ce_others:
+        typer.echo(f"  - conceptual      {ce.name}  (nothing else realises it)")
+    elif ce:
+        others = ", ".join(x.name for x in ce_others)
+        typer.echo(f"  · conceptual      {ce.name}  KEPT (still realised by: {others})")
+    for r in rels:
+        typer.echo(f"  {'-' if cascade else '!'} relationship    {r.name}")
+    for pt in physicals:
+        typer.echo(f"  {'-' if cascade else '!'} physical table  {pt.name} ({pt.target})")
+
+    if (rels or physicals) and not cascade:
+        typer.secho(
+            "\nrefusing: this entity is referenced. Re-run with --cascade to also "
+            "delete the flagged (!) objects.",
+            fg=typer.colors.YELLOW,
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    if not yes and not typer.confirm("\nProceed?", default=False):
+        typer.secho("aborted", fg=typer.colors.YELLOW)
+        raise typer.Exit(0)
+
+    try:
+        apply_command(model_dir, "delete_entity", {"id": le.id, "cascade": cascade})
+    except CommandError as e:
+        typer.secho(str(e), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from e
+    typer.secho(f"deleted entity {name!r}", fg=typer.colors.GREEN)
+
 
 @new_app.command("entity")
 def new_entity(
