@@ -3,6 +3,19 @@ import type { AttributeRow, Entity, ModelDoc, Relationship } from "./types";
 
 type Exec = (op: string, payload: Record<string, unknown>) => Promise<unknown>;
 
+// Standard primitive base types the emitter understands (mdl_emit_dbt platforms),
+// always offered in the attribute-type dropdown so a fresh model isn't limited to
+// whatever domains happen to be seeded. Named model domains are merged on top.
+const BASE_TYPES = [
+  "string",
+  "integer",
+  "bigint",
+  "decimal",
+  "boolean",
+  "date",
+  "timestamp",
+];
+
 /** Editable entity inspector (E3). Every field edit becomes a semantic command;
  * the YAML files change, comments survive, ULIDs never move. */
 export function Inspector({
@@ -146,7 +159,7 @@ export function Inspector({
             ))}
           </tbody>
         </table>
-        {!readOnly && <AddAttribute entity={entity} doc={doc} exec={exec} />}
+        {!readOnly && <AddAttribute entity={entity} exec={exec} />}
       </section>
 
       {rels.length > 0 && (
@@ -351,11 +364,13 @@ function AttrRow({
           value={a.domain ?? "string"}
           onChange={(e) => upd({ domain: e.target.value })}
         >
-          {[...new Set([...(doc.domains ?? []), "string", a.domain ?? "string"])].sort().map((d) => (
-            <option key={d} value={d}>
-              {d}
-            </option>
-          ))}
+          {[...new Set([...BASE_TYPES, ...(doc.domains ?? []), a.domain ?? "string"])]
+            .sort()
+            .map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
         </select>
       </td>
       <td>
@@ -395,14 +410,14 @@ function AttrRow({
   );
 }
 
-function AddAttribute({ entity, doc, exec }: { entity: Entity; doc: ModelDoc; exec: Exec }) {
+function AddAttribute({ entity, exec }: { entity: Entity; exec: Exec }) {
   const [name, setName] = useState("");
   const add = () => {
     if (!name.trim()) return;
     exec("add_attribute", {
       entity_id: entity.id,
       name,
-      domain: doc.domains?.[0] ?? "string",
+      domain: "string",
     }).then(() => setName(""));
   };
   return (
