@@ -415,6 +415,38 @@ def _delete_relationship(repo: ModelRepo, p: dict) -> None:
         repo.remove_file(rel_path)
 
 
+def _rename_relationship(repo: ModelRepo, p: dict) -> None:
+    _require(p, "id", "name")
+    rel_obj = repo.model.relationships.get(p["id"])
+    if rel_obj is None:
+        raise CommandError(f"no relationship {p['id']}")
+    new_name = _slug(p["name"])
+    if any(r.name == new_name and r.id != p["id"] for r in repo.model.relationships.values()):
+        raise CommandError(f"relationship {new_name!r} already exists")
+    rel, node = _node_for(repo, rel_obj.id)
+    node["name"] = new_name
+    repo.rename_file(rel, f"logical/relationships/{new_name}.yaml")
+
+
+_CARDINALITIES = {"one_to_one", "one_to_many", "many_to_one", "many_to_many"}
+
+
+def _update_relationship(repo: ModelRepo, p: dict) -> None:
+    _require(p, "id")
+    rel_obj = repo.model.relationships.get(p["id"])
+    if rel_obj is None:
+        raise CommandError(f"no relationship {p['id']}")
+    _, node = _node_for(repo, rel_obj.id)
+    if p.get("cardinality"):
+        if p["cardinality"] not in _CARDINALITIES:
+            raise CommandError(f"bad cardinality {p['cardinality']!r}")
+        node["cardinality"] = p["cardinality"]
+    if p.get("optionality"):
+        if p["optionality"] not in {"mandatory", "optional"}:
+            raise CommandError(f"bad optionality {p['optionality']!r}")
+        node["optionality"] = p["optionality"]
+
+
 # --- ontology alignment -----------------------------------------------------------
 
 
@@ -487,6 +519,8 @@ _HANDLERS = {
     "delete_attribute": _delete_attribute,
     "create_relationship": _create_relationship,
     "delete_relationship": _delete_relationship,
+    "rename_relationship": _rename_relationship,
+    "update_relationship": _update_relationship,
     "set_alignment": _set_alignment,
     "clear_alignment": _clear_alignment,
 }

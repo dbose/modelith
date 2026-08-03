@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ontologySearch } from "./api";
-import type { Entity, ModelDoc, TermCard } from "./types";
+import type { Entity, ModelDoc, Relationship, TermCard } from "./types";
 
 type Exec = (op: string, payload: Record<string, unknown>) => Promise<unknown>;
 
@@ -308,6 +308,76 @@ export function RelModal({
       <div className="modal-footer">
         <button className="primary-btn" onClick={create}>
           Create relationship
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
+/** Edit an existing relationship (opened by clicking its edge): rename, retune
+ * cardinality/optionality, or delete. Rename/delete go through the mutation
+ * engine, so the YAML file is renamed/removed and comments survive. */
+export function RelEditModal({
+  rel,
+  doc,
+  exec,
+  onClose,
+}: {
+  rel: Relationship;
+  doc: ModelDoc;
+  exec: Exec;
+  onClose: () => void;
+}) {
+  const nameOf = (id: string) => doc.entities.find((e) => e.id === id)?.name ?? "?";
+  const [name, setName] = useState(rel.name);
+  const [cardinality, setCardinality] = useState(rel.cardinality);
+  const [optionality, setOptionality] = useState(rel.optionality);
+  const [confirmDel, setConfirmDel] = useState(false);
+
+  const save = async () => {
+    if (name.trim() && name.trim() !== rel.name) {
+      await exec("rename_relationship", { id: rel.id, name: name.trim() });
+    }
+    if (cardinality !== rel.cardinality || optionality !== rel.optionality) {
+      await exec("update_relationship", { id: rel.id, cardinality, optionality });
+    }
+    onClose();
+  };
+  const del = () => exec("delete_relationship", { id: rel.id }).then(onClose);
+
+  return (
+    <Modal title={`${nameOf(rel.from.entity)} → ${nameOf(rel.to.entity)}`} onClose={onClose}>
+      <label className="form-row">
+        relationship name
+        <input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+      </label>
+      <label className="form-row">
+        cardinality
+        <select value={cardinality} onChange={(e) => setCardinality(e.target.value as typeof cardinality)}>
+          {CARDS.map((c) => (
+            <option key={c}>{c}</option>
+          ))}
+        </select>
+      </label>
+      <label className="form-row">
+        optionality
+        <select value={optionality} onChange={(e) => setOptionality(e.target.value as typeof optionality)}>
+          <option value="mandatory">mandatory</option>
+          <option value="optional">optional</option>
+        </select>
+      </label>
+      <div className="modal-footer" style={{ justifyContent: "space-between" }}>
+        {confirmDel ? (
+          <button className="danger-btn" onClick={del}>
+            Confirm delete
+          </button>
+        ) : (
+          <button className="mini-btn danger" onClick={() => setConfirmDel(true)}>
+            Delete relationship
+          </button>
+        )}
+        <button className="primary-btn" onClick={save}>
+          Save
         </button>
       </div>
     </Modal>

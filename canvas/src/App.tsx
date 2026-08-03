@@ -18,7 +18,7 @@ import { ApiError, fetchDiagnostics, fetchModel, gitStatus, sendCommand } from "
 import { EntityNode, type EntityNodeData } from "./EntityNode";
 import { Inspector } from "./Inspector";
 import { layoutGraph } from "./layout";
-import { AlignModal, NewEntityModal, RelModal } from "./modals";
+import { AlignModal, NewEntityModal, RelEditModal, RelModal } from "./modals";
 import { RelationshipEdge, type RelationshipEdgeData } from "./RelationshipEdge";
 import { SidePanel, type PanelTab } from "./SidePanel";
 import { TopBar } from "./TopBar";
@@ -42,6 +42,7 @@ function Canvas() {
   const [alignFor, setAlignFor] = useState<Entity | null>(null);
   const [newEntityOpen, setNewEntityOpen] = useState(false);
   const [relDraft, setRelDraft] = useState<{ from: string; to: string } | null>(null);
+  const [relEdit, setRelEdit] = useState<string | null>(null); // relationship id being edited
   const [dirty, setDirty] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [nodes, setNodes] = useState<Node<EntityNodeData>[]>([]);
@@ -321,7 +322,11 @@ function Canvas() {
           nodeTypes={nodeTypes}
           edgeTypes={edgeTypes}
           onNodeClick={(_, n) => setSelectedId(n.id)}
-          onPaneClick={() => setSelectedId(null)}
+          onEdgeClick={(_, e) => !readOnly && setRelEdit(e.id)}
+          onPaneClick={() => {
+            setSelectedId(null);
+            setRelEdit(null);
+          }}
           onNodeDragStop={(_, n) =>
             setNodes((prev) => prev.map((p) => (p.id === n.id ? { ...p, position: n.position } : p)))
           }
@@ -385,6 +390,14 @@ function Canvas() {
           toId={relDraft.to}
           exec={exec}
           onClose={() => setRelDraft(null)}
+        />
+      )}
+      {relEdit && doc.relationships.find((r) => r.id === relEdit) && (
+        <RelEditModal
+          rel={doc.relationships.find((r) => r.id === relEdit)!}
+          doc={doc}
+          exec={exec}
+          onClose={() => setRelEdit(null)}
         />
       )}
     </div>

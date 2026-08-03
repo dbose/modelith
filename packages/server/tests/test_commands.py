@@ -129,6 +129,21 @@ def test_relationship_lifecycle(model_dir):
     repo = ModelRepo.load(model_dir)
     assert rel.created_id in repo.model.relationships
 
+    # rename: file + name change, comment-preserving
+    apply_command(model_dir, "rename_relationship", {"id": rel.created_id, "name": "trades_with"})
+    repo = ModelRepo.load(model_dir)
+    assert repo.model.relationships[rel.created_id].name == "trades_with"
+    assert (model_dir / "logical" / "relationships" / "trades_with.yaml").exists()
+
+    # update cardinality/optionality
+    apply_command(
+        model_dir,
+        "update_relationship",
+        {"id": rel.created_id, "cardinality": "one_to_one", "optionality": "optional"},
+    )
+    r2 = ModelRepo.load(model_dir).model.relationships[rel.created_id]
+    assert r2.cardinality == "one_to_one" and r2.optionality == "optional"
+
     apply_command(model_dir, "delete_relationship", {"id": rel.created_id})
     assert rel.created_id not in ModelRepo.load(model_dir).model.relationships
 

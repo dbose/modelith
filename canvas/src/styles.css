@@ -114,6 +114,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
 
 /* ---------- relationship edges (crow's foot) ---------- */
 .rel-path { stroke: var(--border-strong); stroke-width: 1.6; }
+.rel-edge { cursor: pointer; }
 .rel-glyph { stroke: var(--border-strong); stroke-width: 1.6; fill: none; }
 .rel-glyph.ring { fill: var(--bg); }
 .rel-edge:hover .rel-path, .rel-edge.selected .rel-path,
@@ -246,6 +247,10 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
   background: var(--accent); color: #06281f; font-weight: 700; font-size: 13px;
 }
 .primary-btn:disabled { opacity: 0.4; cursor: default; }
+.danger-btn {
+  padding: 8px 16px; border-radius: 8px; border: 1px solid var(--err); cursor: pointer;
+  background: rgba(248, 113, 113, 0.14); color: var(--err); font-weight: 700; font-size: 13px;
+}
 .form-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; font-size: 12px; color: var(--text-dim); }
 
 /* term cards (ontology search) */
