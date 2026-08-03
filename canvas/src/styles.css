@@ -133,8 +133,12 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
 .chip.layer-core { background: rgba(94, 234, 212, 0.15); color: var(--accent); }
 .chip.layer-domain { background: rgba(240, 171, 252, 0.15); color: #f0abfc; }
 .chip.layer-specialised { background: rgba(252, 211, 77, 0.15); color: var(--pk); }
-.attr-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.attr-table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: auto; }
 .attr-table td { padding: 4px 6px; border-bottom: 1px solid var(--border); }
+/* the name is the flexible column: it absorbs the row's free width so the
+   edit-input doesn't collapse to ~20px next to the greedy type/role selects */
+.attr-table td:first-child { width: 100%; }
+.attr-table td:first-child .edit-input { min-width: 120px; }
 .attr-table td.pk { color: var(--pk); font-weight: 600; }
 .attr-table td.type { color: var(--text-dim); font-family: var(--mono); font-size: 11px; }
 .attr-table td.null { color: var(--text-dim); font-size: 10px; text-align: right; }
