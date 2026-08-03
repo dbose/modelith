@@ -29,6 +29,25 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   canvas = new CanvasManager(out);
   ctx.subscriptions.push({ dispose: () => canvas.dispose() });
 
+  // After a window reload VS Code restores our webview panels, but the `mdl serve`
+  // child died with the old extension host, so the restored iframe points at a
+  // dead port (blank). Re-hydrate the canvas (restart server + rewrite iframe);
+  // drop the restored preview pane (it re-opens cheaply and follows the editor).
+  ctx.subscriptions.push(
+    vscode.window.registerWebviewPanelSerializer("modelithCanvas", {
+      async deserializeWebviewPanel(panel) {
+        const dir = await findModelDir();
+        if (dir) await canvas.restore(panel, dir);
+        else panel.dispose();
+      },
+    }),
+    vscode.window.registerWebviewPanelSerializer("modelithPreview", {
+      async deserializeWebviewPanel(panel) {
+        panel.dispose(); // stale; user reopens via the command
+      },
+    }),
+  );
+
   // Status bar reflects the LSP-published diagnostics (source: "modelith").
   const refreshStatus = () => {
     let errors = 0;

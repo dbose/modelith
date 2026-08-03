@@ -46,6 +46,26 @@ export class CanvasManager {
     this.panel.onDidDispose(() => (this.panel = undefined));
   }
 
+  /** Re-hydrate a webview panel VS Code restored after a window reload. The
+   * `mdl serve` child process died with the old extension host, so the restored
+   * iframe points at a dead port (blank canvas). Adopt the panel, restart the
+   * server, and rewrite the iframe to the live URL. */
+  async restore(panel: vscode.WebviewPanel, modelDir: string): Promise<void> {
+    this.panel?.dispose();
+    this.panel = panel;
+    panel.onDidDispose(() => (this.panel = undefined));
+    try {
+      await this.ensureServer(modelDir);
+      const local = vscode.Uri.parse(`http://127.0.0.1:${this.port}/`);
+      const external = await vscode.env.asExternalUri(local);
+      panel.webview.html = this.html(external.toString());
+    } catch (e) {
+      panel.webview.html = `<body style="color:#e5e7eb;font:13px sans-serif;padding:16px;background:#0b0f16">
+        Canvas server could not restart after reload: ${String(e)}.<br>
+        Run <b>Modelith: Open Canvas</b> again.</body>`;
+    }
+  }
+
   private async ensureServer(modelDir: string): Promise<void> {
     if (this.proc && !this.proc.killed && this.servedDir === modelDir) return;
     this.stop();
