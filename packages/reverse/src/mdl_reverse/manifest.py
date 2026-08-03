@@ -70,7 +70,39 @@ class ManifestProjection:
 
 def read_manifest(path: str | Path) -> ManifestProjection:
     raw = json.loads(Path(path).read_text(encoding="utf-8"))
-    return _project(raw)
+    proj = _project(raw)
+    # dbt's manifest only records columns documented in .yml. The catalog.json
+    # (from `dbt docs generate`) introspects the warehouse and has the REAL column
+    # set — essential for detecting surrogate keys / SCD2 tracking columns that
+    # nobody documents. Merge it when present next to the manifest.
+    catalog = Path(path).parent / "catalog.json"
+    if catalog.exists():
+        try:
+            _merge_catalog(proj, json.loads(catalog.read_text(encoding="utf-8")))
+        except (ValueError, KeyError):  # a malformed catalog must not break reverse
+            proj.warnings.append("catalog.json present but unreadable; used manifest columns only")
+    return proj
+
+
+def _merge_catalog(proj: ManifestProjection, catalog: dict[str, Any]) -> None:
+    """Fill in physical columns from catalog.json. Catalog is authoritative for the
+    column SET and data types; manifest descriptions/meta are kept where they exist."""
+    by_name = {m.name: m for m in proj.models.values()}
+    for node in (catalog.get("nodes") or {}).values():
+        if not isinstance(node, dict):
+            continue
+        name = (node.get("metadata") or {}).get("name")
+        model = by_name.get(name)
+        if model is None:
+            continue
+        for col_name, col in (node.get("columns") or {}).items():
+            existing = model.columns.get(col_name)
+            model.columns[col_name] = ManifestColumn(
+                name=col_name,
+                data_type=_norm_type(col.get("type")),
+                description=(existing.description if existing else None),
+                meta=(existing.meta if existing else {}),
+            )
 
 
 def read_manifest_dict(raw: dict[str, Any]) -> ManifestProjection:

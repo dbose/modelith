@@ -209,7 +209,13 @@ def reverse(
         False, "--interactive", help="Prompt to accept/reject medium-confidence proposals"
     ),
 ) -> None:
-    """Reverse-engineer a dbt project into a Modelith model (spec §6)."""
+    """Reverse-engineer a dbt project into a Modelith model (spec §6).
+
+    Tip: run `dbt docs generate` first so a catalog.json sits next to the manifest.
+    The manifest only lists columns documented in .yml; the catalog has the real
+    warehouse columns, which is what lets reverse spot surrogate keys and SCD2
+    tracking columns to strip.
+    """
     # Accept either a manifest.json or a schema.yml (warehouse-free path).
     if project.name.endswith(".yml") or project.name.endswith(".yaml"):
         proj = read_schema_yml(project)
