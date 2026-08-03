@@ -34,6 +34,7 @@ from mdl_reverse.ledger import DecisionLedger, Verdict
 from mdl_reverse.manifest import read_manifest
 from mdl_reverse.reconcile import reconcile
 from mdl_reverse.render import render_json, render_markdown, render_text
+from mdl_reverse.reverse import apply_accepted_relationships
 from mdl_reverse.reverse import reverse as run_reverse
 from mdl_reverse.schema_reader import read_schema_yml
 from mdl_reverse.writer import write_model as write_reversed
@@ -231,6 +232,11 @@ def reverse(
 
     if interactive:
         _prompt_proposals(ledger, result, out, target)
+        # Materialise relationships the user just accepted (proposed at build time,
+        # so they weren't added to the model yet).
+        added = apply_accepted_relationships(result.model, ledger)
+        if added:
+            typer.secho(f"added {added} accepted relationship(s)", fg=typer.colors.GREEN)
 
     write_reversed(result.model, out)
     ledger.save(out)

@@ -288,6 +288,34 @@ def _infer_relationships(
     return proposals
 
 
+def apply_accepted_relationships(model: Model, ledger) -> int:
+    """Add relationships for accepted-but-not-yet-materialised decisions.
+
+    Interactive review flips a proposed relationship's verdict to `accepted` in the
+    ledger AFTER the model was built, so those never made it into the model. Call
+    this post-review to materialise them. Idempotent: skips any relationship whose
+    endpoints are already linked. Returns the number added.
+    """
+    le_by_name = {le.name: le for le in model.logical_entities.values()}
+    existing = {
+        (r.from_.entity, r.to.entity) for r in model.relationships.values()
+    }
+    added = 0
+    for d in ledger.decisions.values():
+        if d.kind != "relationship" or d.verdict != Verdict.accepted:
+            continue
+        ev = d.evidence or {}
+        frm = le_by_name.get(ev.get("from"))
+        to = le_by_name.get(ev.get("to"))
+        col = ev.get("column")
+        if not frm or not to or (frm.id, to.id) in existing:
+            continue
+        _add_relationship(model, frm, to, col, frm.name, to.name)
+        existing.add((frm.id, to.id))
+        added += 1
+    return added
+
+
 def _add_relationship(
     model: Model,
     from_le: LogicalEntity,
