@@ -6,6 +6,7 @@ Layering rule (spec §1.3): this package depends on nothing else in the repo.
 from mdl_core.ids import ULID, new_ulid
 from mdl_core.ir import (
     Attribute,
+    Category,
     CodeSet,
     CodeValue,
     ConceptualEntity,
@@ -40,6 +41,7 @@ __all__ = [
     "LogicalEntity",
     "Relationship",
     "KeyGroup",
+    "Category",
     "PhysicalColumn",
     "PhysicalTable",
     "ProjectConfig",

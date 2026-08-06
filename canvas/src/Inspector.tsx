@@ -54,6 +54,18 @@ export function Inspector({
           <div>
             <SubjectAreaPicker entity={entity} doc={doc} readOnly={readOnly} exec={exec} />
             <PatternPicker entity={entity} readOnly={readOnly} exec={exec} />
+            {entity.category && (
+              <span
+                className={"cat-badge " + entity.category.role}
+                title={
+                  entity.category.role === "supertype"
+                    ? `Supertype of category "${entity.category.category}"`
+                    : `Subtype in "${entity.category.category}" (${entity.category.materialization})`
+                }
+              >
+                {entity.category.role === "supertype" ? "◆ supertype" : "◇ subtype"}
+              </span>
+            )}
           </div>
         </div>
         <button className="icon-btn" onClick={onClose} title="Close">

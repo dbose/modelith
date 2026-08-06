@@ -26,6 +26,7 @@ def validate(model: Model) -> DiagnosticSet:
     diags = DiagnosticSet()
     _check_referential_integrity(model, diags)
     _check_key_groups(model, diags)
+    _check_categories(model, diags)
     _check_ontology_layers(model, diags)
     _check_proposed_alignments(model, diags)
     naming_diags, _ = naming_lint(model)
@@ -86,6 +87,12 @@ def _check_referential_integrity(model: Model, diags: DiagnosticSet) -> None:
                 )
             )
 
+    for cat in model.categories.values():
+        ref(cat.supertype, "MDL-E110", f"category {cat.name!r} supertype", cat.id)
+        for st in cat.subtypes:
+            ref(st, "MDL-E110", f"category {cat.name!r} subtype", cat.id)
+        ref(cat.discriminator, "MDL-E110", f"category {cat.name!r} discriminator", cat.id)
+
     for pt in model.physical_tables.values():
         ref(pt.realises, "MDL-E104", f"physical table {pt.name!r} realises", pt.id)
         for col in pt.columns:
@@ -135,6 +142,47 @@ def _check_key_groups(model: Model, diags: DiagnosticSet) -> None:
                     severity=Severity.error,
                     message=f"entity {le.name if le else entity_id!r} has {n} primary keys (max 1)",
                     path=entity_id,
+                )
+            )
+
+
+def _check_categories(model: Model, diags: DiagnosticSet) -> None:
+    """Subtype/supertype (category) semantics: discriminator must be a supertype
+    attribute; subtypes must differ from the supertype; single_table needs a
+    discriminator to select the subtype."""
+    for cat in model.categories.values():
+        sup = model.logical_entities.get(cat.supertype)
+        if sup is None:
+            continue  # dangling supertype already reported by referential check
+        sup_attr_ids = {a.id for a in sup.attributes}
+        if cat.discriminator and cat.discriminator not in sup_attr_ids:
+            if cat.discriminator in model.all_ulids():
+                diags.add(
+                    Diagnostic(
+                        code="MDL-E111",
+                        severity=Severity.error,
+                        message=f"category {cat.name!r} discriminator is not an attribute "
+                        f"of its supertype {sup.name!r}",
+                        path=cat.id,
+                    )
+                )
+        if cat.supertype in cat.subtypes:
+            diags.add(
+                Diagnostic(
+                    code="MDL-E112",
+                    severity=Severity.error,
+                    message=f"category {cat.name!r} lists its supertype as a subtype",
+                    path=cat.id,
+                )
+            )
+        if cat.materialization == "single_table" and not cat.discriminator:
+            diags.add(
+                Diagnostic(
+                    code="MDL-W113",
+                    severity=Severity.warning,
+                    message=f"category {cat.name!r} is single_table but has no "
+                    f"discriminator to select the subtype",
+                    path=cat.id,
                 )
             )
 

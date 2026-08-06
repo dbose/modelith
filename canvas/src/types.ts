@@ -52,6 +52,11 @@ export interface Entity {
   attributes: AttributeRow[];
   key_groups?: KeyGroupRow[];
   udp?: Record<string, string | number | boolean> | null;
+  category?: {
+    role: "supertype" | "subtype";
+    category: string;
+    materialization?: "single_table" | "table_per_subtype";
+  } | null;
 }
 
 export interface RelationshipEnd {

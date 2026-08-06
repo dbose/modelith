@@ -151,6 +151,11 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
 .chip.layer-core { background: rgba(94, 234, 212, 0.15); color: var(--accent); }
 .chip.layer-domain { background: rgba(240, 171, 252, 0.15); color: #f0abfc; }
 .chip.layer-specialised { background: rgba(252, 211, 77, 0.15); color: var(--pk); }
+.cat-badge { font-size: 10px; font-weight: 700; margin-left: 6px; padding: 2px 8px;
+  border-radius: 5px; cursor: help; }
+.cat-badge.supertype { background: rgba(167,139,250,0.18); color: #a78bfa; }
+.cat-badge.subtype { background: rgba(94,234,212,0.16); color: var(--accent); }
+
 .udp-row td { padding: 3px 6px; border-bottom: 1px solid var(--border); font-size: 12px; }
 .udp-key { color: var(--text-dim); font-family: var(--mono); font-size: 11px; }
 .udp-val { color: var(--text); }

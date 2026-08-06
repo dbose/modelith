@@ -85,6 +85,19 @@ def project(model: Model) -> dict:
             }
         # entity-level UDPs merge conceptual + logical (logical wins on key clash)
         entity_udp = {**((ce.udp or {}) if ce else {}), **(le.udp or {})} or None
+        # category role: is this entity a supertype or subtype in a category?
+        category_role = None
+        for cat in model.categories.values():
+            if cat.supertype == le.id:
+                category_role = {"role": "supertype", "category": cat.name}
+                break
+            if le.id in cat.subtypes:
+                category_role = {
+                    "role": "subtype",
+                    "category": cat.name,
+                    "materialization": cat.materialization,
+                }
+                break
         entities.append(
             {
                 "id": le.id,
@@ -92,6 +105,7 @@ def project(model: Model) -> dict:
                 "pattern": le.pattern,
                 "conceptual": conceptual,
                 "udp": entity_udp,
+                "category": category_role,
                 "attributes": [
                     {
                         "id": a.id,
@@ -163,6 +177,19 @@ def project(model: Model) -> dict:
         ],
         "entities": entities,
         "relationships": relationships,
+        "categories": [
+            {
+                "id": cat.id,
+                "name": cat.name,
+                "supertype": cat.supertype,
+                "subtypes": list(cat.subtypes),
+                "discriminator": cat.discriminator,
+                "complete": cat.complete,
+                "exclusive": cat.exclusive,
+                "materialization": cat.materialization,
+            }
+            for cat in sorted(model.categories.values(), key=lambda c: c.name)
+        ],
         "physical": physical,
         "counts": {
             "entities": len(entities),

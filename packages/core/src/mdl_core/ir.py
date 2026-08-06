@@ -32,6 +32,7 @@ class ObjectKind(str, Enum):
     code_set = "code_set"
     relationship = "relationship"
     key_group = "key_group"
+    category = "category"
     physical_table = "physical_table"
 
 
@@ -61,6 +62,12 @@ KeyGroupType = Literal["pk", "alternate", "unique", "index"]
 # still caught.
 UdpValue = str | int | float | bool
 Udp = dict[str, UdpValue]
+
+# Subtype/supertype materialization (erwin category → physical strategy).
+# single_table: one table for the supertype + all subtype columns (a discriminator
+# column selects the subtype). table_per_subtype: the supertype's own table plus one
+# per subtype.
+CategoryMaterialization = Literal["single_table", "table_per_subtype"]
 
 
 class _Base(BaseModel):
@@ -219,6 +226,28 @@ class KeyGroup(_Base):
     udp: Udp | None = None  # user-defined properties (erwin UDPs)
 
 
+class Category(_Base):
+    """A subtype/supertype cluster (erwin category / generalization).
+
+    A `supertype` entity generalises one or more `subtypes`. `discriminator` is the
+    supertype attribute whose value selects the subtype. `complete` = every instance
+    belongs to some enumerated subtype; `exclusive` = an instance is exactly one
+    subtype (vs. possibly several). `materialization` chooses the physical strategy
+    the dbt emitter honours.
+    """
+
+    id: ULID
+    kind: Literal[ObjectKind.category] = ObjectKind.category
+    name: str
+    supertype: ULID  # logical entity
+    subtypes: list[ULID] = Field(default_factory=list)  # logical entities
+    discriminator: ULID | None = None  # supertype attribute selecting the subtype
+    complete: bool = False  # all subtypes enumerated (total specialisation)
+    exclusive: bool = True  # disjoint subtypes (an instance is exactly one)
+    materialization: CategoryMaterialization = "single_table"
+    udp: Udp | None = None
+
+
 class PhysicalColumn(_Base):
     realises: ULID | None = None  # attribute ULID
     name: str
@@ -292,6 +321,7 @@ AnyObject = (
     | LogicalEntity
     | Relationship
     | KeyGroup
+    | Category
     | PhysicalTable
 )
 
@@ -304,6 +334,7 @@ _KIND_TO_CLASS: dict[str, type[BaseModel]] = {
     ObjectKind.logical_entity.value: LogicalEntity,
     ObjectKind.relationship.value: Relationship,
     ObjectKind.key_group.value: KeyGroup,
+    ObjectKind.category.value: Category,
     ObjectKind.physical_table.value: PhysicalTable,
 }
 
@@ -332,6 +363,7 @@ class Model:
         self.logical_entities: dict[ULID, LogicalEntity] = {}
         self.relationships: dict[ULID, Relationship] = {}
         self.key_groups: dict[ULID, KeyGroup] = {}
+        self.categories: dict[ULID, Category] = {}
         self.physical_tables: dict[ULID, PhysicalTable] = {}
 
     def add(self, obj: BaseModel) -> None:
@@ -348,6 +380,7 @@ class Model:
             LogicalEntity: self.logical_entities,
             Relationship: self.relationships,
             KeyGroup: self.key_groups,
+            Category: self.categories,
             PhysicalTable: self.physical_tables,
         }
         for cls, tbl in mapping.items():
@@ -366,6 +399,7 @@ class Model:
             self.logical_entities,
             self.relationships,
             self.key_groups,
+            self.categories,
             self.physical_tables,
         ):
             out.extend(tbl.values())
@@ -400,6 +434,7 @@ class Model:
             self.logical_entities,
             self.relationships,
             self.key_groups,
+            self.categories,
             self.physical_tables,
         ):
             if ulid in tbl:

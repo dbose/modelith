@@ -198,11 +198,49 @@ class DbtEmitter:
             sql = f"{{{{ mdl_hub(ref('{source_name}'), '{bk}') }}}}"
             return config + sql
 
+        # Subtype in a category -> materialise per the category strategy.
+        cat, sup = _category_of_subtype(self.model, le)
+        if cat is not None and sup is not None:
+            return config + self._subtype_body(le, cat, sup)
+
         # Plain projection — working SQL, not a stub.
         col_list = ",\n    ".join(cols)
         sql = f"with source as (\n    select * from {{{{ ref('{source_name}') }}}}\n)\n"
         sql += f"select\n    {col_list}\nfrom source"
         return config + sql
+
+    def _subtype_body(self, le: LogicalEntity, cat, sup: LogicalEntity) -> str:
+        """SQL for a subtype entity, per the category materialization strategy.
+
+        single_table: the subtype is a VIEW over the supertype filtered by the
+        discriminator = the subtype name. table_per_subtype: the subtype selects the
+        supertype's inherited columns (joined from the supertype model on the PK) plus
+        its own columns from its own staging."""
+        sup_cols = _inherited_supertype_cols(sup)
+        own_cols = [a.name for a in le.attributes]
+
+        if cat.materialization == "single_table":
+            disc = next(
+                (a.name for a in sup.attributes if a.id == cat.discriminator), None
+            )
+            select_cols = ",\n    ".join(sup_cols) or "*"
+            body = f"with super as (\n    select * from {{{{ ref('{sup.name}') }}}}\n)\n"
+            body += f"select\n    {select_cols}\nfrom super"
+            if disc:
+                body += f"\nwhere {disc} = '{le.name}'"
+            return body
+
+        # table_per_subtype: inherit supertype cols by PK join, add own cols
+        sup_pk = _business_key(sup) or (sup_cols[0] if sup_cols else "id")
+        own_source = f"stg_{le.name}"
+        sel = ",\n    ".join([f"super.{c}" for c in sup_cols] + [f"own.{c}" for c in own_cols])
+        body = (
+            f"with super as (\n    select * from {{{{ ref('{sup.name}') }}}}\n),\n"
+            f"own as (\n    select * from {{{{ ref('{own_source}') }}}}\n)\n"
+            f"select\n    {sel}\nfrom own\n"
+            f"join super on own.{sup_pk} = super.{sup_pk}"
+        )
+        return body
 
     def _config_call(self, le: LogicalEntity, materialization: str) -> str:
         """Build a deterministic `{{ config(...) }}` including platform physical
@@ -265,8 +303,21 @@ class DbtEmitter:
             for kg in self.model.key_groups.values():
                 if kg.entity == le.id:
                     fp_objs.append(kg)
+            # A subtype's contract must match its emitted SQL: it carries inherited
+            # supertype columns. single_table = supertype cols only; table_per_subtype
+            # = supertype cols + own cols.
+            cat, sup = _category_of_subtype(self.model, le)
+            if cat is not None and sup is not None:
+                fp_objs.append(cat)
+                fp_objs.append(sup)
+                if cat.materialization == "single_table":
+                    emit_attrs = list(sup.attributes)
+                else:
+                    emit_attrs = list(sup.attributes) + list(le.attributes)
+            else:
+                emit_attrs = list(le.attributes)
             columns = []
-            for attr in le.attributes:
+            for attr in emit_attrs:
                 dom = self.model.domain_by_name(attr.domain)
                 # enumerated domains (+ their code sets) are part of the emitted
                 # contract/tests -> include in the fingerprint so an enum change
@@ -457,6 +508,21 @@ def _unique_key_groups(model: Model, le: LogicalEntity) -> list:
         for kg in model.key_groups.values()
         if kg.entity == le.id and kg.type in ("alternate", "unique")
     ]
+
+
+def _category_of_subtype(model: Model, le: LogicalEntity):
+    """If `le` is a subtype in some category, return (category, supertype_entity)."""
+    for cat in model.categories.values():
+        if le.id in cat.subtypes:
+            sup = model.logical_entities.get(cat.supertype)
+            if sup is not None:
+                return cat, sup
+    return None, None
+
+
+def _inherited_supertype_cols(sup: LogicalEntity) -> list[str]:
+    """Supertype columns a subtype inherits (all supertype attributes)."""
+    return [a.name for a in sup.attributes]
 
 
 def _accepted_values(model: Model, domain_name: str | None) -> list | None:
