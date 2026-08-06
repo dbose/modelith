@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <rect width="256" height="256" rx="48" fill="#0b0f16"/>
+  <!-- three stacked entity cards, echoing the ER canvas -->
+  <rect x="52" y="60" width="152" height="40" rx="8" fill="#111826" stroke="#5eead4" stroke-width="2"/>
+  <rect x="52" y="112" width="152" height="40" rx="8" fill="#111826" stroke="#334155" stroke-width="2"/>
+  <rect x="52" y="164" width="152" height="40" rx="8" fill="#111826" stroke="#334155" stroke-width="2"/>
+  <!-- a key glyph on the top card -->
+  <circle cx="72" cy="80" r="7" fill="none" stroke="#fcd34d" stroke-width="3"/>
+  <rect x="79" y="78" width="18" height="4" fill="#fcd34d"/>
+  <!-- connector between cards, crow's-foot hint -->
+  <path d="M128 100 L128 112 M128 152 L128 164" stroke="#5eead4" stroke-width="2" fill="none"/>
+</svg>

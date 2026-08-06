@@ -3,3 +3,5 @@ tsconfig.json
 esbuild.mjs
 node_modules/**
 *.map
+icon.svg
+*.vsix

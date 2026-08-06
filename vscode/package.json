@@ -5,6 +5,30 @@
   "version": "0.1.0",
   "publisher": "modelith",
   "license": "Apache-2.0",
+  "icon": "icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dbose/modelith.git",
+    "directory": "vscode"
+  },
+  "homepage": "https://github.com/dbose/modelith",
+  "bugs": {
+    "url": "https://github.com/dbose/modelith/issues"
+  },
+  "keywords": [
+    "dbt",
+    "data modeling",
+    "data engineering",
+    "erd",
+    "ontology",
+    "data governance",
+    "drift",
+    "duckdb"
+  ],
+  "galleryBanner": {
+    "color": "#0b0f16",
+    "theme": "dark"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },
