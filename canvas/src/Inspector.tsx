@@ -180,6 +180,22 @@ export function Inspector({
         </section>
       )}
 
+      {entity.udp && Object.keys(entity.udp).length > 0 && (
+        <section>
+          <h3>Properties (UDP)</h3>
+          <table className="attr-table">
+            <tbody>
+              {Object.entries(entity.udp).map(([k, v]) => (
+                <tr key={k} className="udp-row">
+                  <td className="udp-key">{k}</td>
+                  <td className="udp-val">{String(v)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      )}
+
       {rels.length > 0 && (
         <section>
           <h3>Relationships ({rels.length})</h3>

@@ -295,10 +295,12 @@ class DbtEmitter:
                 }
                 if constraints:
                     col["constraints"] = constraints
+                col_meta = {"mdl_ulid": attr.id}
                 if attr.ontology and attr.ontology.aligns_to:
-                    col["meta"] = {"mdl_ulid": attr.id, "ontology_iri": attr.ontology.aligns_to}
-                else:
-                    col["meta"] = {"mdl_ulid": attr.id}
+                    col_meta["ontology_iri"] = attr.ontology.aligns_to
+                if attr.udp:  # user-defined properties flow into dbt meta
+                    col_meta.update(attr.udp)
+                col["meta"] = col_meta
                 col_tests: list = []
                 to_model = rel_tests.get((le.id, attr.id))
                 if to_model:
@@ -336,6 +338,9 @@ class DbtEmitter:
             meta = {"mdl_ulid": le.id}
             ce = self.model.conceptual_entities.get(le.realises) if le.realises else None
             if ce:
+                # the conceptual entity contributes to emitted meta (glossary term,
+                # ontology, stewardship, UDPs) -> include it in the fingerprint.
+                fp_objs.append(ce)
                 meta["glossary_term"] = ce.name
                 if ce.ontology and ce.ontology.aligns_to:
                     meta["ontology_iri"] = ce.ontology.aligns_to
@@ -344,6 +349,11 @@ class DbtEmitter:
                         meta["owner"] = ce.stewardship.owner
                     if ce.stewardship.steward:
                         meta["steward"] = ce.stewardship.steward
+            # user-defined properties (erwin UDPs) from the logical + conceptual
+            # entity flow into dbt meta.
+            udp = {**(ce.udp or {}), **(le.udp or {})} if ce else (le.udp or {})
+            if udp:
+                meta.update(udp)
 
             model_entry = {
                 "name": name,

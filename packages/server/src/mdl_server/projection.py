@@ -83,12 +83,15 @@ def project(model: Model) -> dict:
                     else None
                 ),
             }
+        # entity-level UDPs merge conceptual + logical (logical wins on key clash)
+        entity_udp = {**((ce.udp or {}) if ce else {}), **(le.udp or {})} or None
         entities.append(
             {
                 "id": le.id,
                 "name": le.name,
                 "pattern": le.pattern,
                 "conceptual": conceptual,
+                "udp": entity_udp,
                 "attributes": [
                     {
                         "id": a.id,
@@ -98,6 +101,7 @@ def project(model: Model) -> dict:
                         "nullable": a.nullable,
                         "ontology_iri": a.ontology.aligns_to if a.ontology else None,
                         "enum_values": _enum_values(model, a.domain),
+                        "udp": a.udp or None,
                     }
                     for a in le.attributes
                 ],

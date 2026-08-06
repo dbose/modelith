@@ -55,6 +55,13 @@ Pattern = Literal["scd2", "hub", "link", "satellite", "bridge"]
 # `alternate`/`unique` are candidate/unique keys; `index` is a secondary index.
 KeyGroupType = Literal["pk", "alternate", "unique", "index"]
 
+# User-defined properties (erwin: UDPs). A small, typed property bag attachable to
+# core objects — a scalar value per name. Flows into dbt `meta:` on generation and
+# governance writeback. Kept explicit (not extra="allow") so typos elsewhere are
+# still caught.
+UdpValue = str | int | float | bool
+Udp = dict[str, UdpValue]
+
 
 class _Base(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -94,6 +101,7 @@ class ConceptualEntity(_Base):
     synonyms: list[str] = Field(default_factory=list)
     # Derived, not authored: logical entities that realise this concept.
     realised_by: list[ULID] = Field(default_factory=list)
+    udp: Udp | None = None  # user-defined properties (erwin UDPs)
 
 
 class Term(_Base):
@@ -121,6 +129,7 @@ class Domain(_Base):
     definition: str | None = None
     allowed_values: list[str | int] | None = None  # inline enumeration
     value_set: str | None = None  # name-ref to a CodeSet for shared enumerations
+    udp: Udp | None = None  # user-defined properties (erwin UDPs)
 
 
 class CodeValue(_Base):
@@ -149,6 +158,7 @@ class Attribute(_Base):
     role: Literal["business_key", "surrogate_key", "attribute", "measure"] = "attribute"
     nullable: bool = True
     ontology: OntologyAlignment | None = None
+    udp: Udp | None = None  # user-defined properties (erwin UDPs)
 
 
 class LogicalEntity(_Base):
@@ -162,6 +172,7 @@ class LogicalEntity(_Base):
     # True => the emitter does NOT emit this model's SQL/contract; the file is
     # engineer-owned forever (spec `mdl unmanage`). Entity stays in the model.
     unmanaged: bool | None = None
+    udp: Udp | None = None  # user-defined properties (erwin UDPs)
 
 
 class RelationshipEnd(_Base):
@@ -184,6 +195,7 @@ class Relationship(_Base):
     identifying: bool = False
     optionality: Literal["mandatory", "optional"] = "mandatory"
     enforce: RelationshipEnforce = Field(default_factory=RelationshipEnforce)
+    udp: Udp | None = None  # user-defined properties (erwin UDPs)
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -204,6 +216,7 @@ class KeyGroup(_Base):
     name: str
     type: KeyGroupType = "pk"
     members: list[ULID] = Field(default_factory=list)  # ordered attribute ULIDs
+    udp: Udp | None = None  # user-defined properties (erwin UDPs)
 
 
 class PhysicalColumn(_Base):

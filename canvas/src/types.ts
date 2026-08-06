@@ -34,6 +34,7 @@ export interface AttributeRow {
   nullable: boolean;
   ontology_iri: string | null;
   enum_values?: (string | number)[] | null;
+  udp?: Record<string, string | number | boolean> | null;
 }
 
 export interface KeyGroupRow {
@@ -50,6 +51,7 @@ export interface Entity {
   conceptual: Conceptual | null;
   attributes: AttributeRow[];
   key_groups?: KeyGroupRow[];
+  udp?: Record<string, string | number | boolean> | null;
 }
 
 export interface RelationshipEnd {
