@@ -44,6 +44,8 @@ def write_model(model: Model, root: Path) -> list[str]:
         dump(f"logical/entities/{le.name}.yaml", le)
     for rel in model.relationships.values():
         dump(f"logical/relationships/{rel.name}.yaml", rel)
+    for kg in model.key_groups.values():
+        dump(f"logical/key-groups/{_slug(kg.name)}.yaml", kg)
     for pt in model.physical_tables.values():
         dump(f"physical/{pt.target}/tables/{pt.name.lower()}.yaml", pt)
 

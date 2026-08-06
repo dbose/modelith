@@ -29,6 +29,7 @@ _OBJECT_GLOBS = [
     "logical/domains/*.yaml",
     "logical/entities/*.yaml",
     "logical/relationships/*.yaml",
+    "logical/key-groups/*.yaml",
     "physical/*/tables/*.yaml",
 ]
 

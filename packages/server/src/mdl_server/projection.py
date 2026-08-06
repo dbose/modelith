@@ -85,6 +85,16 @@ def project(model: Model) -> dict:
                     }
                     for a in le.attributes
                 ],
+                "key_groups": [
+                    {
+                        "id": kg.id,
+                        "name": kg.name,
+                        "type": kg.type,
+                        "members": list(kg.members),
+                    }
+                    for kg in model.key_groups.values()
+                    if kg.entity == le.id
+                ],
             }
         )
 

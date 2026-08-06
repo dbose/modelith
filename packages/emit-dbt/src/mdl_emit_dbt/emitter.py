@@ -255,6 +255,16 @@ class DbtEmitter:
             fp_objs.append(le)
             if pt:
                 fp_objs.append(pt)
+            pk_ids = _pk_attr_ids(self.model, le)
+            # single-column unique keys → column-level constraint or test
+            uniq_groups = _unique_key_groups(self.model, le)
+            single_unique_attr_ids = {
+                kg.members[0] for kg in uniq_groups if len(kg.members) == 1
+            }
+            # key groups on this entity are part of the emitted contract -> fingerprint
+            for kg in self.model.key_groups.values():
+                if kg.entity == le.id:
+                    fp_objs.append(kg)
             columns = []
             for attr in le.attributes:
                 dom = self.model.domain_by_name(attr.domain)
@@ -266,8 +276,10 @@ class DbtEmitter:
                 constraints = []
                 if not attr.nullable and caps.not_null:
                     constraints.append({"type": "not_null"})
-                if attr.role == "business_key" and caps.primary_key:
+                if attr.id in pk_ids and caps.primary_key:
                     constraints.append({"type": "primary_key"})
+                if attr.id in single_unique_attr_ids and caps.unique:
+                    constraints.append({"type": "unique"})
                 col = {
                     "name": attr.name,
                     "data_type": sql_type,
@@ -278,16 +290,22 @@ class DbtEmitter:
                     col["meta"] = {"mdl_ulid": attr.id, "ontology_iri": attr.ontology.aligns_to}
                 else:
                     col["meta"] = {"mdl_ulid": attr.id}
+                col_tests: list = []
                 to_model = rel_tests.get((le.id, attr.id))
                 if to_model:
-                    col["tests"] = [
+                    col_tests.append(
                         {
                             "relationships": {
                                 "to": f"ref('{to_model}')",
                                 "field": _pk_of(self.model, to_model),
                             }
                         }
-                    ]
+                    )
+                # single-column unique key the platform can't enforce -> dbt test
+                if attr.id in single_unique_attr_ids and not caps.unique:
+                    col_tests.append("unique")
+                if col_tests:
+                    col["tests"] = col_tests
                 columns.append(col)
 
             # Pattern system columns must be part of the enforced contract: the
@@ -320,6 +338,23 @@ class DbtEmitter:
                 "meta": meta,
                 "columns": columns,
             }
+            # Composite unique/alternate keys -> a model-level uniqueness test over
+            # the combination of columns (single-column ones are handled per-column).
+            attr_name = {a.id: a.name for a in le.attributes}
+            model_tests = []
+            for kg in uniq_groups:
+                if len(kg.members) > 1:
+                    cols_ = [attr_name[m] for m in kg.members if m in attr_name]
+                    if len(cols_) > 1:
+                        model_tests.append(
+                            {
+                                "dbt_utils.unique_combination_of_columns": {
+                                    "combination_of_columns": cols_
+                                }
+                            }
+                        )
+            if model_tests:
+                model_entry["tests"] = model_tests
             # Business definition flows into dbt docs (and back through drift).
             if ce and ce.definition:
                 model_entry["description"] = ce.definition.strip()
@@ -380,6 +415,25 @@ def _business_key(le: LogicalEntity) -> str | None:
         if a.role == "business_key":
             return a.name
     return None
+
+
+def _pk_attr_ids(model: Model, le: LogicalEntity) -> set[str]:
+    """The primary-key attribute ids for an entity. A `pk` KeyGroup is
+    authoritative when present; otherwise fall back to `role: business_key` so
+    models predating KeyGroups behave exactly as before."""
+    for kg in model.key_groups.values():
+        if kg.entity == le.id and kg.type == "pk":
+            return set(kg.members)
+    return {a.id for a in le.attributes if a.role == "business_key"}
+
+
+def _unique_key_groups(model: Model, le: LogicalEntity) -> list:
+    """Alternate / unique KeyGroups on an entity (candidate keys, not the PK)."""
+    return [
+        kg
+        for kg in model.key_groups.values()
+        if kg.entity == le.id and kg.type in ("alternate", "unique")
+    ]
 
 
 def _platform_of(model: Model, target: str) -> str:

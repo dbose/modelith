@@ -162,6 +162,24 @@ export function Inspector({
         {!readOnly && <AddAttribute entity={entity} exec={exec} />}
       </section>
 
+      {entity.key_groups && entity.key_groups.length > 0 && (
+        <section>
+          <h3>Keys ({entity.key_groups.length})</h3>
+          {entity.key_groups.map((kg) => {
+            const cols = kg.members
+              .map((mid) => entity.attributes.find((a) => a.id === mid)?.name ?? "?")
+              .join(", ");
+            return (
+              <div key={kg.id} className="key-row">
+                <span className={"key-badge " + kg.type}>{kg.type.toUpperCase()}</span>
+                <span className="key-name">{kg.name}</span>
+                <span className="key-cols">{cols}</span>
+              </div>
+            );
+          })}
+        </section>
+      )}
+
       {rels.length > 0 && (
         <section>
           <h3>Relationships ({rels.length})</h3>

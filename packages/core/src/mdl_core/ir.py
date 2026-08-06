@@ -30,6 +30,7 @@ class ObjectKind(str, Enum):
     logical_entity = "logical_entity"
     domain = "domain"
     relationship = "relationship"
+    key_group = "key_group"
     physical_table = "physical_table"
 
 
@@ -48,6 +49,10 @@ OntologyLayer = Literal["industry", "core", "domain", "specialised"]
 Cardinality = Literal["one_to_one", "one_to_many", "many_to_one", "many_to_many"]
 
 Pattern = Literal["scd2", "hub", "link", "satellite", "bridge"]
+
+# Key-group kinds (erwin: Key Group / Candidate Key). `pk` is the primary key;
+# `alternate`/`unique` are candidate/unique keys; `index` is a secondary index.
+KeyGroupType = Literal["pk", "alternate", "unique", "index"]
 
 
 class _Base(BaseModel):
@@ -155,6 +160,24 @@ class Relationship(_Base):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
 
+class KeyGroup(_Base):
+    """A named key on a logical entity (erwin Key Group / Candidate Key).
+
+    Makes a primary key first-class: a `pk` KeyGroup names the (possibly composite)
+    primary key and is the authoritative source; `alternate`/`unique` capture
+    candidate/unique keys; `index` a secondary index. `members` is ordered — key
+    column order matters. When a `pk` KeyGroup is present it wins over the legacy
+    per-attribute `role: business_key` convention (which stays supported).
+    """
+
+    id: ULID
+    kind: Literal[ObjectKind.key_group] = ObjectKind.key_group
+    entity: ULID  # logical entity this key belongs to
+    name: str
+    type: KeyGroupType = "pk"
+    members: list[ULID] = Field(default_factory=list)  # ordered attribute ULIDs
+
+
 class PhysicalColumn(_Base):
     realises: ULID | None = None  # attribute ULID
     name: str
@@ -226,6 +249,7 @@ AnyObject = (
     | Domain
     | LogicalEntity
     | Relationship
+    | KeyGroup
     | PhysicalTable
 )
 
@@ -236,6 +260,7 @@ _KIND_TO_CLASS: dict[str, type[BaseModel]] = {
     ObjectKind.domain.value: Domain,
     ObjectKind.logical_entity.value: LogicalEntity,
     ObjectKind.relationship.value: Relationship,
+    ObjectKind.key_group.value: KeyGroup,
     ObjectKind.physical_table.value: PhysicalTable,
 }
 
@@ -262,6 +287,7 @@ class Model:
         self.domains: dict[ULID, Domain] = {}
         self.logical_entities: dict[ULID, LogicalEntity] = {}
         self.relationships: dict[ULID, Relationship] = {}
+        self.key_groups: dict[ULID, KeyGroup] = {}
         self.physical_tables: dict[ULID, PhysicalTable] = {}
 
     def add(self, obj: BaseModel) -> None:
@@ -276,6 +302,7 @@ class Model:
             Domain: self.domains,
             LogicalEntity: self.logical_entities,
             Relationship: self.relationships,
+            KeyGroup: self.key_groups,
             PhysicalTable: self.physical_tables,
         }
         for cls, tbl in mapping.items():
@@ -292,6 +319,7 @@ class Model:
             self.domains,
             self.logical_entities,
             self.relationships,
+            self.key_groups,
             self.physical_tables,
         ):
             out.extend(tbl.values())
@@ -315,6 +343,7 @@ class Model:
             self.domains,
             self.logical_entities,
             self.relationships,
+            self.key_groups,
             self.physical_tables,
         ):
             if ulid in tbl:

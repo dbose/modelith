@@ -25,6 +25,7 @@ _LAYER_ORDER = {"industry": 0, "core": 1, "domain": 2, "specialised": 3}
 def validate(model: Model) -> DiagnosticSet:
     diags = DiagnosticSet()
     _check_referential_integrity(model, diags)
+    _check_key_groups(model, diags)
     _check_ontology_layers(model, diags)
     _check_proposed_alignments(model, diags)
     naming_diags, _ = naming_lint(model)
@@ -66,10 +67,62 @@ def _check_referential_integrity(model: Model, diags: DiagnosticSet) -> None:
         for a in rel.to.attributes:
             ref(a, "MDL-E103", f"relationship {rel.name!r} to.attributes", rel.id)
 
+    for kg in model.key_groups.values():
+        ref(kg.entity, "MDL-E105", f"key group {kg.name!r} entity", kg.id)
+        for m in kg.members:
+            ref(m, "MDL-E105", f"key group {kg.name!r} member", kg.id)
+
     for pt in model.physical_tables.values():
         ref(pt.realises, "MDL-E104", f"physical table {pt.name!r} realises", pt.id)
         for col in pt.columns:
             ref(col.realises, "MDL-E104", f"physical table {pt.name!r} column {col.name!r}", pt.id)
+
+
+def _check_key_groups(model: Model, diags: DiagnosticSet) -> None:
+    """Key-group semantics (P0-pre): members belong to the owning entity, keys are
+    non-empty, and each entity has at most one primary key."""
+    pk_count: dict[str, int] = {}
+    for kg in model.key_groups.values():
+        le = model.logical_entities.get(kg.entity)
+        if le is None:
+            continue  # dangling entity ref already reported by referential check
+        entity_attr_ids = {a.id for a in le.attributes}
+        for m in kg.members:
+            if m in model.all_ulids() and m not in entity_attr_ids:
+                diags.add(
+                    Diagnostic(
+                        code="MDL-E106",
+                        severity=Severity.error,
+                        message=(
+                            f"key group {kg.name!r} member {m!r} is not an attribute "
+                            f"of its entity {le.name!r}"
+                        ),
+                        path=kg.id,
+                    )
+                )
+        if not kg.members:
+            diags.add(
+                Diagnostic(
+                    code="MDL-W107",
+                    severity=Severity.warning,
+                    message=f"key group {kg.name!r} has no members",
+                    path=kg.id,
+                )
+            )
+        if kg.type == "pk":
+            pk_count[kg.entity] = pk_count.get(kg.entity, 0) + 1
+
+    for entity_id, n in pk_count.items():
+        if n > 1:
+            le = model.logical_entities.get(entity_id)
+            diags.add(
+                Diagnostic(
+                    code="MDL-E108",
+                    severity=Severity.error,
+                    message=f"entity {le.name if le else entity_id!r} has {n} primary keys (max 1)",
+                    path=entity_id,
+                )
+            )
 
 
 def _check_ontology_layers(model: Model, diags: DiagnosticSet) -> None:

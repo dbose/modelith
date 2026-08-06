@@ -25,6 +25,7 @@ class ConstraintCapabilities:
     foreign_key: bool = False  # most warehouses: informational only -> emit dbt test
     not_null: bool = True
     check: bool = False
+    unique: bool = False  # alternate/unique keys as enforced constraints
 
 
 @dataclass
@@ -156,7 +157,7 @@ class DuckDBAdapter(_BaseAdapter):
 
     def constraint_support(self) -> ConstraintCapabilities:
         return ConstraintCapabilities(
-            primary_key=True, foreign_key=False, not_null=True, check=True
+            primary_key=True, foreign_key=False, not_null=True, check=True, unique=True
         )
 
 

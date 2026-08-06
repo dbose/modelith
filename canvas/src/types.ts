@@ -35,12 +35,20 @@ export interface AttributeRow {
   ontology_iri: string | null;
 }
 
+export interface KeyGroupRow {
+  id: string;
+  name: string;
+  type: "pk" | "alternate" | "unique" | "index";
+  members: string[]; // attribute ids
+}
+
 export interface Entity {
   id: string;
   name: string;
   pattern: string | null;
   conceptual: Conceptual | null;
   attributes: AttributeRow[];
+  key_groups?: KeyGroupRow[];
 }
 
 export interface RelationshipEnd {
