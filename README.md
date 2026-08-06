@@ -75,6 +75,52 @@ The inspector above shows one entity carrying an enumerated domain (`asset_class
 a named primary key and a unique key, user-defined properties, and its relationships,
 all first-class in the model.
 
+## In VS Code
+
+Install the extension from `vscode/modelith-vscode-0.1.0.vsix`:
+
+```bash
+code --install-extension vscode/modelith-vscode-0.1.0.vsix
+```
+
+The extension does not bundle its own copy of the canvas. It launches `mdl serve`
+and embeds the live canvas, so whatever the CLI understands, the editor shows. The
+model files stay in git; the extension is just another client over them.
+
+**Side by side: YAML, SQL, and the canvas.** Right-click a model file in the
+Explorer (or in the open editor) and choose **Modelith: Open Model Preview to the
+Side**. The canvas opens in a split beside your file and follows the active editor:
+open `instrument.yaml` and the canvas centers on that entity; switch to a generated
+`.sql` file and the preview tracks it. Save the YAML and the preview re-renders. You
+read and edit the model as text on the left, watch the diagram update on the right,
+and keep the generated dbt SQL a tab away, all in one window.
+
+![Split view in VS Code: the model YAML on the left, the live canvas preview on the right](docs/assets/vscode-split.png)
+
+For a full editing session, **Modelith: Open Canvas** opens the editable canvas as
+its own tab (drag-to-connect relationships, inline attribute and key editing,
+git commit panel). The preview-to-the-side is the read-along companion while you work
+in text; the full canvas is where you drive structural edits.
+
+What the extension adds on top of the canvas:
+
+- **Diagnostics on save.** `mdl validate` runs when you save a model YAML and surfaces
+  `MDL-*` findings in the Problems panel, mapped to the file that declares the issue.
+- **Language server.** `mdl lsp` drives drift and contract diagnostics on the generated
+  dbt files, hover cards (glossary term, ontology IRI, owner), and code actions (adopt a
+  column, lift a model, unmanage, declare a relationship).
+- **Commands.** Generate the dbt project, check drift, lint and fix naming, scaffold a new
+  entity, vendor an ontology, emit the semantic layer, all from the command palette.
+- **YAML completion.** JSON Schemas exported from the model are registered with the Red Hat
+  YAML extension, so authoring the YAML by hand is schema-checked and autocompleted.
+- **Devcontainer-ready.** The extension declares `extensionKind: ["workspace"]`, so in a
+  devcontainer the server and the `mdl` toolchain run next to dbt and your warehouse
+  credentials, not on the laptop.
+
+Detection resolves `mdl` in order: an explicit `modelith.mdlPath` setting, a project
+`.venv`, `mdl` on PATH, the active conda or virtualenv, then the common per-user install
+locations. A standard `uv tool install modelith` needs no configuration.
+
 ## What it models
 
 Modelith represents the core data-modeling taxonomy as first-class, git-tracked objects:
@@ -128,7 +174,7 @@ without ever seeing git or a CLI.
 |---|---|
 | `mdl` CLI | The full command set: init, validate, lint, generate, reverse, drift, serve, glossary, ontology, emit, export, import, gov, and more |
 | Web canvas | `mdl serve` opens the ER editor; state stays in git |
-| VS Code extension | The canvas as a tab, diagnostics on save, generate / drift / lint commands, YAML schema completion, devcontainer-ready |
+| VS Code extension | Canvas beside your YAML (follows the active editor), full canvas tab, diagnostics on save, generate / drift / lint commands, YAML completion, devcontainer-ready. See [In VS Code](#in-vs-code). |
 | Language server | `mdl lsp` (one server for VS Code, Cursor, Windsurf, JetBrains, and CI): drift and contract diagnostics on the dbt files, hover cards, code actions |
 | Glossary app | `mdl glossary` serves a narrow, git-native glossary surface for subject-matter experts |
 
