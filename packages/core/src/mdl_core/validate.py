@@ -72,6 +72,20 @@ def _check_referential_integrity(model: Model, diags: DiagnosticSet) -> None:
         for m in kg.members:
             ref(m, "MDL-E105", f"key group {kg.name!r} member", kg.id)
 
+    # a domain's value_set must resolve to a known CodeSet (by name)
+    code_set_names = {cs.name for cs in model.code_sets.values()}
+    for dom in model.domains.values():
+        if dom.value_set and dom.value_set not in code_set_names:
+            diags.add(
+                Diagnostic(
+                    code="MDL-E109",
+                    severity=Severity.error,
+                    message=f"domain {dom.name!r} value_set references unknown code set "
+                    f"{dom.value_set!r}",
+                    path=dom.id,
+                )
+            )
+
     for pt in model.physical_tables.values():
         ref(pt.realises, "MDL-E104", f"physical table {pt.name!r} realises", pt.id)
         for col in pt.columns:

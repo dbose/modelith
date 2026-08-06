@@ -29,6 +29,7 @@ class ObjectKind(str, Enum):
     term = "term"
     logical_entity = "logical_entity"
     domain = "domain"
+    code_set = "code_set"
     relationship = "relationship"
     key_group = "key_group"
     physical_table = "physical_table"
@@ -105,13 +106,40 @@ class Term(_Base):
 
 
 class Domain(_Base):
-    """Reusable attribute domain (logical/domains/*.yaml)."""
+    """Reusable attribute domain (logical/domains/*.yaml).
+
+    Beyond a base type, a domain may be an *enumeration*: either inline
+    `allowed_values` or a reference to a shared `CodeSet` (`value_set`, by name).
+    Enumerated domains emit dbt `accepted_values` tests automatically (erwin: a
+    domain with a valid-values list).
+    """
 
     id: ULID
     kind: Literal[ObjectKind.domain] = ObjectKind.domain
     name: str
     base_type: str  # abstract logical type, e.g. "bigint", "string", "lei_code"
     definition: str | None = None
+    allowed_values: list[str | int] | None = None  # inline enumeration
+    value_set: str | None = None  # name-ref to a CodeSet for shared enumerations
+
+
+class CodeValue(_Base):
+    code: str | int
+    label: str | None = None
+
+
+class CodeSet(_Base):
+    """A shared, reusable value list / reference data set (logical/value-sets/).
+
+    Named enumerations referenced by many domains — e.g. country, currency,
+    order_status. Each value has a code plus an optional human label.
+    """
+
+    id: ULID
+    kind: Literal[ObjectKind.code_set] = ObjectKind.code_set
+    name: str
+    definition: str | None = None
+    values: list[CodeValue] = Field(default_factory=list)
 
 
 class Attribute(_Base):
@@ -247,6 +275,7 @@ AnyObject = (
     | ConceptualEntity
     | Term
     | Domain
+    | CodeSet
     | LogicalEntity
     | Relationship
     | KeyGroup
@@ -258,6 +287,7 @@ _KIND_TO_CLASS: dict[str, type[BaseModel]] = {
     ObjectKind.conceptual_entity.value: ConceptualEntity,
     ObjectKind.term.value: Term,
     ObjectKind.domain.value: Domain,
+    ObjectKind.code_set.value: CodeSet,
     ObjectKind.logical_entity.value: LogicalEntity,
     ObjectKind.relationship.value: Relationship,
     ObjectKind.key_group.value: KeyGroup,
@@ -285,6 +315,7 @@ class Model:
         self.conceptual_entities: dict[ULID, ConceptualEntity] = {}
         self.terms: dict[ULID, Term] = {}
         self.domains: dict[ULID, Domain] = {}
+        self.code_sets: dict[ULID, CodeSet] = {}
         self.logical_entities: dict[ULID, LogicalEntity] = {}
         self.relationships: dict[ULID, Relationship] = {}
         self.key_groups: dict[ULID, KeyGroup] = {}
@@ -300,6 +331,7 @@ class Model:
             ConceptualEntity: self.conceptual_entities,
             Term: self.terms,
             Domain: self.domains,
+            CodeSet: self.code_sets,
             LogicalEntity: self.logical_entities,
             Relationship: self.relationships,
             KeyGroup: self.key_groups,
@@ -317,6 +349,7 @@ class Model:
             self.conceptual_entities,
             self.terms,
             self.domains,
+            self.code_sets,
             self.logical_entities,
             self.relationships,
             self.key_groups,
@@ -335,12 +368,22 @@ class Model:
                 return dom
         return None
 
+    def code_set_by_name(self, name: str | None) -> CodeSet | None:
+        """Resolve a code-set name-reference (from Domain.value_set) to the object."""
+        if name is None:
+            return None
+        for cs in self.code_sets.values():
+            if cs.name == name:
+                return cs
+        return None
+
     def get(self, ulid: ULID) -> BaseModel | None:
         for tbl in (
             self.subject_areas,
             self.conceptual_entities,
             self.terms,
             self.domains,
+            self.code_sets,
             self.logical_entities,
             self.relationships,
             self.key_groups,

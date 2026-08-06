@@ -11,6 +11,21 @@ from __future__ import annotations
 from mdl_core.ir import Model
 
 
+def _enum_values(model: Model, domain_name: str | None) -> list | None:
+    """Enumeration values for an attribute's domain (inline or via a CodeSet), so
+    the canvas can flag enum-constrained attributes. None when not an enumeration."""
+    dom = model.domain_by_name(domain_name)
+    if dom is None:
+        return None
+    if dom.allowed_values:
+        return list(dom.allowed_values)
+    if dom.value_set:
+        cs = model.code_set_by_name(dom.value_set)
+        if cs and cs.values:
+            return [v.code for v in cs.values]
+    return None
+
+
 def where_used(model: Model, conceptual_id: str) -> list[dict]:
     """Forward-traverse a conceptual entity to the dbt models that realise it:
     conceptual.id -> logical entities (realises == id) -> physical tables
@@ -82,6 +97,7 @@ def project(model: Model) -> dict:
                         "role": a.role,
                         "nullable": a.nullable,
                         "ontology_iri": a.ontology.aligns_to if a.ontology else None,
+                        "enum_values": _enum_values(model, a.domain),
                     }
                     for a in le.attributes
                 ],

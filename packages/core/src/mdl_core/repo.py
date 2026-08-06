@@ -27,6 +27,7 @@ _OBJECT_GLOBS = [
     "conceptual/entities/*.yaml",
     "conceptual/terms/*.yaml",
     "logical/domains/*.yaml",
+    "logical/value-sets/*.yaml",
     "logical/entities/*.yaml",
     "logical/relationships/*.yaml",
     "logical/key-groups/*.yaml",

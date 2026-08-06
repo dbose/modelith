@@ -268,6 +268,15 @@ class DbtEmitter:
             columns = []
             for attr in le.attributes:
                 dom = self.model.domain_by_name(attr.domain)
+                # enumerated domains (+ their code sets) are part of the emitted
+                # contract/tests -> include in the fingerprint so an enum change
+                # triggers regeneration.
+                if dom is not None:
+                    fp_objs.append(dom)
+                    if dom.value_set:
+                        cs = self.model.code_set_by_name(dom.value_set)
+                        if cs is not None:
+                            fp_objs.append(cs)
                 sql_type = (
                     self.adapter.map_domain(dom).sql_type
                     if dom
@@ -304,6 +313,10 @@ class DbtEmitter:
                 # single-column unique key the platform can't enforce -> dbt test
                 if attr.id in single_unique_attr_ids and not caps.unique:
                     col_tests.append("unique")
+                # enumerated domain -> accepted_values data-quality test
+                enum_vals = _accepted_values(self.model, attr.domain)
+                if enum_vals:
+                    col_tests.append({"accepted_values": {"values": enum_vals}})
                 if col_tests:
                     col["tests"] = col_tests
                 columns.append(col)
@@ -434,6 +447,21 @@ def _unique_key_groups(model: Model, le: LogicalEntity) -> list:
         for kg in model.key_groups.values()
         if kg.entity == le.id and kg.type in ("alternate", "unique")
     ]
+
+
+def _accepted_values(model: Model, domain_name: str | None) -> list | None:
+    """Enumeration values for an attribute's domain, inline or via a CodeSet.
+    Returns None when the domain is not an enumeration."""
+    dom = model.domain_by_name(domain_name)
+    if dom is None:
+        return None
+    if dom.allowed_values:
+        return list(dom.allowed_values)
+    if dom.value_set:
+        cs = model.code_set_by_name(dom.value_set)
+        if cs and cs.values:
+            return [v.code for v in cs.values]
+    return None
 
 
 def _platform_of(model: Model, target: str) -> str:

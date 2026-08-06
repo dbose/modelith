@@ -151,6 +151,10 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
 .chip.layer-core { background: rgba(94, 234, 212, 0.15); color: var(--accent); }
 .chip.layer-domain { background: rgba(240, 171, 252, 0.15); color: #f0abfc; }
 .chip.layer-specialised { background: rgba(252, 211, 77, 0.15); color: var(--pk); }
+.enum-badge { font-size: 8px; font-weight: 700; margin-left: 6px; padding: 1px 5px;
+  border-radius: 4px; background: rgba(167,139,250,0.18); color: #a78bfa;
+  vertical-align: middle; cursor: help; }
+
 /* key groups (named PK / unique / alternate / index) */
 .key-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; }
 .key-badge { font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 5px;

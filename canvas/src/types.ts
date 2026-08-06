@@ -33,6 +33,7 @@ export interface AttributeRow {
   role: "business_key" | "surrogate_key" | "attribute" | "measure";
   nullable: boolean;
   ontology_iri: string | null;
+  enum_values?: (string | number)[] | null;
 }
 
 export interface KeyGroupRow {

@@ -363,7 +363,14 @@ function AttrRow({
   if (readOnly) {
     return (
       <tr>
-        <td className={a.role === "business_key" ? "pk" : ""}>{a.name}</td>
+        <td className={a.role === "business_key" ? "pk" : ""}>
+          {a.name}
+          {a.enum_values && a.enum_values.length > 0 && (
+            <span className="enum-badge" title={`Allowed: ${a.enum_values.join(", ")}`}>
+              enum
+            </span>
+          )}
+        </td>
         <td className="type">{a.domain ?? ""}</td>
         <td className="null">{a.nullable ? "" : "NN"}</td>
       </tr>
@@ -375,6 +382,11 @@ function AttrRow({
     <tr>
       <td className={a.role === "business_key" ? "pk" : ""}>
         <EditableText value={a.name} readOnly={false} onCommit={(v) => upd({ name: v })} />
+        {a.enum_values && a.enum_values.length > 0 && (
+          <span className="enum-badge" title={`Allowed: ${a.enum_values.join(", ")}`}>
+            enum
+          </span>
+        )}
       </td>
       <td className="type">
         <select

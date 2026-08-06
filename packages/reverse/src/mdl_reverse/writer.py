@@ -40,6 +40,8 @@ def write_model(model: Model, root: Path) -> list[str]:
         dump(f"conceptual/terms/{_slug(term.name)}.yaml", term)
     for dom in model.domains.values():
         dump(f"logical/domains/{dom.name}.yaml", dom)
+    for cs in model.code_sets.values():
+        dump(f"logical/value-sets/{_slug(cs.name)}.yaml", cs)
     for le in model.logical_entities.values():
         dump(f"logical/entities/{le.name}.yaml", le)
     for rel in model.relationships.values():
