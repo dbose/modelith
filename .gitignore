@@ -17,3 +17,10 @@ canvas/node_modules/
 vscode/node_modules/
 vscode/dist/
 vscode/*.vsix
+
+# local demo workspace (own git repo inside; never part of modelith)
+demo/
+
+# duckdb build artifacts
+*.duckdb
+*.duckdb.wal
