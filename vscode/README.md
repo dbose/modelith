@@ -9,8 +9,8 @@ YAML, generate contract-enforced dbt, and catch drift, without leaving the edito
 This extension drives the `mdl` command-line tool. Install it first:
 
 ```bash
-uv tool install modelith
-# or: pipx install modelith
+uv tool install modelith-dbt
+# or: pipx install modelith-dbt
 ```
 
 The extension does not bundle its own copy of the canvas. It launches `mdl serve` and
@@ -40,7 +40,7 @@ embeds the live canvas, so whatever the CLI understands, the editor shows.
   YAML extension, so authoring the YAML by hand is schema-checked and autocompleted.
 - **mdl detection.** Resolves in order: an explicit `modelith.mdlPath` setting, a project
   `.venv`, `mdl` on PATH, the active conda or virtualenv bin, then common per-user install
-  locations. A standard `uv tool install modelith` needs no configuration. If nothing
+  locations. A standard `uv tool install modelith-dbt` needs no configuration. If nothing
   matches, run `which mdl` in the integrated terminal and set that as `modelith.mdlPath`.
 
 ## Devcontainers

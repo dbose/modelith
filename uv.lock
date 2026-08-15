@@ -8,10 +8,10 @@ resolution-markers = [
 
 [manifest]
 members = [
-    "modelith",
     "modelith-adapter-collibra",
     "modelith-cli",
     "modelith-core",
+    "modelith-dbt",
     "modelith-emit-dbt",
     "modelith-emit-semantic",
     "modelith-governance",
@@ -483,55 +483,6 @@ wheels = [
 ]
 
 [[package]]
-name = "modelith"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "modelith-adapter-collibra" },
-    { name = "modelith-cli" },
-    { name = "modelith-core" },
-    { name = "modelith-emit-dbt" },
-    { name = "modelith-emit-semantic" },
-    { name = "modelith-governance" },
-    { name = "modelith-lsp" },
-    { name = "modelith-ontology" },
-    { name = "modelith-reverse" },
-    { name = "modelith-server" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "httpx" },
-    { name = "hypothesis" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "modelith-adapter-collibra", editable = "packages/adapters/collibra" },
-    { name = "modelith-cli", editable = "packages/cli" },
-    { name = "modelith-core", editable = "packages/core" },
-    { name = "modelith-emit-dbt", editable = "packages/emit-dbt" },
-    { name = "modelith-emit-semantic", editable = "packages/emit-semantic" },
-    { name = "modelith-governance", editable = "packages/governance" },
-    { name = "modelith-lsp", editable = "packages/lsp" },
-    { name = "modelith-ontology", editable = "packages/ontology" },
-    { name = "modelith-reverse", editable = "packages/reverse" },
-    { name = "modelith-server", editable = "packages/server" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "httpx", specifier = ">=0.27" },
-    { name = "hypothesis", specifier = ">=6.100" },
-    { name = "pytest", specifier = ">=8.0" },
-    { name = "pytest-cov", specifier = ">=5.0" },
-    { name = "ruff", specifier = ">=0.6" },
-]
-
-[[package]]
 name = "modelith-adapter-collibra"
 version = "0.1.0"
 source = { editable = "packages/adapters/collibra" }
@@ -586,6 +537,55 @@ dependencies = [
 requires-dist = [
     { name = "pydantic", specifier = ">=2.6" },
     { name = "ruamel-yaml", specifier = ">=0.18" },
+]
+
+[[package]]
+name = "modelith-dbt"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "dbt-artifacts-parser" },
+    { name = "fastapi" },
+    { name = "jinja2" },
+    { name = "pydantic" },
+    { name = "pygls" },
+    { name = "pyshacl" },
+    { name = "rdflib" },
+    { name = "ruamel-yaml" },
+    { name = "typer" },
+    { name = "uvicorn" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "httpx" },
+    { name = "hypothesis" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "dbt-artifacts-parser", specifier = ">=0.5" },
+    { name = "fastapi", specifier = ">=0.110" },
+    { name = "jinja2", specifier = ">=3.1" },
+    { name = "pydantic", specifier = ">=2.6" },
+    { name = "pygls", specifier = ">=2.0" },
+    { name = "pyshacl", specifier = ">=0.25" },
+    { name = "rdflib", specifier = ">=7.0" },
+    { name = "ruamel-yaml", specifier = ">=0.18" },
+    { name = "typer", specifier = ">=0.12" },
+    { name = "uvicorn", specifier = ">=0.29" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "hypothesis", specifier = ">=6.100" },
+    { name = "pytest", specifier = ">=8.0" },
+    { name = "pytest-cov", specifier = ">=5.0" },
+    { name = "ruff", specifier = ">=0.6" },
 ]
 
 [[package]]

@@ -29,18 +29,46 @@ where it touches SQL, by a real `dbt build` against DuckDB.
 
 ## Install
 
+The PyPI package is named `modelith-dbt` (the bare `modelith` name belongs to an
+unrelated project). It installs a single command, `mdl`.
+
 ```bash
-uv tool install modelith    # puts `mdl` on your PATH
-# or: pipx install modelith
+uv tool install modelith-dbt    # isolated tool install, puts `mdl` on your PATH
+# or: pipx install modelith-dbt
+# or into an existing environment: pip install modelith-dbt
 mdl --help
 ```
 
-Modelith runs in the same environment as dbt-core (Python 3.11+).
+Modelith runs in the same environment as dbt-core (Python 3.11+). One install gives
+you the whole toolchain: the CLI, the web canvas (`mdl serve`), the language server,
+reverse engineering, drift detection, and the ontology and governance stack.
+
+### VS Code, Cursor, Windsurf
+
+The editor extension drives the same `mdl` CLI, so install the CLI first (above),
+then add the extension. It is published on Open VSX, so it installs directly in VS
+Code, Cursor, Windsurf, and VSCodium: open the Extensions panel and search for
+**Modelith**, or install from the command line.
+
+```bash
+code --install-extension modelith.modelith-vscode        # VS Code
+# cursor --install-extension modelith.modelith-vscode    # Cursor
+```
+
+### From source
+
+To run the in-repo development version, or before the package reaches your index:
+
+```bash
+git clone https://github.com/dbose/modelith
+cd modelith
+uv tool install .        # builds and installs the local checkout as `mdl`
+```
 
 ## Quickstart
 
 ```bash
-mdl init my-model --name my_model          # scaffold a model repo
+mdl init my-model                          # scaffold a model repo
 mdl new entity customer -m my-model        # add an entity (mints ULIDs)
 mdl validate -m my-model                   # schema, refs, naming, ontology
 mdl generate -m my-model -o warehouse      # emit contract-enforced dbt
@@ -119,7 +147,7 @@ What the extension adds on top of the canvas:
 
 Detection resolves `mdl` in order: an explicit `modelith.mdlPath` setting, a project
 `.venv`, `mdl` on PATH, the active conda or virtualenv, then the common per-user install
-locations. A standard `uv tool install modelith` needs no configuration.
+locations. A standard `uv tool install modelith-dbt` needs no configuration.
 
 ## What it models
 

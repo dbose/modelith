@@ -23,7 +23,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
       - name: Install Modelith + dbt
-        run: uv tool install modelith
+        run: uv tool install modelith-dbt
       - name: Compile dbt (no warehouse needed)
         run: |
           uv tool run --from dbt-duckdb dbt compile --empty || true

@@ -18,7 +18,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
       - name: Install Modelith
-        run: uv tool install modelith
+        run: uv tool install modelith-dbt
       - name: Conformance check (bespoke profile)
         run: mdl gov conformance --profile governance-profile.yaml --model-dir model
       - name: Plan (never writes)

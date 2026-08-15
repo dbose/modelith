@@ -23,7 +23,7 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@v5
       - name: Install Modelith
-        run: uv tool install modelith
+        run: uv tool install modelith-dbt
       - name: Classify change routes
         id: classify
         run: |

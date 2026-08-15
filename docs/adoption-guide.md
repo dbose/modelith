@@ -37,9 +37,9 @@ every VS Code integrated terminal, standalone or devcontainer:
 
 ```bash
 # recommended: an isolated tool install (puts `mdl` on PATH)
-uv tool install modelith
+uv tool install modelith-dbt
 # or with pipx
-pipx install modelith
+pipx install modelith-dbt
 
 mdl --help        # sanity check
 ```
@@ -620,7 +620,7 @@ Exit codes (for CI): `0` ok · `1` validation error · `2` breaking drift ·
 ## 13. Troubleshooting
 
 **`mdl: command not found` in a VS Code terminal.**
-Install it on PATH (`uv tool install modelith`). Standalone, that's enough. In a
+Install it on PATH (`uv tool install modelith-dbt`). Standalone, that's enough. In a
 devcontainer, the template's `postCreateCommand` handles it; the extension also
 prepends the detected `mdl` directory to every integrated terminal's PATH. As a
 fallback, set `modelith.mdlPath` in settings.

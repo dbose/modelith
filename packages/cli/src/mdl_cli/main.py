@@ -60,10 +60,27 @@ def _load(model_dir: Path) -> ModelRepo:
         raise typer.Exit(1) from e
 
 
+def _project_name_from_path(path: Path) -> str:
+    """Derive a valid project name from the target directory.
+
+    ``mdl init my-model`` -> ``my_model``; ``mdl init .`` -> the resolved current
+    directory name. Non-identifier characters collapse to underscores so the name
+    passes naming validation; an empty or unusable result falls back to a default.
+    """
+    import re
+
+    raw = path.resolve().name or "modelith_model"
+    slug = re.sub(r"[^0-9a-zA-Z]+", "_", raw).strip("_").lower()
+    return slug or "modelith_model"
+
+
 @app.command()
 def init(
     path: Path = typer.Argument(Path("."), help="Directory to scaffold in"),
-    name: str = typer.Option("modelith_model", help="Project name"),
+    name: str = typer.Option(
+        None,
+        help="Project name. Defaults to the target directory name.",
+    ),
     workspace: bool = typer.Option(
         False,
         "--workspace",
@@ -74,8 +91,15 @@ def init(
         False, "--git-hooks", help="Only wire the semantic merge driver (§6.1)"
     ),
 ) -> None:
-    """Scaffold a model repo, or a full collaboration workspace."""
+    """Scaffold a model repo, or a full collaboration workspace.
+
+    The project name defaults to the target directory (``mdl init my-model`` names
+    the project ``my_model``); pass ``--name`` to override.
+    """
     from mdl_cli.collab import ensure_git_hooks, scaffold_workspace
+
+    if name is None:
+        name = _project_name_from_path(path)
 
     if git_hooks:
         for line in ensure_git_hooks(path):

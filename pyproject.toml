@@ -1,27 +1,34 @@
 [project]
-name = "modelith"
-version = "0.1.0"
+# PyPI distribution name. The bare `modelith` is taken on PyPI by an unrelated
+# project, so the install name is `modelith-dbt` (install: uv tool install
+# modelith-dbt). The command stays `mdl`; the import modules stay mdl_*.
+name = "modelith-dbt"
+version = "0.1.1"
 description = "Ontology-anchored, git-native data modeling tool for dbt-core teams"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 
-# The distributable metapackage depends on the in-repo workspace members.
+# Single distributable wheel: all ten mdl_* module trees ship inside one
+# `modelith` distribution. These are the UNION of the workspace members'
+# third-party dependencies; the inter-member `modelith-*` deps are gone because
+# everything now lives here. The [tool.uv.workspace] block below keeps the
+# split-package layout for local development.
 dependencies = [
-    "modelith-core",
-    "modelith-emit-dbt",
-    "modelith-reverse",
-    "modelith-ontology",
-    "modelith-emit-semantic",
-    "modelith-governance",
-    "modelith-adapter-collibra",
-    "modelith-server",
-    "modelith-lsp",
-    "modelith-cli",
+    "pydantic>=2.6",
+    "ruamel.yaml>=0.18",
+    "typer>=0.12",
+    "dbt-artifacts-parser>=0.5",
+    "rdflib>=7.0",
+    "pyshacl>=0.25",
+    "jinja2>=3.1",
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "pygls>=2.0",
 ]
 
-# The metapackage exposes the `mdl` entrypoint so `uv tool install modelith`
-# (the devcontainer path) puts the CLI on PATH.
+# Single `mdl` command. Not exposing a `modelith` script avoids colliding with
+# the unrelated `modelith` package that already exists on PyPI.
 [project.scripts]
 mdl = "mdl_cli.main:app"
 
@@ -29,8 +36,12 @@ mdl = "mdl_cli.main:app"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+# Pull each workspace member's src/mdl_* tree into the single wheel. force-include
+# maps an on-disk path to its in-wheel destination, so all ten modules land as
+# top-level importable packages. The mdl_server tree carries its static/ canvas
+# and SME bundle because those are real files under that directory.
 [tool.hatch.build.targets.wheel]
-bypass-selection = true
+force-include = { "packages/core/src/mdl_core" = "mdl_core", "packages/cli/src/mdl_cli" = "mdl_cli", "packages/emit-dbt/src/mdl_emit_dbt" = "mdl_emit_dbt", "packages/reverse/src/mdl_reverse" = "mdl_reverse", "packages/ontology/src/mdl_ontology" = "mdl_ontology", "packages/emit-semantic/src/mdl_emit_semantic" = "mdl_emit_semantic", "packages/governance/src/mdl_governance" = "mdl_governance", "packages/server/src/mdl_server" = "mdl_server", "packages/lsp/src/mdl_lsp" = "mdl_lsp", "packages/adapters/collibra/src/mdl_adapter_collibra" = "mdl_adapter_collibra" }
 
 [tool.uv.workspace]
 members = ["packages/*", "packages/adapters/*"]

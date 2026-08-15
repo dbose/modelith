@@ -4,8 +4,8 @@
   "features": {
     "ghcr.io/devcontainers/features/node:1": { "version": "20" }
   },
-  "postCreateCommand": "pipx install uv && uv tool install modelith && mdl validate -m model || true",
-  "postCreateCommand.comment": "uv tool install puts `mdl` on PATH for every terminal; use `uv tool install --from <path-or-index-url> modelith` until the package is on your index",
+  "postCreateCommand": "pipx install uv && uv tool install modelith-dbt && mdl validate -m model || true",
+  "postCreateCommand.comment": "uv tool install puts `mdl` on PATH for every terminal; use `uv tool install --from <path-or-index-url> modelith-dbt` until the package is on your index",
   "customizations": {
     "vscode": {
       "extensions": [
