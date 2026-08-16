@@ -1,18 +1,39 @@
 # Modelith
 
-Ontology-anchored, git-native data modeling for dbt teams. Design your model as an
-entity-relationship diagram, generate contract-enforced dbt from it, reverse an
-existing warehouse back into a model, and catch drift before it ships. The model
-lives in git as plain YAML, so every surface (the `mdl` CLI, the web canvas, the
-VS Code extension, the drift bot) is a client and none of them owns state.
+**Modelith is the modeling layer dbt-core is missing: design entities and relationships
+in git, generate contract-enforced dbt, and catch drift before it ships.**
 
-[![tests](https://img.shields.io/badge/tests-215%20passing-brightgreen)](#development)
+Design your model as an entity-relationship diagram, generate dbt from it, reverse an
+existing warehouse back into a model, and get told exactly what drifted when the
+warehouse changes underneath you. The model lives in git as plain YAML, so every surface
+(the `mdl` CLI, the web canvas, the VS Code extension, CI) is a client and none of them
+owns state.
+
+[![ci](https://github.com/dbose/modelith/actions/workflows/ci.yml/badge.svg)](https://github.com/dbose/modelith/actions/workflows/ci.yml)
 [![python](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
 [![dbt](https://img.shields.io/badge/dbt--core-1.7%2B-orange)](https://www.getdbt.com/)
 [![license](https://img.shields.io/badge/license-Apache--2.0-lightgrey)](#license)
 [![code style: ruff](https://img.shields.io/badge/lint-ruff-black)](https://docs.astral.sh/ruff/)
 
 ![Modelith canvas: a seven-entity pension IBoR model with crow's-foot relationships](docs/assets/canvas.png)
+
+## Try it in 2 minutes
+
+No cloud warehouse needed. The IBoR demo ships a model and a dbt project over a bundled
+DuckDB, so it builds on a laptop.
+
+```bash
+uv tool install modelith-dbt
+git clone https://github.com/dbose/modelith
+cd modelith/demo/ibor
+
+mdl validate -m model                 # the seven-entity model is valid
+cd transform/warehouse && dbt build   # generated dbt builds green against DuckDB
+```
+
+Then break a generated column's contract, run `dbt parse`, and
+`mdl drift --check -m model --manifest transform/warehouse/target/manifest.json` reports
+it as breaking. See [demo/ibor](demo/ibor/README.md) for the full walkthrough.
 
 ## Why
 
@@ -26,6 +47,18 @@ clean logical model.
 
 Nothing here is a mockup. Every capability below is exercised by the test suite and,
 where it touches SQL, by a real `dbt build` against DuckDB.
+
+### How it compares
+
+|  | Modelith | dbt alone | erwin / ER tool | Hand-rolled contracts |
+|---|---|---|---|---|
+| Visual ER model | Yes | No | Yes | No |
+| Generates runnable dbt | Yes | n/a | No (DDL only) | No |
+| Round-trip safe (keeps hand edits) | Yes | n/a | No | n/a |
+| Drift caught + classified | Yes | No | No | Manual |
+| Reverse an existing dbt project | Yes | No | No | No |
+| Lives in git, no server to run | Yes | Yes | No (desktop app) | Yes |
+| Ontology / governance alignment | Yes | No | Partial | No |
 
 ## Install
 

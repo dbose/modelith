@@ -1,0 +1,44 @@
+name: Bug report
+description: Something in Modelith does not work as expected.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for filing a bug. The more of the below you fill in, the faster it gets fixed.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you did and what went wrong. Paste the exact command and its output.
+      placeholder: |
+        $ mdl generate -m model
+        ...error...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Modelith version
+      description: Output of `mdl --version` (or the `modelith-dbt` version you installed).
+      placeholder: "0.1.1"
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Python version, dbt version, and warehouse (if relevant).
+      placeholder: "macOS 14, Python 3.12, dbt-duckdb 1.9"
+    validations:
+      required: true
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: A minimal model or repo that reproduces it is the fastest path to a fix.

@@ -1,0 +1,36 @@
+name: First-run friction
+description: You tried Modelith for the first time and something got in your way.
+labels: ["first-run"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        First impressions matter to us. If install, `mdl init`, the quickstart, or the
+        demos tripped you up, tell us exactly where. These reports are high priority.
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where did it happen
+      options:
+        - Installing (uv tool install modelith-dbt / pipx / pip)
+        - mdl init or first scaffold
+        - Running the quickstart in the README
+        - Running one of the demo/ projects
+        - The VS Code / Cursor extension
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What you did and what happened
+      description: The exact commands you ran and the output or behavior you got.
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      placeholder: "macOS 14, Python 3.12, installed via uv"
+    validations:
+      required: true
