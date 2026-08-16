@@ -1,0 +1,27 @@
+id: 01KZ4SXENKE80T0S1CPGBFT74Q
+kind: logical_entity
+name: sat_customer
+realises: 01KZ4SXENK1R6HD719JQ4H2Q60
+attributes:
+  - id: 01KZ4SXENKT8BGR1GRDSECPEK4
+    name: full_name
+    domain: string
+    role: attribute
+    nullable: true
+  - id: 01KZ4SXENK5MA2TA7NDKE8AXNC
+    name: email
+    domain: string
+    role: attribute
+    nullable: true
+  - id: 01KZ4SXENK9R7GKKKYEJP1EZ0Q
+    name: segment
+    domain: string
+    role: attribute
+    nullable: true
+  - id: 01KZ4SXENKYWD080S1YR8YT22K
+    name: load_dts
+    domain: timestamp
+    role: attribute
+    nullable: true
+subtypes: []
+pattern: satellite

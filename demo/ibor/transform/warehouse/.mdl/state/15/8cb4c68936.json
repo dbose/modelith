@@ -1,0 +1,17 @@
+{
+  "content_hash": "sha256:32d6f7e93fc6c12ecb4e9a8755b3f4ceac118d7e4f2af5751655f7f21f41216e",
+  "emitter_version": "0.1.0",
+  "fingerprint": "sha256:4965fd5a07dfd9fcb1938591f325568910cb1d3d62efc72f4cbf5bacd28b239b",
+  "path": "models/position.sql",
+  "spec_versions": {
+    "dbt": "1.9",
+    "mdl_spec": "v1"
+  },
+  "ulids": [
+    "01KZ2CKNG2S3P5AX7PK826ET35",
+    "01KZ2Z6NHHYYZ8DQ5DRMRKHXZ6",
+    "01KZ2Z70D8HAHT89DVSHBQ7S8E",
+    "01KZ30H8PZ4VT0BSRDT2FP51X4",
+    "01KZ30PT8AEJG9ZB45S4TD7MNC"
+  ]
+}

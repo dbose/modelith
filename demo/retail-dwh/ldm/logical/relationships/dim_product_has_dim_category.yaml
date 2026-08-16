@@ -1,0 +1,17 @@
+id: 01KZ4SXT4D7W7PZG725KFPAZQ1
+kind: relationship
+name: dim_product_has_dim_category
+from:
+  entity: 01KZ4SXENJQTRMSXGAV0MFR2ME
+  attributes:
+    - 01KZ4SXENJVVX8KYW5SYQKW63X
+to:
+  entity: 01KZ4SXENJVRHV9Q2AY431W2D8
+  attributes:
+    - 01KZ4SXENJ328H0N6QA1EZ55DP
+cardinality: many_to_one
+identifying: false
+optionality: mandatory
+enforce:
+  physical_constraint: true
+  dbt_test: relationships

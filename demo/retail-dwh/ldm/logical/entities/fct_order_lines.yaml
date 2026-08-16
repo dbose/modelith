@@ -1,0 +1,41 @@
+id: 01KZ4SXENJYV64CAWDF8QYXBNS
+kind: logical_entity
+name: fct_order_lines
+realises: 01KZ4SXENJNKV5CCAP2DHYJFGW
+attributes:
+  - id: 01KZ4SXENJJM36CW9G46VF6W0P
+    name: order_line_id
+    domain: integer
+    role: business_key
+    nullable: true
+  - id: 01KZ4SXENJ31FMBTZ89V7EKVAN
+    name: order_id
+    domain: integer
+    role: attribute
+    nullable: true
+  - id: 01KZ4SXENJARY8B5QVDTFGBVDN
+    name: customer_id
+    domain: integer
+    role: attribute
+    nullable: true
+  - id: 01KZ4SXENJSJWWGDHD51R0DBHV
+    name: store_id
+    domain: integer
+    role: attribute
+    nullable: true
+  - id: 01KZ4SXENJDBRR4ZT54KKQQ8CF
+    name: product_id
+    domain: integer
+    role: attribute
+    nullable: true
+  - id: 01KZ4SXENJ83TZF5SC2Z2Y48KE
+    name: quantity
+    domain: integer
+    role: attribute
+    nullable: true
+  - id: 01KZ4SXENJC2ZGHP40Z76HX2ZK
+    name: line_amount
+    domain: decimal
+    role: attribute
+    nullable: true
+subtypes: []

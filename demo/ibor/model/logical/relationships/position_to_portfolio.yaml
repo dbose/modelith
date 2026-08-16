@@ -1,0 +1,13 @@
+id: 01KZ30H8PZGYM161RFKXKRXC16
+kind: relationship
+name: position_to_portfolio
+from:
+  entity: 01KZ2CKNG2S3P5AX7PK826ET35
+  attributes:
+    - 01KZ30H8PZ4VT0BSRDT2FP51X4
+to:
+  entity: 01KZ2CBAD9WD1EH0ZKQP3ESE2N
+  attributes:
+    - 01KZ2Z4MRKZEPPEWP1CE02F36B
+cardinality: many_to_one
+optionality: mandatory

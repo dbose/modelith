@@ -1,0 +1,20 @@
+# Modelith project config (spec §2.2)
+name: pension_ibor
+dbt_target: duckdb_dev
+platform_targets:
+  - duckdb_dev
+# Industry vocabularies plug in by declaration — FIBO is only one example.
+# Add ACORD / FHIR / ISO 20022 / GS1 / your own the same way:
+# ontology_stack:
+#   - name: fibo
+#     layer: industry
+#     format: turtle
+#     path: ontologies/industry/fibo/2024.03
+#     modules: [fnd, fbc]
+#     prefixes:
+#       fibo-fnd-pty-pty: "https://spec.edmcouncil.org/fibo/ontology/FND/Parties/Parties/"
+ontology_stack: []
+naming:
+  logical_case: snake
+  physical_case: upper_snake
+  abbreviations: {}

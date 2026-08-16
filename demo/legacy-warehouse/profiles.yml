@@ -1,0 +1,7 @@
+legacy:
+  target: dev
+  outputs:
+    dev:
+      type: duckdb
+      path: legacy.duckdb
+      threads: 4

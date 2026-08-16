@@ -1,0 +1,25 @@
+id: 01KZ2CKNG2S3P5AX7PK826ET35
+kind: logical_entity
+name: position
+realises: 01KZ2CKNG2D1NKYJP72NC3HPVK
+attributes:
+  - id: 01KZ2Z6NHHYYZ8DQ5DRMRKHXZ6
+    name: as_of_date
+    domain: date
+    role: attribute
+    nullable: true
+  - id: 01KZ2Z70D8HAHT89DVSHBQ7S8E
+    name: quantity
+    domain: decimal
+    role: attribute
+    nullable: true
+  - id: 01KZ30H8PZ4VT0BSRDT2FP51X4
+    name: portfolio_code
+    domain: string
+    role: attribute
+    nullable: true
+  - id: 01KZ30PT8AEJG9ZB45S4TD7MNC
+    name: instrument_id
+    domain: identifier_bigint
+    role: attribute
+    nullable: true

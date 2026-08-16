@@ -1,0 +1,21 @@
+decisions:
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_orders.customer_id -> dim_customer (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_orders
+      column: customer_id
+      to: dim_customer
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_orders.product_id -> dim_product (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_orders
+      column: product_id
+      to: dim_product
+      signal: relationships_test

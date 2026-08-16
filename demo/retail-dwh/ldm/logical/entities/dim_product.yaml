@@ -1,0 +1,32 @@
+id: 01KZ4SXENJQTRMSXGAV0MFR2ME
+kind: logical_entity
+name: dim_product
+realises: 01KZ4SXENJKXQHRW3NQE50E7XG
+attributes:
+  - id: 01KZ4SXENJ3TKHMAH1QA99SQP0
+    name: product_id
+    domain: bigint
+    role: business_key
+    nullable: true
+  - id: 01KZ4SXENJXYADRG7W06XG3EMZ
+    name: sku
+    domain: string
+    role: attribute
+    nullable: true
+  - id: 01KZ4SXENJM0JZ8JY8MMTSB5YX
+    name: product_name
+    domain: string
+    role: attribute
+    nullable: true
+  - id: 01KZ4SXENJVVX8KYW5SYQKW63X
+    name: category_id
+    domain: bigint
+    role: attribute
+    nullable: true
+  - id: 01KZ4SXENJKPHMVVA4JE6ZZNHF
+    name: unit_price
+    domain: decimal
+    role: attribute
+    nullable: true
+subtypes: []
+pattern: scd2

@@ -1,0 +1,9 @@
+# Local dbt profile for the IBoR demo. Uses DuckDB (file-based, zero-setup).
+# The profile name must match `profile:` in dbt_project.yml (warehouse).
+warehouse:
+  target: duckdb_dev
+  outputs:
+    duckdb_dev:
+      type: duckdb
+      path: ibor.duckdb        # created on first run, relative to this dir
+      threads: 4

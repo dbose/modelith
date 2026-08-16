@@ -1,0 +1,26 @@
+version: 2
+models:
+  - name: fct_orders
+    description: Order facts.
+    columns:
+      - name: order_id
+        tests: [unique, not_null]
+      - name: customer_id
+        tests:
+          - relationships:
+              to: ref('dim_customer')
+              field: customer_id
+      - name: product_id
+        tests:
+          - relationships:
+              to: ref('dim_product')
+              field: product_id
+  - name: dim_customer
+    description: Customer dimension (SCD2).
+    columns:
+      - name: customer_id
+        tests: [not_null]
+  - name: dim_product
+    columns:
+      - name: product_id
+        tests: [not_null]

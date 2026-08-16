@@ -1,0 +1,15 @@
+{
+  "content_hash": "sha256:a837940c06e186958a8287c8522fad2520994165a0b302695bcd2cb18b1368cd",
+  "emitter_version": "0.1.0",
+  "fingerprint": "sha256:86541ba4ad4061a3ed0b47fdadce347828aa68c8876183ba965f5cb686d17722",
+  "path": "models/benchmark.sql",
+  "spec_versions": {
+    "dbt": "1.9",
+    "mdl_spec": "v1"
+  },
+  "ulids": [
+    "01KZ2FV3S3JZJQFY7QAA969635",
+    "01KZ2Z2847JT0V7W2BB7JKTD69",
+    "01KZ2Z2EZ23J4F0KCKXZ3GV4ZQ"
+  ]
+}

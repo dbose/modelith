@@ -1,0 +1,13 @@
+name: retail_dwh
+version: "2.0.0"
+profile: retail
+model-paths: ["models"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+target-path: target
+models:
+  retail_dwh:
+    staging:      {+materialized: view,  +tags: ["staging"]}
+    intermediate: {+materialized: view,  +tags: ["intermediate"]}
+    marts:        {+materialized: table}
+    vault:        {+materialized: table, +tags: ["vault"]}

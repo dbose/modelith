@@ -1,0 +1,17 @@
+id: 01KZ4SXT4DBA9KH3V7DFM2ZFSN
+kind: relationship
+name: hub_product_has_dim_product
+from:
+  entity: 01KZ4SXENKAMXTKPS279MKGFJK
+  attributes:
+    - 01KZ4SXENKVM47QTN91NF6DDJM
+to:
+  entity: 01KZ4SXENJQTRMSXGAV0MFR2ME
+  attributes:
+    - 01KZ4SXENJ3TKHMAH1QA99SQP0
+cardinality: many_to_one
+identifying: false
+optionality: mandatory
+enforce:
+  physical_constraint: true
+  dbt_test: relationships

@@ -1,0 +1,5 @@
+product_id,sku,product_name,category_id,unit_price,valid_from,valid_to,is_current
+100,SKU-WID,Widget,10,19.99,2024-01-01,9999-12-31,true
+101,SKU-GAD,Gadget,10,49.50,2024-01-01,2025-01-01,false
+101,SKU-GAD,Gadget Pro,10,59.50,2025-01-01,9999-12-31,true
+102,SKU-GIZ,Gizmo,20,9.75,2024-01-01,9999-12-31,true

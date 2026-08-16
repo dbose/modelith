@@ -1,0 +1,4 @@
+# dbt build artifacts (generated projects live here by default)
+target/
+dbt_packages/
+logs/

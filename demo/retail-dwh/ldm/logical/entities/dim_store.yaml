@@ -1,0 +1,26 @@
+id: 01KZ4SXENJV4ABJVEE1B1Q121C
+kind: logical_entity
+name: dim_store
+realises: 01KZ4SXENJ4RYV62C8Y6V4BWBC
+attributes:
+  - id: 01KZ4SXENJT9X2BSH8PK6EYSBA
+    name: store_id
+    domain: bigint
+    role: business_key
+    nullable: true
+  - id: 01KZ4SXENJH19W95HCVTAV257Z
+    name: store_name
+    domain: string
+    role: attribute
+    nullable: true
+  - id: 01KZ4SXENJERAF2KEN9BM9HV5S
+    name: region
+    domain: string
+    role: attribute
+    nullable: true
+  - id: 01KZ4SXENJX2TSGPYKNXJZ249N
+    name: country
+    domain: string
+    role: attribute
+    nullable: true
+subtypes: []

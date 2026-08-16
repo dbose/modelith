@@ -1,0 +1,11 @@
+{
+  "folders": [
+    { "name": "model", "path": "model" },
+    { "name": "transform", "path": "transform/warehouse" },
+    { "name": "repo", "path": "." }
+  ],
+  "settings": {
+    "modelith.modelDir": "model",
+    "modelith.dbtProjectDir": "transform/warehouse"
+  }
+}

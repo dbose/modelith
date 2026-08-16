@@ -1,0 +1,21 @@
+id: 01KZ36WXF6K4PE91X2GCPCVPX4
+kind: logical_entity
+name: fct_orders
+realises: 01KZ36WXF66YCYAVJZWF3J59GP
+attributes:
+  - id: 01KZ36WXF64VVZ4MM7ZJ6D36FG
+    name: order_id
+    domain: string
+    role: business_key
+    nullable: true
+  - id: 01KZ36WXF6712BWJ4EV4K75TA9
+    name: customer_id
+    domain: string
+    role: attribute
+    nullable: true
+  - id: 01KZ36WXF60QHJH83K4M8D13B4
+    name: product_id
+    domain: string
+    role: attribute
+    nullable: true
+subtypes: []

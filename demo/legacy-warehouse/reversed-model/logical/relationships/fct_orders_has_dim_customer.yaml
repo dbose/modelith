@@ -1,0 +1,17 @@
+id: 01KZ36WXF7F3ZQNXXE9Z3JJNSE
+kind: relationship
+name: fct_orders_has_dim_customer
+from:
+  entity: 01KZ36WXF6K4PE91X2GCPCVPX4
+  attributes:
+    - 01KZ36WXF6712BWJ4EV4K75TA9
+to:
+  entity: 01KZ36WXF6CPBDY9SE1FN5VZQS
+  attributes:
+    - 01KZ36WXF6WSBRNVX0MYK5NB81
+cardinality: many_to_one
+identifying: false
+optionality: mandatory
+enforce:
+  physical_constraint: true
+  dbt_test: relationships

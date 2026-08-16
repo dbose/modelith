@@ -1,0 +1,6 @@
+id: 01KZ36WXF6CE4RK5VF2BZ64211
+kind: logical_entity
+name: link_order
+realises: 01KZ36WXF6K3SJ022FEZ3VC6D2
+attributes: []
+subtypes: []

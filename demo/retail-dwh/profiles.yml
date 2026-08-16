@@ -1,0 +1,4 @@
+retail:
+  target: dev
+  outputs:
+    dev: {type: duckdb, path: retail.duckdb, threads: 4}

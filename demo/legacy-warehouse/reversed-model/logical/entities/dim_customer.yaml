@@ -1,0 +1,11 @@
+id: 01KZ36WXF6CPBDY9SE1FN5VZQS
+kind: logical_entity
+name: dim_customer
+realises: 01KZ36WXF60FZPX204NHNFC0YW
+attributes:
+  - id: 01KZ36WXF6WSBRNVX0MYK5NB81
+    name: customer_id
+    domain: string
+    role: business_key
+    nullable: true
+subtypes: []

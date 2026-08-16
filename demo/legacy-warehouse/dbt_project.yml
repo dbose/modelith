@@ -1,0 +1,15 @@
+name: legacy_warehouse
+version: "1.0.0"
+profile: legacy
+model-paths: ["models"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+target-path: target
+models:
+  legacy_warehouse:
+    marts:
+      +materialized: table
+    staging:
+      +materialized: view
+    vault:
+      +materialized: table

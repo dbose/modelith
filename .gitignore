@@ -18,8 +18,11 @@ vscode/node_modules/
 vscode/dist/
 vscode/*.vsix
 
-# local demo workspace (own git repo inside; never part of modelith)
-demo/
+# demo projects ship as adoption assets: track the source, ignore build output.
+# (*.duckdb below already excludes the bundled warehouses; users run `dbt build`.)
+demo/**/target/
+demo/**/logs/
+demo/**/dbt_packages/
 
 # duckdb build artifacts
 *.duckdb

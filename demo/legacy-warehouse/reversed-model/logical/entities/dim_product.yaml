@@ -1,0 +1,11 @@
+id: 01KZ36WXF681ERF9MPAPZJB421
+kind: logical_entity
+name: dim_product
+realises: 01KZ36WXF6K16CYP1E81ZN4CK6
+attributes:
+  - id: 01KZ36WXF6GMB0455R0NC3J36D
+    name: product_id
+    domain: string
+    role: business_key
+    nullable: true
+subtypes: []

@@ -1,0 +1,27 @@
+id: 01KZ4SXENJ4SN3QXSBEXHY2DCQ
+kind: logical_entity
+name: dim_customer
+realises: 01KZ4SXENJ2WY3BB71TM0KFF24
+attributes:
+  - id: 01KZ4SXENJJ3768VEEXRKXPGTJ
+    name: customer_id
+    domain: bigint
+    role: business_key
+    nullable: true
+  - id: 01KZ4SXENJH9PV0GS6CCA37WWE
+    name: full_name
+    domain: string
+    role: attribute
+    nullable: true
+  - id: 01KZ4SXENJP89T5FX1YH0A9GGS
+    name: email
+    domain: string
+    role: attribute
+    nullable: true
+  - id: 01KZ4SXENJV7XHSTFG5DD541T1
+    name: segment
+    domain: string
+    role: attribute
+    nullable: true
+subtypes: []
+pattern: scd2

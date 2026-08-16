@@ -1,0 +1,196 @@
+decisions:
+  - kind: data_vault_pattern
+    signal: dv_naming
+    confidence: medium
+    subject: model 'hub_customer' looks like a Data Vault hub
+    verdict: accepted
+    evidence:
+      model: hub_customer
+      kind: hub
+  - kind: data_vault_pattern
+    signal: dv_naming
+    confidence: medium
+    subject: model 'hub_product' looks like a Data Vault hub
+    verdict: accepted
+    evidence:
+      model: hub_product
+      kind: hub
+  - kind: data_vault_pattern
+    signal: dv_naming
+    confidence: medium
+    subject: model 'link_order_line' looks like a Data Vault link
+    verdict: accepted
+    evidence:
+      model: link_order_line
+      kind: link
+  - kind: data_vault_pattern
+    signal: dv_naming
+    confidence: medium
+    subject: model 'sat_customer' looks like a Data Vault satellite
+    verdict: accepted
+    evidence:
+      model: sat_customer
+      kind: satellite
+  - kind: relationship
+    signal: name_type
+    confidence: medium
+    subject: dim_product.category_id -> dim_category (name/type heuristic)
+    verdict: accepted
+    evidence:
+      from: dim_product
+      column: category_id
+      to: dim_category
+      signal: name_type
+  - kind: relationship
+    signal: name_type
+    confidence: medium
+    subject: fct_order_lines.customer_id -> dim_customer (name/type heuristic)
+    verdict: accepted
+    evidence:
+      from: fct_order_lines
+      column: customer_id
+      to: dim_customer
+      signal: name_type
+  - kind: relationship
+    signal: name_type
+    confidence: medium
+    subject: fct_order_lines.product_id -> dim_product (name/type heuristic)
+    verdict: accepted
+    evidence:
+      from: fct_order_lines
+      column: product_id
+      to: dim_product
+      signal: name_type
+  - kind: relationship
+    signal: name_type
+    confidence: medium
+    subject: fct_order_lines.store_id -> dim_store (name/type heuristic)
+    verdict: accepted
+    evidence:
+      from: fct_order_lines
+      column: store_id
+      to: dim_store
+      signal: name_type
+  - kind: relationship
+    signal: name_type
+    confidence: medium
+    subject: hub_customer.customer_id -> dim_customer (name/type heuristic)
+    verdict: accepted
+    evidence:
+      from: hub_customer
+      column: customer_id
+      to: dim_customer
+      signal: name_type
+  - kind: relationship
+    signal: name_type
+    confidence: medium
+    subject: hub_product.product_id -> dim_product (name/type heuristic)
+    verdict: accepted
+    evidence:
+      from: hub_product
+      column: product_id
+      to: dim_product
+      signal: name_type
+  - kind: scd2_pattern
+    signal: scd2_columns
+    confidence: medium-high
+    subject: model 'dim_customer' looks like SCD2 (valid_from, valid_to, is_current)
+    verdict: accepted
+    evidence:
+      model: dim_customer
+      columns:
+        - valid_from
+        - valid_to
+        - is_current
+  - kind: scd2_pattern
+    signal: scd2_columns
+    confidence: medium-high
+    subject: model 'dim_product' looks like SCD2 (valid_from, valid_to, is_current)
+    verdict: accepted
+    evidence:
+      model: dim_product
+      columns:
+        - valid_from
+        - valid_to
+        - is_current
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key dim_customer.customer_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: dim_customer
+      column: customer_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key dim_product.product_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: dim_product
+      column: product_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key hub_customer.customer_hashkey from the logical view
+    verdict: accepted
+    evidence:
+      model: hub_customer
+      column: customer_hashkey
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key hub_product.product_hashkey from the logical view
+    verdict: accepted
+    evidence:
+      model: hub_product
+      column: product_hashkey
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key link_order_line.customer_hashkey from the logical view
+    verdict: accepted
+    evidence:
+      model: link_order_line
+      column: customer_hashkey
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key link_order_line.order_line_hashkey from the logical view
+    verdict: accepted
+    evidence:
+      model: link_order_line
+      column: order_line_hashkey
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key link_order_line.product_hashkey from the logical view
+    verdict: accepted
+    evidence:
+      model: link_order_line
+      column: product_hashkey
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key sat_customer.customer_hashkey from the logical view
+    verdict: accepted
+    evidence:
+      model: sat_customer
+      column: customer_hashkey
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key sat_customer.hashdiff from the logical view
+    verdict: accepted
+    evidence:
+      model: sat_customer
+      column: hashdiff
+      reason: surrogate_key

@@ -1,0 +1,12 @@
+id: 01KZ4SXENKH1HV6JXAGHRW9770
+kind: logical_entity
+name: link_order_line
+realises: 01KZ4SXENK0ACZG8HQ1E9XDSGE
+attributes:
+  - id: 01KZ4SXENKY1QQB69DQ1CD8EAB
+    name: load_dts
+    domain: timestamp
+    role: attribute
+    nullable: true
+subtypes: []
+pattern: link

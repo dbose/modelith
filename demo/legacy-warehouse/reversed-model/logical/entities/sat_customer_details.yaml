@@ -1,0 +1,6 @@
+id: 01KZ36WXF6074VJNHBB9PFFC7N
+kind: logical_entity
+name: sat_customer_details
+realises: 01KZ36WXF64CQZF90PAVC2H5D5
+attributes: []
+subtypes: []

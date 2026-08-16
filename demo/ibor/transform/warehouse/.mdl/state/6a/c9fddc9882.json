@@ -1,0 +1,16 @@
+{
+  "content_hash": "sha256:60077275b83fb7ed8e2d7e7f456fd2589d43353e6e797ed39e1a1e8e653320ff",
+  "emitter_version": "0.1.0",
+  "fingerprint": "sha256:9c670b74509e62a1d76ca34ed8758669321d17184a59e6f1c143e459e2360250",
+  "path": "models/portfolio.sql",
+  "spec_versions": {
+    "dbt": "1.9",
+    "mdl_spec": "v1"
+  },
+  "ulids": [
+    "01KZ2CBAD9WD1EH0ZKQP3ESE2N",
+    "01KZ2Z4MRKZEPPEWP1CE02F36B",
+    "01KZ2Z5EJDS5HCHA7KVMVTDYTE",
+    "01KZ30ERDDHAA7FD11599HKTRW"
+  ]
+}

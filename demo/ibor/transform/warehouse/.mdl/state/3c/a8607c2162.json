@@ -1,0 +1,18 @@
+{
+  "content_hash": "sha256:aa4803972f176b42b4340f38616628ef671813218be4d1f8ab2059e6b3bcfcad",
+  "emitter_version": "0.1.0",
+  "fingerprint": "sha256:f37105e4895432a5fc1f1ec79ca5c8af07a85d8cd8d93f7bfad4702f83b2118c",
+  "path": "models/transaction.sql",
+  "spec_versions": {
+    "dbt": "1.9",
+    "mdl_spec": "v1"
+  },
+  "ulids": [
+    "01KZ2FSTGAEEH1QAZW9HTQVY1W",
+    "01KZ2ZA5N02M22KVNN83DFK2T5",
+    "01KZ2ZAJ1NXCMSWY9W6ZSC1SR4",
+    "01KZ2ZAW64TQGZRQDGGCNAEDZ6",
+    "01KZ30YSQ78B6XPFDV3H2GF6CT",
+    "01KZ30Z75KQ5TY8C3CJAKVG5NS"
+  ]
+}

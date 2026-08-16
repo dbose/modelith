@@ -1,0 +1,6 @@
+id: 01KZDOMAINASSETCLASS000000
+kind: domain
+name: asset_class_enum
+base_type: string
+definition: The regulatory asset class of a tradeable instrument.
+allowed_values: [equity, govt_bond, corp_bond, fx, derivative]

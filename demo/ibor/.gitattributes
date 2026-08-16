@@ -1,0 +1,3 @@
+model/**/*.yaml merge=mdl
+**/.mdl/decisions.yaml merge=mdl
+**/.mdl/state/**/*.json merge=mdl-state

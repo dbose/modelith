@@ -1,0 +1,17 @@
+{
+  "content_hash": "sha256:bb7eba1e11f69baceca1005118e623dc614e3386e5d9e2f3ce129cc00eb68b0c",
+  "emitter_version": "0.1.0",
+  "fingerprint": "sha256:abc28d1fe9f01a169d9a07aab02f7e0e75144b57087dc6141ff027dc383c42a2",
+  "path": "models/price.sql",
+  "spec_versions": {
+    "dbt": "1.9",
+    "mdl_spec": "v1"
+  },
+  "ulids": [
+    "01KZ2CRW88VH6N972NY2G9VPDX",
+    "01KZ2Z86TFTBHY3PPKYMZMCWCE",
+    "01KZ2Z8KKVG5T5F8Z3WX5X6WZM",
+    "01KZ2Z90YTHJJ552D9N6V4QQK1",
+    "01KZ30XJ1JZRY1V45N4CKKMV85"
+  ]
+}

@@ -1,0 +1,25 @@
+id: 01KZ2CRW88VH6N972NY2G9VPDX
+kind: logical_entity
+name: price
+realises: 01KZ2CRW88NTFF2DFTK95FYF4R
+attributes:
+  - id: 01KZ2Z86TFTBHY3PPKYMZMCWCE
+    name: price_id
+    domain: string
+    role: business_key
+    nullable: false
+  - id: 01KZ2Z8KKVG5T5F8Z3WX5X6WZM
+    name: price_date
+    domain: date
+    role: attribute
+    nullable: false
+  - id: 01KZ2Z90YTHJJ552D9N6V4QQK1
+    name: close_price
+    domain: decimal
+    role: attribute
+    nullable: true
+  - id: 01KZ30XJ1JZRY1V45N4CKKMV85
+    name: instrument_id
+    domain: identifier_bigint
+    role: attribute
+    nullable: true

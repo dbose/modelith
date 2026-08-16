@@ -1,0 +1,228 @@
+# mdl:generated-begin id=schema fingerprint=sha256:137b309f90cd66e8afe7b071153b8df826af1e0459487845a9439e4b11b28e3d spec=v1
+version: 2
+models:
+  - name: benchmark
+    config:
+      contract:
+        enforced: true
+    meta:
+      mdl_ulid: 01KZ2FV3S3JZJQFY7QAA969635
+      glossary_term: Benchmark
+    columns:
+      - name: benchmark_code
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+        meta:
+          mdl_ulid: 01KZ2Z2847JT0V7W2BB7JKTD69
+      - name: benchmark_name
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+        meta:
+          mdl_ulid: 01KZ2Z2EZ23J4F0KCKXZ3GV4ZQ
+    description: An index a portfolio's performance is measured against.
+  - name: counterparty
+    config:
+      contract:
+        enforced: true
+    meta:
+      mdl_ulid: 01KZ2659634FAG7WT6KDWKA62S
+      glossary_term: Counterparty
+      owner: risk-data-office
+      steward: a.hough
+    columns:
+      - name: counterparty_id
+        data_type: BIGINT
+        constraints:
+          - type: not_null
+          - type: primary_key
+        meta:
+          mdl_ulid: 01KZ265963ANMN3276ZTRPT5K3
+      - name: legal_name
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+        meta:
+          mdl_ulid: 01KZ2MAGACD933NTCW8DB0AERF
+      - name: country
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+        meta:
+          mdl_ulid: 01KZ2MBC38TAWEE2VSG6AKV652
+    description: A legal person with whom the firm has or may have a contractual obligation.
+  - name: instrument
+    config:
+      contract:
+        enforced: true
+    meta:
+      mdl_ulid: 01KZ2B1RV0BZ5257G4AFKRW34X
+      glossary_term: Instrument
+    columns:
+      - name: instrument_id
+        data_type: BIGINT
+        constraints:
+          - type: not_null
+          - type: primary_key
+        meta:
+          mdl_ulid: 01KZ2WQ5DTWCEVGQ568DK327BA
+      - name: isin
+        data_type: VARCHAR
+        meta:
+          mdl_ulid: 01KZ2WQQZ39FVQBZQ3C05AX8HR
+      - name: asset_class
+        data_type: VARCHAR
+        meta:
+          mdl_ulid: 01KZ2YPXB764KAQ3B6VJR3M0AX
+      - name: counterparty_id
+        data_type: BIGINT
+        meta:
+          mdl_ulid: 01KZ31ZGXYM6JQB1JJQSZR7E19
+        tests:
+          - relationships:
+              to: ref('counterparty')
+              field: counterparty_id
+    description: A tradeable financial instrument held or referenced by the fund.
+  - name: portfolio
+    config:
+      contract:
+        enforced: true
+    meta:
+      mdl_ulid: 01KZ2CBAD9WD1EH0ZKQP3ESE2N
+      glossary_term: Portfolio
+    columns:
+      - name: portfolio_code
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+        meta:
+          mdl_ulid: 01KZ2Z4MRKZEPPEWP1CE02F36B
+      - name: mandate
+        data_type: VARCHAR
+        meta:
+          mdl_ulid: 01KZ2Z5EJDS5HCHA7KVMVTDYTE
+      - name: benchmark_code
+        data_type: VARCHAR
+        meta:
+          mdl_ulid: 01KZ30ERDDHAA7FD11599HKTRW
+        tests:
+          - relationships:
+              to: ref('benchmark')
+              field: benchmark_code
+    description: A mandate within the pension scheme with its own strategy and benchmark.
+  - name: position
+    config:
+      contract:
+        enforced: true
+    meta:
+      mdl_ulid: 01KZ2CKNG2S3P5AX7PK826ET35
+      glossary_term: Position
+    columns:
+      - name: as_of_date
+        data_type: DATE
+        meta:
+          mdl_ulid: 01KZ2Z6NHHYYZ8DQ5DRMRKHXZ6
+      - name: quantity
+        data_type: DECIMAL(38,2)
+        meta:
+          mdl_ulid: 01KZ2Z70D8HAHT89DVSHBQ7S8E
+      - name: portfolio_code
+        data_type: VARCHAR
+        meta:
+          mdl_ulid: 01KZ30H8PZ4VT0BSRDT2FP51X4
+        tests:
+          - relationships:
+              to: ref('portfolio')
+              field: portfolio_code
+      - name: instrument_id
+        data_type: BIGINT
+        meta:
+          mdl_ulid: 01KZ30PT8AEJG9ZB45S4TD7MNC
+        tests:
+          - relationships:
+              to: ref('instrument')
+              field: instrument_id
+    description: A holding of an instrument within a portfolio as of a date.
+  - name: price
+    config:
+      contract:
+        enforced: true
+    meta:
+      mdl_ulid: 01KZ2CRW88VH6N972NY2G9VPDX
+      glossary_term: Price
+    columns:
+      - name: price_id
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+        meta:
+          mdl_ulid: 01KZ2Z86TFTBHY3PPKYMZMCWCE
+      - name: price_date
+        data_type: DATE
+        constraints:
+          - type: not_null
+        meta:
+          mdl_ulid: 01KZ2Z8KKVG5T5F8Z3WX5X6WZM
+      - name: close_price
+        data_type: DECIMAL(38,2)
+        meta:
+          mdl_ulid: 01KZ2Z90YTHJJ552D9N6V4QQK1
+      - name: instrument_id
+        data_type: BIGINT
+        meta:
+          mdl_ulid: 01KZ30XJ1JZRY1V45N4CKKMV85
+        tests:
+          - relationships:
+              to: ref('instrument')
+              field: instrument_id
+    description: An observed market price for an instrument on a date.
+  - name: transaction
+    config:
+      contract:
+        enforced: true
+    meta:
+      mdl_ulid: 01KZ2FSTGAEEH1QAZW9HTQVY1W
+      glossary_term: Transaction
+    columns:
+      - name: transaction_id
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+        meta:
+          mdl_ulid: 01KZ2ZA5N02M22KVNN83DFK2T5
+      - name: trade_date
+        data_type: DATE
+        constraints:
+          - type: not_null
+        meta:
+          mdl_ulid: 01KZ2ZAJ1NXCMSWY9W6ZSC1SR4
+      - name: amount
+        data_type: DECIMAL(38,2)
+        meta:
+          mdl_ulid: 01KZ2ZAW64TQGZRQDGGCNAEDZ6
+      - name: portfolio_code
+        data_type: VARCHAR
+        meta:
+          mdl_ulid: 01KZ30YSQ78B6XPFDV3H2GF6CT
+        tests:
+          - relationships:
+              to: ref('portfolio')
+              field: portfolio_code
+      - name: counterparty_id
+        data_type: BIGINT
+        meta:
+          mdl_ulid: 01KZ30Z75KQ5TY8C3CJAKVG5NS
+        tests:
+          - relationships:
+              to: ref('counterparty')
+              field: counterparty_id
+    description: An executed trade or cash movement affecting a portfolio.
+# mdl:generated-end
+
+# mdl:user-begin
+# mdl:user-end

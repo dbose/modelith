@@ -1,0 +1,30 @@
+id: 01KZ2FSTGAEEH1QAZW9HTQVY1W
+kind: logical_entity
+name: transaction
+realises: 01KZ2FSTGAWJTYW5CENB6Y8P8N
+attributes:
+  - id: 01KZ2ZA5N02M22KVNN83DFK2T5
+    name: transaction_id
+    domain: string
+    role: business_key
+    nullable: false
+  - id: 01KZ2ZAJ1NXCMSWY9W6ZSC1SR4
+    name: trade_date
+    domain: date
+    role: attribute
+    nullable: false
+  - id: 01KZ2ZAW64TQGZRQDGGCNAEDZ6
+    name: amount
+    domain: decimal
+    role: attribute
+    nullable: true
+  - id: 01KZ30YSQ78B6XPFDV3H2GF6CT
+    name: portfolio_code
+    domain: string
+    role: attribute
+    nullable: true
+  - id: 01KZ30Z75KQ5TY8C3CJAKVG5NS
+    name: counterparty_id
+    domain: identifier_bigint
+    role: attribute
+    nullable: true

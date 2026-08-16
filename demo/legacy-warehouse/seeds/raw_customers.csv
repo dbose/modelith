@@ -1,0 +1,4 @@
+customer_id,name,tier,valid_from,valid_to,is_current
+1,Acme Corp,gold,2024-01-01,2025-06-01,false
+1,Acme Corp,platinum,2025-06-01,9999-12-31,true
+2,Globex,silver,2024-03-15,9999-12-31,true

@@ -1,0 +1,5 @@
+order_id,customer_id,store_id,order_ts,status
+9001,1,500,2025-07-01 10:15:00,shipped
+9002,1,501,2025-07-02 14:30:00,shipped
+9003,2,502,2025-07-03 09:05:00,pending
+9004,3,500,2025-07-04 16:45:00,shipped

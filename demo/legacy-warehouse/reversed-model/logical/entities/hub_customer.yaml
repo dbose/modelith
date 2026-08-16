@@ -1,0 +1,6 @@
+id: 01KZ36WXF65DB4NWMCHH50FAN1
+kind: logical_entity
+name: hub_customer
+realises: 01KZ36WXF6CGY9T6CX42M6NRDM
+attributes: []
+subtypes: []

@@ -1,0 +1,6 @@
+id: 01KZKEYGROUPINSTRUMENTAK000
+kind: key_group
+entity: 01KZ2B1RV0BZ5257G4AFKRW34X
+name: ak_instrument_isin
+type: unique
+members: [01KZ2WQQZ39FVQBZQ3C05AX8HR]

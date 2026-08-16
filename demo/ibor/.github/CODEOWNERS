@@ -1,0 +1,27 @@
+# Ownership mirrors the layer stack (collaboration model §3).
+# Replace the placeholder teams with your org's.
+
+# Conceptual: the business owns meaning
+/model/conceptual/terms/           @data-stewards
+/model/conceptual/entities/        @data-architects @data-stewards
+/model/conceptual/subject-areas/   @data-architects
+
+# Logical: architecture owns structure
+/model/logical/                    @data-architects
+/model/patterns/                   @data-architects
+
+# Physical + semantic: shared, architects hold the contract
+/model/physical/                   @analytics-engineers @data-architects
+/model/semantic/                   @data-architects @analytics-engineers
+
+# Transformation code: engineering owns implementation
+/transform/                          @analytics-engineers
+
+# Governance mapping and ontology: central, high blast radius
+/governance-profile.yaml             @data-governance @data-architects
+/ontologies/                         @data-architects
+/model/mdl-project.yaml            @data-architects
+/model/.mdl/lock.yaml              @data-architects
+
+# Generated state: tool-owned, humans should rarely touch
+/transform/**/.mdl/state/            @data-platform

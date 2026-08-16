@@ -1,0 +1,28 @@
+id: 01KZ2B1RV0BZ5257G4AFKRW34X
+kind: logical_entity
+name: instrument
+realises: 01KZ2B1RV0PN06WKGDR8CA4SD4
+udp:
+  system_of_record: security_master
+  criticality: tier_1
+attributes:
+  - id: 01KZ2WQ5DTWCEVGQ568DK327BA
+    name: instrument_id
+    domain: identifier_bigint
+    role: business_key
+    nullable: false
+  - id: 01KZ2WQQZ39FVQBZQ3C05AX8HR
+    name: isin
+    domain: string
+    role: attribute
+    nullable: true
+  - id: 01KZ2YPXB764KAQ3B6VJR3M0AX
+    name: asset_class
+    domain: asset_class_enum
+    role: attribute
+    nullable: true
+  - id: 01KZ31ZGXYM6JQB1JJQSZR7E19
+    name: counterparty_id
+    domain: identifier_bigint
+    role: attribute
+    nullable: true

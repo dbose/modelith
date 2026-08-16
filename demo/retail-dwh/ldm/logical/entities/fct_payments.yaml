@@ -1,0 +1,31 @@
+id: 01KZ4SXENJ72X4V0YJRGPSWSMR
+kind: logical_entity
+name: fct_payments
+realises: 01KZ4SXENK1495WMZJZGX5T14F
+attributes:
+  - id: 01KZ4SXENJ3BZAPKQ5HZTD0SNN
+    name: payment_id
+    domain: bigint
+    role: business_key
+    nullable: true
+  - id: 01KZ4SXENJ7EYN66CB7FHJZBXB
+    name: order_id
+    domain: bigint
+    role: attribute
+    nullable: true
+  - id: 01KZ4SXENJH324N1QG623DK457
+    name: method
+    domain: string
+    role: attribute
+    nullable: true
+  - id: 01KZ4SXENJ5K9H2RKP3WAXM0JD
+    name: amount
+    domain: decimal
+    role: attribute
+    nullable: true
+  - id: 01KZ4SXENJZ6QFTRH66W3BDGT2
+    name: paid_ts
+    domain: timestamp
+    role: attribute
+    nullable: true
+subtypes: []

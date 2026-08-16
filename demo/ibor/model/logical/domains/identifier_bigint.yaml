@@ -1,0 +1,5 @@
+id: 01KZ265963936WFM47WBDJC88H
+kind: domain
+name: identifier_bigint
+base_type: bigint
+definition: A surrogate or business identifier stored as a 64-bit integer.

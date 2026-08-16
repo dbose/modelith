@@ -1,0 +1,22 @@
+id: 01KZ4SXENK7PAKC05XDSWT8Y1J
+kind: logical_entity
+name: hub_customer
+realises: 01KZ4SXENKQHK95WHDWYSNQ6RQ
+attributes:
+  - id: 01KZ4SXENKM34HAM5J7DXV6YRM
+    name: customer_id
+    domain: bigint
+    role: business_key
+    nullable: true
+  - id: 01KZ4SXENK0DMKYA49ZWYRWVXJ
+    name: load_dts
+    domain: timestamp
+    role: attribute
+    nullable: true
+  - id: 01KZ4SXENKY1SEN7J8AM6KN2Q0
+    name: record_source
+    domain: string
+    role: attribute
+    nullable: true
+subtypes: []
+pattern: hub

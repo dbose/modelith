@@ -1,0 +1,17 @@
+id: 01KZ4SXT4D7SR26F1GE5FTD9Z7
+kind: relationship
+name: fct_order_lines_has_dim_store
+from:
+  entity: 01KZ4SXENJYV64CAWDF8QYXBNS
+  attributes:
+    - 01KZ4SXENJSJWWGDHD51R0DBHV
+to:
+  entity: 01KZ4SXENJV4ABJVEE1B1Q121C
+  attributes:
+    - 01KZ4SXENJT9X2BSH8PK6EYSBA
+cardinality: many_to_one
+identifying: false
+optionality: mandatory
+enforce:
+  physical_constraint: true
+  dbt_test: relationships

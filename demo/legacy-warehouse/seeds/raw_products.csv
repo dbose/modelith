@@ -1,0 +1,3 @@
+product_id,sku,category,list_price,valid_from,valid_to,is_current
+10,SKU-AAA,widgets,19.99,2024-01-01,9999-12-31,true
+11,SKU-BBB,gadgets,49.50,2024-01-01,9999-12-31,true

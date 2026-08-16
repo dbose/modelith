@@ -1,0 +1,22 @@
+id: 01KZ4SXENKAMXTKPS279MKGFJK
+kind: logical_entity
+name: hub_product
+realises: 01KZ4SXENKRDV7F250Y4GSJGNK
+attributes:
+  - id: 01KZ4SXENKVM47QTN91NF6DDJM
+    name: product_id
+    domain: bigint
+    role: business_key
+    nullable: true
+  - id: 01KZ4SXENKYKC7W55BPZS2D384
+    name: load_dts
+    domain: timestamp
+    role: attribute
+    nullable: true
+  - id: 01KZ4SXENKDVP2EX8DK7NQFMDD
+    name: record_source
+    domain: string
+    role: attribute
+    nullable: true
+subtypes: []
+pattern: hub

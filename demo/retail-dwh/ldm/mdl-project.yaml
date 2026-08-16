@@ -1,0 +1,12 @@
+name: retail_ldm
+dbt_target: duckdb_dev
+platform_targets:
+  - duckdb_dev
+ontology_stack: []
+naming:
+  logical_case: snake
+  physical_case: upper_snake
+  abbreviations: {}
+glossary:
+  source_of_truth: git
+  catalog_name: Collibra

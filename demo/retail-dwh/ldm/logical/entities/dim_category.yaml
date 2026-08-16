@@ -1,0 +1,21 @@
+id: 01KZ4SXENJVRHV9Q2AY431W2D8
+kind: logical_entity
+name: dim_category
+realises: 01KZ4SXENJWBAGGNAMQF7XV6X5
+attributes:
+  - id: 01KZ4SXENJ328H0N6QA1EZ55DP
+    name: category_id
+    domain: bigint
+    role: business_key
+    nullable: true
+  - id: 01KZ4SXENJZM5NZ1XRRR6VCX2T
+    name: category_name
+    domain: string
+    role: attribute
+    nullable: true
+  - id: 01KZ4SXENJ2C5SK08RSCNTPDAX
+    name: department
+    domain: string
+    role: attribute
+    nullable: true
+subtypes: []

@@ -1,0 +1,16 @@
+{
+  "content_hash": "sha256:ee493101e6dfecdd14969c0efc6a5b537a9ba7617d72d2058ec8d35456cf03dc",
+  "emitter_version": "0.1.0",
+  "fingerprint": "sha256:c2f9359e374b54e1fde2fac77baf43d0a04d2170c53d08c264be8799610280d5",
+  "path": "models/counterparty.sql",
+  "spec_versions": {
+    "dbt": "1.9",
+    "mdl_spec": "v1"
+  },
+  "ulids": [
+    "01KZ2659634FAG7WT6KDWKA62S",
+    "01KZ265963ANMN3276ZTRPT5K3",
+    "01KZ2MAGACD933NTCW8DB0AERF",
+    "01KZ2MBC38TAWEE2VSG6AKV652"
+  ]
+}

@@ -1,0 +1,5 @@
+customer_id,full_name,email,segment,valid_from,valid_to,is_current
+1,Acme Corp,ops@acme.test,enterprise,2024-01-01,2025-06-01,false
+1,Acme Corp,ap@acme.test,strategic,2025-06-01,9999-12-31,true
+2,Globex LLC,buy@globex.test,mid_market,2024-03-15,9999-12-31,true
+3,Initech,ar@initech.test,smb,2024-05-20,9999-12-31,true
