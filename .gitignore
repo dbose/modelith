@@ -27,3 +27,6 @@ demo/**/dbt_packages/
 # duckdb build artifacts
 *.duckdb
 *.duckdb.wal
+
+# macOS
+.DS_Store
