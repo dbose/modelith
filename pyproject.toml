@@ -3,7 +3,7 @@
 # project, so the install name is `modelith-dbt` (install: uv tool install
 # modelith-dbt). The command stays `mdl`; the import modules stay mdl_*.
 name = "modelith-dbt"
-version = "0.1.1"
+version = "0.1.2"
 description = "Ontology-anchored, git-native data modeling tool for dbt-core teams"
 readme = "README.md"
 requires-python = ">=3.11"
