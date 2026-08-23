@@ -10,6 +10,9 @@ from pathlib import Path
 
 import typer
 from mdl_adapter_collibra import CollibraAdapter, CollibraTransport, MockTransport
+from mdl_emit_contract import emit_datacontract
+from mdl_emit_graph import emit_cypher
+from mdl_emit_pydantic import emit_pydantic_models
 from mdl_emit_semantic import emit_metricflow, emit_osi, import_osi, validate_joinability
 from mdl_governance import Profile, build_graph, emit_openlineage, run_conformance
 from mdl_ontology import (
@@ -198,13 +201,41 @@ def generate(
     target: str = typer.Option(None, "--target", "-t", help="Physical target"),
     out: Path = typer.Option(Path("target/dbt"), "--out", "-o", help="dbt project output dir"),
     inline: bool = typer.Option(False, "--inline", help="Inline pattern SQL instead of macros"),
+    emit_contract: bool = typer.Option(
+        False, "--emit-contract", help="Also write an ODCS datacontract.yaml at the model root"
+    ),
+    emit_pydantic: bool = typer.Option(
+        False, "--emit-pydantic", help="Also write Pydantic models.py at the model root"
+    ),
+    emit_graph: bool = typer.Option(
+        False, "--emit-graph", help="Also write a Neo4j schema.cypher at the model root"
+    ),
     dry_run: bool = typer.Option(False, "--dry-run"),
 ) -> None:
-    """Generate the dbt project with protected regions and three-way merge."""
+    """Generate the dbt project with protected regions and three-way merge.
+
+    The optional --emit-* flags make Modelith a multi-target compiler: the same
+    model also produces an ODCS data contract, Pydantic models, and/or a Neo4j
+    Cypher schema at the model root (respecting --dry-run).
+    """
     repo = _load(model_dir)
     tgt = target or repo.model.config.dbt_target or "duckdb_dev"
     emitter = DbtEmitter(repo.model, tgt, inline=inline)
     result = emitter.generate(out, write=not dry_run)
+
+    for flag, fn, fname, label in (
+        (emit_contract, emit_datacontract, "datacontract.yaml", "contract"),
+        (emit_pydantic, emit_pydantic_models, "models.py", "pydantic"),
+        (emit_graph, emit_cypher, "schema.cypher", "graph"),
+    ):
+        if not flag:
+            continue
+        text = fn(repo.model)
+        dest = model_dir / fname
+        if not dry_run:
+            dest.write_text(text, encoding="utf-8")
+        verb = "would write" if dry_run else "wrote"
+        typer.secho(f"  {verb} {label} to {dest}", fg=typer.colors.GREEN)
 
     for mr in result.merges:
         if mr.outcome != MergeOutcome.unchanged:
@@ -854,6 +885,40 @@ def export_shacl_cmd(
     repo = _load(model_dir)
     g = export_shacl(repo.model)
     _emit_text(serialize(g, fmt), out, "shacl")
+
+
+@export_app.command("contract")
+def export_contract_cmd(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    out: Path = typer.Option(Path("datacontract.yaml"), "--out", "-o"),
+) -> None:
+    """Export an Open Data Contract Standard (ODCS v3) data contract.
+
+    Modelith as a Data Contract Factory: snapshot the model and emit a pristine,
+    valid datacontract.yaml (schema + keys + valid-values + ownership).
+    """
+    repo = _load(model_dir)
+    _emit_text(emit_datacontract(repo.model), out, "contract")
+
+
+@export_app.command("graph")
+def export_graph_cmd(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    out: Path = typer.Option(None, "--out", "-o"),
+) -> None:
+    """Export a Neo4j / Cypher schema (node key/unique/existence constraints)."""
+    repo = _load(model_dir)
+    _emit_text(emit_cypher(repo.model), out, "graph")
+
+
+@emit_app.command("pydantic")
+def emit_pydantic_cmd(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    out: Path = typer.Option(Path("models.py"), "--out", "-o"),
+) -> None:
+    """Emit Pydantic v2 data models (one BaseModel per managed entity)."""
+    repo = _load(model_dir)
+    _emit_text(emit_pydantic_models(repo.model), out, "pydantic")
 
 
 @import_app.command("osi")

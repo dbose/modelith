@@ -7,6 +7,9 @@ license = { text = "Apache-2.0" }
 dependencies = [
     "modelith-core",
     "modelith-emit-dbt",
+    "modelith-emit-contract",
+    "modelith-emit-pydantic",
+    "modelith-emit-graph",
     "modelith-reverse",
     "modelith-ontology",
     "modelith-emit-semantic",
@@ -30,6 +33,9 @@ packages = ["src/mdl_cli"]
 [tool.uv.sources]
 modelith-core = { workspace = true }
 modelith-emit-dbt = { workspace = true }
+modelith-emit-contract = { workspace = true }
+modelith-emit-pydantic = { workspace = true }
+modelith-emit-graph = { workspace = true }
 modelith-reverse = { workspace = true }
 modelith-ontology = { workspace = true }
 modelith-emit-semantic = { workspace = true }

@@ -41,7 +41,7 @@ build-backend = "hatchling.build"
 # top-level importable packages. The mdl_server tree carries its static/ canvas
 # and SME bundle because those are real files under that directory.
 [tool.hatch.build.targets.wheel]
-force-include = { "packages/core/src/mdl_core" = "mdl_core", "packages/cli/src/mdl_cli" = "mdl_cli", "packages/emit-dbt/src/mdl_emit_dbt" = "mdl_emit_dbt", "packages/reverse/src/mdl_reverse" = "mdl_reverse", "packages/ontology/src/mdl_ontology" = "mdl_ontology", "packages/emit-semantic/src/mdl_emit_semantic" = "mdl_emit_semantic", "packages/governance/src/mdl_governance" = "mdl_governance", "packages/server/src/mdl_server" = "mdl_server", "packages/lsp/src/mdl_lsp" = "mdl_lsp", "packages/adapters/collibra/src/mdl_adapter_collibra" = "mdl_adapter_collibra" }
+force-include = { "packages/core/src/mdl_core" = "mdl_core", "packages/cli/src/mdl_cli" = "mdl_cli", "packages/emit-dbt/src/mdl_emit_dbt" = "mdl_emit_dbt", "packages/emit-contract/src/mdl_emit_contract" = "mdl_emit_contract", "packages/emit-pydantic/src/mdl_emit_pydantic" = "mdl_emit_pydantic", "packages/emit-graph/src/mdl_emit_graph" = "mdl_emit_graph", "packages/reverse/src/mdl_reverse" = "mdl_reverse", "packages/ontology/src/mdl_ontology" = "mdl_ontology", "packages/emit-semantic/src/mdl_emit_semantic" = "mdl_emit_semantic", "packages/governance/src/mdl_governance" = "mdl_governance", "packages/server/src/mdl_server" = "mdl_server", "packages/lsp/src/mdl_lsp" = "mdl_lsp", "packages/adapters/collibra/src/mdl_adapter_collibra" = "mdl_adapter_collibra" }
 
 [tool.uv.workspace]
 members = ["packages/*", "packages/adapters/*"]
@@ -50,6 +50,9 @@ exclude = ["packages/adapters"]
 [tool.uv.sources]
 modelith-core = { workspace = true }
 modelith-emit-dbt = { workspace = true }
+modelith-emit-contract = { workspace = true }
+modelith-emit-pydantic = { workspace = true }
+modelith-emit-graph = { workspace = true }
 modelith-reverse = { workspace = true }
 modelith-ontology = { workspace = true }
 modelith-emit-semantic = { workspace = true }

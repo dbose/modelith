@@ -45,6 +45,13 @@ subtypes) that generates dbt you can actually run, verifies the warehouse still
 matches the model, and reads a legacy dbt project (or an erwin export) back into a
 clean logical model.
 
+Because the model is a single source of truth, it compiles to more than dbt. From
+one definition, Modelith emits an ER canvas, contract-enforced dbt, an Open Data
+Contract Standard (ODCS) contract, Pydantic models for your Python services, a Neo4j
+graph schema, and RDF/OWL/SHACL, each generated deterministically. Model once, ship
+the warehouse, the typed application code, the graph, and the governance contract
+together.
+
 Nothing here is a mockup. Every capability below is exercised by the test suite and,
 where it touches SQL, by a real `dbt build` against DuckDB.
 
@@ -57,6 +64,7 @@ where it touches SQL, by a real `dbt build` against DuckDB.
 | Round-trip safe (keeps hand edits) | Yes | n/a | No | n/a |
 | Drift caught + classified | Yes | No | No | Manual |
 | Reverse an existing dbt project | Yes | No | No | No |
+| Compiles one model to many targets | Yes | No | No (DDL only) | No |
 | Lives in git, no server to run | Yes | Yes | No (desktop app) | Yes |
 | Ontology / governance alignment | Yes | No | Partial | No |
 
@@ -206,6 +214,22 @@ unique key constraints, relationship tests, and platform-specific types for Duck
 Snowflake, Redshift, Iceberg, and Trino. Regeneration runs a three-way merge so hand
 edits survive.
 
+**Compile targets.** The same model compiles to more than dbt, each target generated
+deterministically from the one definition:
+
+| Target | Command | What you get |
+|---|---|---|
+| dbt-core | `mdl generate` | Contract-enforced models with keys, tests, and platform types |
+| Data contract | `mdl export contract` | An Open Data Contract Standard (ODCS v3) `datacontract.yaml`: schema, keys, valid values, and ownership |
+| Pydantic | `mdl emit pydantic` | Pydantic v2 models for Python services and agents, with nullability and enum enforcement |
+| Neo4j | `mdl export graph` | A Cypher schema: node-key, unique, and existence constraints, plus relationship types |
+| Semantic layer | `mdl emit semantic` | MetricFlow semantic models and metrics, or OSI |
+| Knowledge graph | `mdl export rdf` / `shacl` | RDF/OWL with SKOS alignments, and SHACL shapes |
+
+`mdl generate --emit-contract` (also `--emit-pydantic`, `--emit-graph`) turns Modelith
+into a contract factory: on every regeneration it drops a fresh, valid artifact at the
+model root, so a git tag or CI step keeps the contract in lockstep with the model.
+
 **Reverse engineering.** Point `mdl reverse` at a compiled dbt project (`manifest.json`
 plus `catalog.json`) and get a logical model back. It excludes staging and intermediate
 models, collapses SCD2 column triples into a pattern, strips surrogate keys, detects Data
@@ -247,13 +271,15 @@ mdl new entity|term|subject-area <name>           add an object (ULIDs minted)
 mdl delete entity <name> [--cascade]              remove an object, safely
 mdl validate [--format json]                      schema, refs, ontology, naming
 mdl lint [--fix]                                  naming-standards lint
-mdl generate [--target] [--dry-run]               emit the dbt project
+mdl generate [--target] [--emit-contract] [...]   emit the dbt project (+ optional targets)
 mdl reverse --project <manifest|schema.yml>       lift a dbt project into a model
 mdl drift --manifest <m> [--check|--reconcile]    compare model to compiled warehouse
 mdl serve [--read-only]                           web canvas + read API
 mdl glossary [--read-only]                        SME glossary app
 mdl ontology search|check|promote|vendor          vocabulary and alignment lifecycle
 mdl emit semantic --format metricflow|osi         semantic layer
+mdl emit pydantic                                 Pydantic v2 data models
+mdl export contract|graph                         ODCS data contract, Neo4j Cypher schema
 mdl export json-schema|rdf|shacl                  interchange out
 mdl import osi|erwin                              interchange in
 mdl gov plan|apply|pull|publish|import            catalog sync

@@ -12,7 +12,10 @@ members = [
     "modelith-cli",
     "modelith-core",
     "modelith-dbt",
+    "modelith-emit-contract",
     "modelith-emit-dbt",
+    "modelith-emit-graph",
+    "modelith-emit-pydantic",
     "modelith-emit-semantic",
     "modelith-governance",
     "modelith-lsp",
@@ -500,7 +503,10 @@ source = { editable = "packages/cli" }
 dependencies = [
     { name = "modelith-adapter-collibra" },
     { name = "modelith-core" },
+    { name = "modelith-emit-contract" },
     { name = "modelith-emit-dbt" },
+    { name = "modelith-emit-graph" },
+    { name = "modelith-emit-pydantic" },
     { name = "modelith-emit-semantic" },
     { name = "modelith-governance" },
     { name = "modelith-lsp" },
@@ -514,7 +520,10 @@ dependencies = [
 requires-dist = [
     { name = "modelith-adapter-collibra", editable = "packages/adapters/collibra" },
     { name = "modelith-core", editable = "packages/core" },
+    { name = "modelith-emit-contract", editable = "packages/emit-contract" },
     { name = "modelith-emit-dbt", editable = "packages/emit-dbt" },
+    { name = "modelith-emit-graph", editable = "packages/emit-graph" },
+    { name = "modelith-emit-pydantic", editable = "packages/emit-pydantic" },
     { name = "modelith-emit-semantic", editable = "packages/emit-semantic" },
     { name = "modelith-governance", editable = "packages/governance" },
     { name = "modelith-lsp", editable = "packages/lsp" },
@@ -589,9 +598,46 @@ dev = [
 ]
 
 [[package]]
+name = "modelith-emit-contract"
+version = "0.1.1"
+source = { editable = "packages/emit-contract" }
+dependencies = [
+    { name = "modelith-core" },
+    { name = "ruamel-yaml" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "modelith-core", editable = "packages/core" },
+    { name = "ruamel-yaml", specifier = ">=0.18" },
+]
+
+[[package]]
 name = "modelith-emit-dbt"
 version = "0.1.0"
 source = { editable = "packages/emit-dbt" }
+dependencies = [
+    { name = "modelith-core" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "modelith-core", editable = "packages/core" }]
+
+[[package]]
+name = "modelith-emit-graph"
+version = "0.1.1"
+source = { editable = "packages/emit-graph" }
+dependencies = [
+    { name = "modelith-core" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "modelith-core", editable = "packages/core" }]
+
+[[package]]
+name = "modelith-emit-pydantic"
+version = "0.1.1"
+source = { editable = "packages/emit-pydantic" }
 dependencies = [
     { name = "modelith-core" },
 ]
