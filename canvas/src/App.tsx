@@ -27,8 +27,10 @@ import type { DiagnosticsDoc, Entity, ModelDoc } from "./types";
 const nodeTypes: NodeTypes = { entity: EntityNode };
 const edgeTypes: EdgeTypes = { relationship: RelationshipEdge };
 
-const PALETTE = ["#5eead4", "#93c5fd", "#f0abfc", "#fcd34d", "#86efac", "#fda4af", "#c4b5fd"];
-const NO_SA_COLOR = "#64748b";
+// Categorical palette for subject-area grouping. Leads with the amber accent, then
+// spans warm-to-cool hues so groups stay distinguishable on the warm-charcoal ground.
+const PALETTE = ["#e0a63a", "#e8825a", "#d98ba8", "#c4a3e0", "#7fb0d8", "#7fc9a0", "#e6c14a"];
+const NO_SA_COLOR = "#8a7d6a";
 
 function Canvas() {
   const [doc, setDoc] = useState<ModelDoc | null>(null);
@@ -338,12 +340,12 @@ function Canvas() {
           proOptions={{ hideAttribution: true }}
           fitView
         >
-          <Background variant={BackgroundVariant.Dots} gap={22} size={1.5} color="#263042" />
+          <Background variant={BackgroundVariant.Dots} gap={22} size={1.5} color="#33291f" />
           <MiniMap
             pannable
             zoomable
-            nodeColor={(n) => (n.data as EntityNodeData)?.color ?? "#475569"}
-            maskColor="rgba(10, 14, 20, 0.75)"
+            nodeColor={(n) => (n.data as EntityNodeData)?.color ?? "#5a4f42"}
+            maskColor="rgba(20, 17, 15, 0.75)"
           />
           <Controls showInteractive={false} />
         </ReactFlow>

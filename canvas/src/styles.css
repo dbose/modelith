@@ -1,16 +1,20 @@
 :root {
-  --bg: #0b0f16;
-  --bg-raised: #111827;
-  --bg-card: #151d2b;
-  --border: #263042;
-  --border-strong: #3b4a63;
-  --text: #e2e8f0;
-  --text-dim: #8b9bb3;
-  --accent: #5eead4;
-  --pk: #fcd34d;
-  --err: #f87171;
-  --warn: #fbbf24;
-  --ok: #34d399;
+  /* Warm charcoal ink, off the blue-slate default; amber accent unifies with the
+     model's gold key colour. */
+  --bg: #14110f;
+  --bg-raised: #1c1815;
+  --bg-card: #221d19;
+  --border: #33291f;
+  --border-strong: #4a3c2c;
+  --text: #ece6dd;
+  --text-dim: #a89a86;
+  --accent: #e0a63a;
+  --accent-soft: rgba(224, 166, 58, 0.15); /* translucent accent for chips/glows */
+  --accent-ink: #241a08; /* dark text on an accent-filled button */
+  --pk: #f2c14e;
+  --err: #f0857a;
+  --warn: #e6a94a;
+  --ok: #6cbf73;
   --font: "Inter", -apple-system, "Segoe UI", Roboto, sans-serif;
   --mono: "SF Mono", ui-monospace, "Cascadia Code", Menlo, monospace;
 }
@@ -77,7 +81,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
 .entity-badges { display: flex; gap: 4px; }
 .badge {
   font-size: 10px; padding: 1px 6px; border-radius: 99px;
-  background: rgba(94, 234, 212, 0.12); color: var(--accent);
+  background: var(--accent-soft); color: var(--accent);
   text-transform: uppercase; letter-spacing: 0.05em;
 }
 .badge.ontology { background: rgba(147, 197, 253, 0.12); color: #93c5fd; }
@@ -102,12 +106,12 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
 }
 .entity-node:hover .port {
   opacity: 1; background: var(--accent) !important; transform: scale(1.25);
-  box-shadow: 0 0 0 4px rgba(94, 234, 212, 0.18);
+  box-shadow: 0 0 0 4px var(--accent-soft);
   cursor: crosshair;
 }
 .port:hover { transform: scale(1.6) !important; cursor: crosshair; }
 /* hover the whole card → accent ring, so it reads as a connectable object */
-.entity-node:hover { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(94,234,212,0.25); }
+.entity-node:hover { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(224,166,58,0.25); }
 /* the live drag line while connecting */
 .react-flow__connectionline .react-flow__edge-path,
 .react-flow__connection-path { stroke: var(--accent) !important; stroke-width: 2 !important; }
@@ -146,15 +150,15 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
   display: inline-block; font-size: 11px; padding: 2px 8px; margin: 2px 4px 2px 0;
   border-radius: 99px; background: rgba(148, 163, 184, 0.12); color: var(--text-dim);
 }
-.chip.pattern { background: rgba(94, 234, 212, 0.12); color: var(--accent); }
+.chip.pattern { background: var(--accent-soft); color: var(--accent); }
 .chip.layer-industry { background: rgba(147, 197, 253, 0.15); color: #93c5fd; }
-.chip.layer-core { background: rgba(94, 234, 212, 0.15); color: var(--accent); }
+.chip.layer-core { background: var(--accent-soft); color: var(--accent); }
 .chip.layer-domain { background: rgba(240, 171, 252, 0.15); color: #f0abfc; }
 .chip.layer-specialised { background: rgba(252, 211, 77, 0.15); color: var(--pk); }
 .cat-badge { font-size: 10px; font-weight: 700; margin-left: 6px; padding: 2px 8px;
   border-radius: 5px; cursor: help; }
 .cat-badge.supertype { background: rgba(167,139,250,0.18); color: #a78bfa; }
-.cat-badge.subtype { background: rgba(94,234,212,0.16); color: var(--accent); }
+.cat-badge.subtype { background: var(--accent-soft); color: var(--accent); }
 
 .udp-row td { padding: 3px 6px; border-bottom: 1px solid var(--border); font-size: 12px; }
 .udp-key { color: var(--text-dim); font-family: var(--mono); font-size: 11px; }
@@ -169,7 +173,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
 .key-badge { font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 5px;
   background: rgba(148,163,184,0.15); color: var(--text-dim); flex: none; }
 .key-badge.pk { background: rgba(252,211,77,0.18); color: var(--pk); }
-.key-badge.unique, .key-badge.alternate { background: rgba(94,234,212,0.16); color: var(--accent); }
+.key-badge.unique, .key-badge.alternate { background: var(--accent-soft); color: var(--accent); }
 .key-name { font-weight: 600; }
 .key-cols { color: var(--text-dim); font-family: var(--mono); font-size: 11px; }
 
@@ -243,7 +247,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
 .add-attr { display: flex; gap: 6px; margin-top: 8px; }
 .rel-row { display: flex; gap: 6px; align-items: center; }
 .rel-row .rel-link { flex: 1; }
-.tool-btn.primary { color: var(--accent); border-color: rgba(94,234,212,0.4); font-weight: 600; }
+.tool-btn.primary { color: var(--accent); border-color: rgba(224,166,58,0.4); font-weight: 600; }
 .tool-btn.badged::after { content: "●"; color: var(--warn); margin-left: 4px; font-size: 8px; vertical-align: super; }
 .divider { width: 1px; background: var(--border); margin: 0 4px; align-self: stretch; }
 
@@ -266,7 +270,7 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
 .modal-footer select, .form-row select { background: var(--bg-card); color: var(--text); border: 1px solid var(--border); border-radius: 7px; padding: 5px 8px; font-size: 12px; }
 .primary-btn {
   padding: 8px 16px; border-radius: 8px; border: none; cursor: pointer;
-  background: var(--accent); color: #06281f; font-weight: 700; font-size: 13px;
+  background: var(--accent); color: var(--accent-ink); font-weight: 700; font-size: 13px;
 }
 .primary-btn:disabled { opacity: 0.4; cursor: default; }
 .danger-btn {
