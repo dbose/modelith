@@ -90,6 +90,30 @@ class Stewardship(_Base):
     steward: str | None = None
 
 
+class TermMap(_Base):
+    """R2RML term-map override for the knowledge-graph mapping (optional).
+
+    Lets a KG team choose the vocabulary and identity scheme instead of the emitter
+    defaults. Sits on a LogicalEntity (subject/class) and on an Attribute
+    (predicate/datatype); every field is optional and ``None`` means "inherit or use
+    the emitter default". See `mdl export r2rml`.
+
+    - ``subject_template``: the rr:template for the node IRI, with ``{column}``
+      placeholders (e.g. ``https://acme.com/id/customer/{customer_id}``). Overrides the
+      default PK-based template on the project base IRI.
+    - ``class_iri``: the rr:class IRI for the entity (absolute URL or a prefix the
+      ontology registry knows). Wins over the entity's ontology alignment.
+    - ``predicate_iri``: the predicate IRI for an attribute. Wins over the attribute's
+      ontology alignment.
+    - ``datatype``: the rr:datatype IRI for an attribute, overriding the base-type map.
+    """
+
+    subject_template: str | None = None
+    class_iri: str | None = None
+    predicate_iri: str | None = None
+    datatype: str | None = None
+
+
 class SubjectArea(_Base):
     id: ULID
     kind: Literal[ObjectKind.subject_area] = ObjectKind.subject_area
@@ -165,6 +189,7 @@ class Attribute(_Base):
     role: Literal["business_key", "surrogate_key", "attribute", "measure"] = "attribute"
     nullable: bool = True
     ontology: OntologyAlignment | None = None
+    term_map: TermMap | None = None  # R2RML predicate/datatype override (KG mapping)
     udp: Udp | None = None  # user-defined properties (erwin UDPs)
 
 
@@ -179,6 +204,7 @@ class LogicalEntity(_Base):
     # True => the emitter does NOT emit this model's SQL/contract; the file is
     # engineer-owned forever (spec `mdl unmanage`). Entity stays in the model.
     unmanaged: bool | None = None
+    term_map: TermMap | None = None  # R2RML subject/class override (KG mapping)
     udp: Udp | None = None  # user-defined properties (erwin UDPs)
 
 
@@ -301,6 +327,9 @@ class ProjectConfig(_Base):
     name: str
     dbt_target: str | None = None
     platform_targets: list[str] = Field(default_factory=list)
+    # Base IRI for the knowledge-graph mapping (`mdl export r2rml`). When unset, the
+    # emitter derives one from the project name, then the modelith.dev default.
+    kg_base_iri: str | None = None
     # Each entry is a vocabulary declaration (name/layer/prefixes/path/modules);
     # see mdl_ontology.registry.VocabularySource. Kept as dicts here so `core`
     # stays free of any ontology dependency (layering §1.3).

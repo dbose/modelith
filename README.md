@@ -224,11 +224,29 @@ deterministically from the one definition:
 | Pydantic | `mdl emit pydantic` | Pydantic v2 models for Python services and agents, with nullability and enum enforcement |
 | Neo4j | `mdl export graph` | A Cypher schema: node-key, unique, and existence constraints, plus relationship types |
 | Semantic layer | `mdl emit semantic` | MetricFlow semantic models and metrics, or OSI |
-| Knowledge graph | `mdl export rdf` / `shacl` | RDF/OWL with SKOS alignments, and SHACL shapes |
+| Ontology | `mdl export rdf` / `shacl` | RDF/OWL with SKOS alignments, and SHACL shapes |
+| Knowledge graph | `mdl export r2rml` | A W3C R2RML mapping: the deterministic term-map from warehouse rows to typed, ontology-aligned graph nodes |
 
-`mdl generate --emit-contract` (also `--emit-pydantic`, `--emit-graph`) turns Modelith
-into a contract factory: on every regeneration it drops a fresh, valid artifact at the
-model root, so a git tag or CI step keeps the contract in lockstep with the model.
+`mdl generate --emit-contract` (also `--emit-pydantic`, `--emit-graph`, `--emit-r2rml`)
+turns Modelith into a contract factory: on every regeneration it drops a fresh, valid
+artifact at the model root, so a git tag or CI step keeps the contract in lockstep with
+the model.
+
+**Optional knowledge graph.** If your team wants a first-class knowledge graph, the same
+model emits a standards-correct **R2RML** mapping (`mdl export r2rml`); if not, ignore it.
+R2RML is the W3C mapping standard whose durable idea is the term-map: a deterministic
+function from primary-key columns to a node IRI, so a warehouse row and a graph node are
+provably the same entity, aligned to the ontology IRIs the model already carries. Modelith
+emits the mapping, not triples, so the warehouse stays the store. Feed the mapping to
+[Ontop](https://ontop-vkg.org/) for a virtual SPARQL endpoint over the warehouse (no copy,
+always fresh), or to [Morph-KGC](https://github.com/morph-kgc/morph-kgc) to materialize a
+triple store. `mdl export graph` (Neo4j Cypher) is the property-graph sibling.
+
+The term-map is customisable: set a project `kg_base_iri` for your own namespace, and add
+per-entity or per-attribute `term_map` overrides (subject IRI template, class IRI,
+predicate IRI, datatype), authored in YAML or through the canvas Inspector (and the VS Code
+extension). Entities you have aligned to an ontology are typed with that aligned IRI
+automatically. See [docs/knowledge-graph.md](docs/knowledge-graph.md).
 
 **Reverse engineering.** Point `mdl reverse` at a compiled dbt project (`manifest.json`
 plus `catalog.json`) and get a logical model back. It excludes staging and intermediate

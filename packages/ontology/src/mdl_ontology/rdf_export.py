@@ -13,49 +13,14 @@ rather than a picture.
 
 from __future__ import annotations
 
-from rdflib import Graph, Literal, Namespace, URIRef
+from rdflib import Graph, Literal, URIRef
 from rdflib.namespace import OWL, RDF, RDFS, SH, SKOS, XSD
 
 from mdl_core.ir import Model
-
-# Modelith's own namespace for minted terms (stable, ULID-based).
-MDL = Namespace("https://modelith.dev/ontology/")
-
-_XSD_FOR_BASE = {
-    "bigint": XSD.long,
-    "int": XSD.integer,
-    "integer": XSD.integer,
-    "string": XSD.string,
-    "text": XSD.string,
-    "boolean": XSD.boolean,
-    "date": XSD.date,
-    "timestamp": XSD.dateTime,
-    "decimal": XSD.decimal,
-    "identifier_bigint": XSD.long,
-    "lei_code": XSD.string,
-}
-
-_SKOS_PRED = {
-    "skos:exactMatch": SKOS.exactMatch,
-    "skos:closeMatch": SKOS.closeMatch,
-    "skos:broadMatch": SKOS.broadMatch,
-    "skos:narrowMatch": SKOS.narrowMatch,
-    "skos:relatedMatch": SKOS.relatedMatch,
-}
-
-
-def _term_uri(ulid: str) -> URIRef:
-    return URIRef(str(MDL) + ulid)
-
-
-def _bind(g: Graph, registry=None) -> None:
-    g.bind("mdl", MDL)
-    g.bind("skos", SKOS)
-    g.bind("owl", OWL)
-    g.bind("sh", SH)
-    if registry is not None:
-        for pfx, ns in registry.prefixes.items():
-            g.bind(pfx.replace(":", "_"), Namespace(ns), replace=True)
+from mdl_ontology._common import _SKOS_PRED, _XSD_FOR_BASE, MDL
+from mdl_ontology._common import bind as _bind
+from mdl_ontology._common import serialize as serialize
+from mdl_ontology._common import term_uri as _term_uri
 
 
 def export_rdf(model: Model, *, layer: str = "conceptual", registry=None) -> Graph:
@@ -130,8 +95,3 @@ def export_shacl(model: Model) -> Graph:
             if attr.role == "business_key":
                 g.add((prop, SH.maxCount, Literal(1)))
     return g
-
-
-def serialize(g: Graph, fmt: str = "turtle") -> str:
-    fmt_map = {"turtle": "turtle", "ttl": "turtle", "xml": "xml", "jsonld": "json-ld", "nt": "nt"}
-    return g.serialize(format=fmt_map.get(fmt.lower(), "turtle"))

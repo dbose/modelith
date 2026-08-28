@@ -106,6 +106,45 @@ def test_set_alignment_and_clear(model_dir):
     assert ce.ontology.aligns_to == "fibo-fnd-agr-ctr:Contract"
     assert ce.ontology.layer == "core"
 
+
+def test_set_term_map_on_entity_and_clear(model_dir):
+    eid = _entity_id(model_dir, "counterparty")
+    # a hand comment on the file must survive the mapping edit
+    f = model_dir / "logical" / "entities" / "counterparty.yaml"
+    f.write_text("# reviewed\n" + f.read_text())
+
+    r = apply_command(
+        model_dir,
+        "set_term_map",
+        {"id": eid, "class_iri": "http://acme.com/Counterparty"},
+    )
+    assert r.ok and not any(d["severity"] == "error" for d in r.diagnostics)
+    repo = ModelRepo.load(model_dir)
+    le = repo.model.logical_entities[eid]
+    assert le.term_map.class_iri == "http://acme.com/Counterparty"
+    assert "# reviewed" in f.read_text()  # comment preserved
+
+    apply_command(model_dir, "clear_term_map", {"id": eid})
+    repo = ModelRepo.load(model_dir)
+    assert repo.model.logical_entities[eid].term_map is None
+
+
+def test_set_kg_base_iri(model_dir):
+    apply_command(model_dir, "set_kg_base_iri", {"kg_base_iri": "https://acme.com/id/"})
+    repo = ModelRepo.load(model_dir)
+    assert repo.model.config.kg_base_iri == "https://acme.com/id/"
+
+
+def test_bad_subject_template_column_flagged(model_dir):
+    eid = _entity_id(model_dir, "counterparty")
+    r = apply_command(
+        model_dir,
+        "set_term_map",
+        {"id": eid, "subject_template": "http://x/{no_such_column}"},
+    )
+    codes = [d["code"] for d in r.diagnostics]
+    assert "MDL-R202" in codes
+
     apply_command(model_dir, "clear_alignment", {"id": eid})
     repo = ModelRepo.load(model_dir)
     ce = repo.model.conceptual_entities[repo.model.logical_entities[eid].realises]

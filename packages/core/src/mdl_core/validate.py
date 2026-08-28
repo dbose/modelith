@@ -29,9 +29,94 @@ def validate(model: Model) -> DiagnosticSet:
     _check_categories(model, diags)
     _check_ontology_layers(model, diags)
     _check_proposed_alignments(model, diags)
+    _check_term_maps(model, diags)
     naming_diags, _ = naming_lint(model)
     diags.extend(naming_diags)
     return diags
+
+
+def _iri_ok(value: str) -> bool:
+    """A term-map IRI is acceptable if it's an absolute URL or a prefixed CURIE
+    (``prefix:local``). Prefix resolution against the registry happens at emit time;
+    here we only reject obviously malformed values."""
+    if value.startswith(("http://", "https://")):
+        return True
+    # a CURIE: exactly one colon, non-empty prefix and local part, no whitespace
+    if ":" in value and " " not in value:
+        prefix, _, local = value.partition(":")
+        return bool(prefix) and bool(local)
+    return False
+
+
+def _template_columns(template: str) -> list[str]:
+    """The ``{column}`` placeholders in an rr:template."""
+    import re
+
+    return re.findall(r"\{([^}]+)\}", template)
+
+
+def _check_term_maps(model: Model, diags: DiagnosticSet) -> None:
+    """Validate R2RML term-map overrides (spec §3.3, KG mapping):
+    subject-template columns must exist on the entity, and IRIs must be well-formed."""
+    for le in model.logical_entities.values():
+        tm = le.term_map
+        if tm is None:
+            continue
+        if tm.class_iri and not _iri_ok(tm.class_iri):
+            diags.add(
+                Diagnostic(
+                    code="MDL-R201",
+                    severity=Severity.error,
+                    message=(
+                        f"entity {le.name!r} term_map.class_iri {tm.class_iri!r} "
+                        f"is not a valid IRI"
+                    ),
+                    path=le.id,
+                )
+            )
+        if tm.subject_template:
+            attr_names = {a.name for a in le.attributes}
+            for col in _template_columns(tm.subject_template):
+                if col not in attr_names:
+                    diags.add(
+                        Diagnostic(
+                            code="MDL-R202",
+                            severity=Severity.error,
+                            message=(
+                                f"entity {le.name!r} term_map.subject_template references "
+                                f"column {col!r} which is not an attribute of the entity"
+                            ),
+                            path=le.id,
+                        )
+                    )
+        for attr in le.attributes:
+            atm = attr.term_map
+            if atm is None:
+                continue
+            if atm.predicate_iri and not _iri_ok(atm.predicate_iri):
+                diags.add(
+                    Diagnostic(
+                        code="MDL-R201",
+                        severity=Severity.error,
+                        message=(
+                            f"attribute {attr.name!r} term_map.predicate_iri "
+                            f"{atm.predicate_iri!r} is not a valid IRI"
+                        ),
+                        path=attr.id,
+                    )
+                )
+            if atm.datatype and not _iri_ok(atm.datatype):
+                diags.add(
+                    Diagnostic(
+                        code="MDL-R203",
+                        severity=Severity.error,
+                        message=(
+                            f"attribute {attr.name!r} term_map.datatype "
+                            f"{atm.datatype!r} is not a valid IRI"
+                        ),
+                        path=attr.id,
+                    )
+                )
 
 
 def _check_referential_integrity(model: Model, diags: DiagnosticSet) -> None:

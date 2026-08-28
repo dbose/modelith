@@ -22,7 +22,7 @@ from pathlib import Path
 
 from mdl_core.diagnostics import Severity
 from mdl_core.ids import new_ulid
-from mdl_core.repo import ModelRepo
+from mdl_core.repo import PROJECT_FILE, ModelRepo
 from mdl_core.validate import validate
 
 # ---------------------------------------------------------------------------
@@ -476,6 +476,56 @@ def _clear_alignment(repo: ModelRepo, p: dict) -> None:
             node.pop("ontology", None)
 
 
+_TERM_MAP_FIELDS = ("subject_template", "class_iri", "predicate_iri", "datatype")
+
+
+def _term_map_target(repo: ModelRepo, p: dict):
+    """Resolve the YAML node a term_map override lives on: an attribute dict when
+    `attribute_id` is given, else the logical entity node."""
+    _require(p, "id")
+    _, node = _entity_node(repo, p["id"])
+    attr_id = p.get("attribute_id")
+    if attr_id:
+        for attr in node.get("attributes", []):
+            if attr.get("id") == attr_id:
+                return attr
+        raise CommandError(f"no attribute {attr_id}")
+    return node
+
+
+def _set_term_map(repo: ModelRepo, p: dict) -> None:
+    """Set the R2RML term-map override on an entity (subject_template/class_iri) or
+    an attribute (predicate_iri/datatype). Mirrors `_set_alignment`: merges the
+    provided fields into a `term_map` block, dropping the block when it empties."""
+    node = _term_map_target(repo, p)
+    tm = p.get("term_map") or {k: p[k] for k in _TERM_MAP_FIELDS if k in p}
+    block = node.setdefault("term_map", {})
+    for k in _TERM_MAP_FIELDS:
+        if k in tm:
+            if tm[k]:
+                block[k] = tm[k]
+            else:
+                block.pop(k, None)
+    if not block:
+        node.pop("term_map", None)
+
+
+def _clear_term_map(repo: ModelRepo, p: dict) -> None:
+    """Remove the entire term_map override from an entity or attribute."""
+    node = _term_map_target(repo, p)
+    node.pop("term_map", None)
+
+
+def _set_kg_base_iri(repo: ModelRepo, p: dict) -> None:
+    """Set (or clear) the project-level knowledge-graph base IRI in mdl-project.yaml."""
+    cfg = repo.raw[PROJECT_FILE]
+    base = p.get("kg_base_iri")
+    if base:
+        cfg["kg_base_iri"] = base
+    else:
+        cfg.pop("kg_base_iri", None)
+
+
 def _set_unmanaged(repo: ModelRepo, p: dict) -> None:
     """Mark/unmark an entity's SQL as engineer-owned (spec `mdl unmanage`): the
     emitter stops emitting the model file entirely; the entity stays in the
@@ -523,6 +573,9 @@ _HANDLERS = {
     "update_relationship": _update_relationship,
     "set_alignment": _set_alignment,
     "clear_alignment": _clear_alignment,
+    "set_term_map": _set_term_map,
+    "clear_term_map": _clear_term_map,
+    "set_kg_base_iri": _set_kg_base_iri,
 }
 
 COMMANDS = sorted(_HANDLERS)

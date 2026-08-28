@@ -139,6 +139,119 @@ export function AlignModal({
   );
 }
 
+/** Edit the R2RML term-map override for an entity: a custom subject IRI template
+ * and/or class IRI. `set_term_map` command -> YAML updated, validation refreshed. */
+export function TermMapModal({
+  entity,
+  doc,
+  exec,
+  onClose,
+}: {
+  entity: Entity;
+  doc: ModelDoc;
+  exec: Exec;
+  onClose: () => void;
+}) {
+  const [subjectTemplate, setSubjectTemplate] = useState(
+    entity.term_map?.subject_template ?? "",
+  );
+  const [classIri, setClassIri] = useState(entity.term_map?.class_iri ?? "");
+
+  const attrNames = new Set(entity.attributes.map((a) => a.name));
+  const templateCols = Array.from(subjectTemplate.matchAll(/\{([^}]+)\}/g)).map(
+    (m) => m[1],
+  );
+  const badCols = templateCols.filter((c) => !attrNames.has(c));
+  const iriLooksOk = (v: string) =>
+    !v || v.startsWith("http://") || v.startsWith("https://") || /^[^\s:]+:[^\s:]+/.test(v);
+  const canSave = badCols.length === 0 && iriLooksOk(classIri);
+
+  const apply = () => {
+    exec("set_term_map", {
+      id: entity.id,
+      subject_template: subjectTemplate.trim() || null,
+      class_iri: classIri.trim() || null,
+    }).then(onClose);
+  };
+
+  // Live preview of what each field resolves to, so the effect is visible.
+  // Mirrors the emitter's base_iri_for: explicit kg_base_iri, else a URN namespace
+  // derived from the project name (no vendor host).
+  const projectSlug =
+    (doc.project.name || "")
+      .replace(/[^0-9a-zA-Z]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .toLowerCase() || "modelith-model";
+  const base = doc.project.kg_base_iri || `urn:${projectSlug}:`;
+  const pkCols = (entity.key_groups ?? [])
+    .find((kg) => kg.type === "pk")
+    ?.members.map((mid) => entity.attributes.find((a) => a.id === mid)?.name)
+    .filter(Boolean) as string[] | undefined;
+  const defaultSubject =
+    pkCols && pkCols.length
+      ? `${base}${entity.id}/${pkCols.map((c) => `{${c}}`).join("_")}`
+      : "(blank-node: entity has no primary key)";
+  const effectiveClass = classIri.trim() || `${base}${entity.id}`;
+  const effectiveSubject = subjectTemplate.trim() || defaultSubject;
+
+  return (
+    <Modal title={`Knowledge Graph mapping — ${entity.name}`} onClose={onClose} wide>
+      <p className="empty-hint" style={{ marginBottom: 14 }}>
+        Override the R2RML term-map for this entity. Leave a field blank to use the
+        default (project base IRI + primary key).
+      </p>
+
+      <div className="form-row">
+        <label htmlFor="tm-class">Class IRI</label>
+        <input
+          id="tm-class"
+          className="edit-input"
+          value={classIri}
+          placeholder="https://acme.com/Customer  or  fibo-fnd:Party"
+          onChange={(e) => setClassIri(e.target.value)}
+        />
+        {!iriLooksOk(classIri) ? (
+          <span className="form-error">not a valid IRI or prefix:local CURIE</span>
+        ) : (
+          <code className="form-preview">rr:class {effectiveClass}</code>
+        )}
+      </div>
+
+      <div className="form-row">
+        <label htmlFor="tm-subject">Subject template</label>
+        <input
+          id="tm-subject"
+          className="edit-input"
+          value={subjectTemplate}
+          placeholder="https://acme.com/id/customer/{customer_id}"
+          onChange={(e) => setSubjectTemplate(e.target.value)}
+        />
+        {badCols.length > 0 ? (
+          <span className="form-error">
+            unknown column{badCols.length > 1 ? "s" : ""}: {badCols.join(", ")}
+          </span>
+        ) : (
+          <code className="form-preview">rr:template {effectiveSubject}</code>
+        )}
+        <span className="form-hint">
+          Wrap a column in {"{ }"} to fill it from each row, e.g.{" "}
+          {"{" + (pkCols?.[0] ?? "id") + "}"}. Columns:{" "}
+          {entity.attributes.map((a) => a.name).join(", ")}
+        </span>
+      </div>
+
+      <div className="modal-footer">
+        <button className="mini-btn" onClick={onClose}>
+          Cancel
+        </button>
+        <button className="primary-btn" disabled={!canSave} onClick={apply}>
+          Save mapping
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 export function NewEntityModal({
   doc,
   exec,

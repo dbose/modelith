@@ -26,6 +26,7 @@ export function Inspector({
   onClose,
   onFocusEntity,
   onAlign,
+  onEditMapping,
 }: {
   entity: Entity;
   doc: ModelDoc;
@@ -34,6 +35,7 @@ export function Inspector({
   onClose: () => void;
   onFocusEntity: (id: string) => void;
   onAlign: (entity: Entity) => void;
+  onEditMapping: (entity: Entity) => void;
 }) {
   const c = entity.conceptual;
   const rels = doc.relationships.filter(
@@ -125,6 +127,50 @@ export function Inspector({
           </>
         ) : (
           <p className="empty-hint">not aligned to any ontology term</p>
+        )}
+      </section>
+
+      <section>
+        <h3>
+          Knowledge Graph mapping
+          {!readOnly && (
+            <span className="h3-actions">
+              <button className="mini-btn" onClick={() => onEditMapping(entity)}>
+                {entity.term_map?.subject_template || entity.term_map?.class_iri
+                  ? "Edit mapping…"
+                  : "Map…"}
+              </button>
+              {(entity.term_map?.subject_template || entity.term_map?.class_iri) && (
+                <button
+                  className="mini-btn danger"
+                  onClick={() => exec("clear_term_map", { id: entity.id })}
+                >
+                  Clear
+                </button>
+              )}
+            </span>
+          )}
+        </h3>
+        {entity.term_map?.subject_template || entity.term_map?.class_iri ? (
+          <>
+            {entity.term_map?.class_iri && (
+              <div className="kv">
+                <span className="k">class IRI</span>
+                <code className="v">{entity.term_map.class_iri}</code>
+              </div>
+            )}
+            {entity.term_map?.subject_template && (
+              <div className="kv">
+                <span className="k">subject</span>
+                <code className="v">{entity.term_map.subject_template}</code>
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="empty-hint">
+            uses the default R2RML term-map (base IRI
+            {doc.project.kg_base_iri ? ` ${doc.project.kg_base_iri}` : ""} + primary key)
+          </p>
         )}
       </section>
 

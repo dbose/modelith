@@ -19,6 +19,7 @@ from mdl_ontology import (
     build_registry,
     check_layers,
     coverage_report,
+    export_r2rml,
     export_rdf,
     export_shacl,
     serialize,
@@ -210,13 +211,17 @@ def generate(
     emit_graph: bool = typer.Option(
         False, "--emit-graph", help="Also write a Neo4j schema.cypher at the model root"
     ),
+    emit_r2rml: bool = typer.Option(
+        False, "--emit-r2rml", help="Also write a W3C R2RML mapping.r2rml.ttl at the model root"
+    ),
     dry_run: bool = typer.Option(False, "--dry-run"),
 ) -> None:
     """Generate the dbt project with protected regions and three-way merge.
 
     The optional --emit-* flags make Modelith a multi-target compiler: the same
-    model also produces an ODCS data contract, Pydantic models, and/or a Neo4j
-    Cypher schema at the model root (respecting --dry-run).
+    model also produces an ODCS data contract, Pydantic models, a Neo4j Cypher
+    schema, and/or a W3C R2RML knowledge-graph mapping at the model root (respecting
+    --dry-run).
     """
     repo = _load(model_dir)
     tgt = target or repo.model.config.dbt_target or "duckdb_dev"
@@ -236,6 +241,16 @@ def generate(
             dest.write_text(text, encoding="utf-8")
         verb = "would write" if dry_run else "wrote"
         typer.secho(f"  {verb} {label} to {dest}", fg=typer.colors.GREEN)
+
+    if emit_r2rml:
+        reg = build_registry(model_dir, repo.model.config.ontology_stack)
+        reg.load()
+        text = serialize(export_r2rml(repo.model, target=tgt, registry=reg), "turtle")
+        dest = model_dir / "mapping.r2rml.ttl"
+        if not dry_run:
+            dest.write_text(text, encoding="utf-8")
+        verb = "would write" if dry_run else "wrote"
+        typer.secho(f"  {verb} r2rml to {dest}", fg=typer.colors.GREEN)
 
     for mr in result.merges:
         if mr.outcome != MergeOutcome.unchanged:
@@ -885,6 +900,28 @@ def export_shacl_cmd(
     repo = _load(model_dir)
     g = export_shacl(repo.model)
     _emit_text(serialize(g, fmt), out, "shacl")
+
+
+@export_app.command("r2rml")
+def export_r2rml_cmd(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    target: str = typer.Option(None, "--target", "-t", help="Physical target to map"),
+    fmt: str = typer.Option("turtle", "--format", help="turtle|xml"),
+    out: Path = typer.Option(None, "--out", "-o"),
+) -> None:
+    """Export a W3C R2RML mapping: the logical model as a first-class knowledge graph.
+
+    Emits the mapping (the deterministic term-map from warehouse rows to typed,
+    ontology-aligned graph nodes), not triples. Feed it to Ontop for a virtual SPARQL
+    endpoint over your warehouse, or to Morph-KGC to materialize a triple store.
+    Optional: skip it entirely if you don't want a knowledge graph.
+    """
+    repo = _load(model_dir)
+    tgt = target or repo.model.config.dbt_target
+    reg = build_registry(model_dir, repo.model.config.ontology_stack)
+    reg.load()
+    g = export_r2rml(repo.model, target=tgt, registry=reg)
+    _emit_text(serialize(g, fmt), out, "r2rml")
 
 
 @export_app.command("contract")

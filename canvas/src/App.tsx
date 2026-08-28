@@ -18,7 +18,7 @@ import { ApiError, fetchDiagnostics, fetchModel, gitStatus, sendCommand } from "
 import { EntityNode, type EntityNodeData } from "./EntityNode";
 import { Inspector } from "./Inspector";
 import { layoutGraph } from "./layout";
-import { AlignModal, NewEntityModal, RelEditModal, RelModal } from "./modals";
+import { AlignModal, NewEntityModal, RelEditModal, RelModal, TermMapModal } from "./modals";
 import { RelationshipEdge, type RelationshipEdgeData } from "./RelationshipEdge";
 import { SidePanel, type PanelTab } from "./SidePanel";
 import { TopBar } from "./TopBar";
@@ -40,6 +40,7 @@ function Canvas() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [panelTab, setPanelTab] = useState<PanelTab | null>(null);
   const [alignFor, setAlignFor] = useState<Entity | null>(null);
+  const [mapFor, setMapFor] = useState<Entity | null>(null);
   const [newEntityOpen, setNewEntityOpen] = useState(false);
   const [relDraft, setRelDraft] = useState<{ from: string; to: string } | null>(null);
   const [relEdit, setRelEdit] = useState<string | null>(null); // relationship id being edited
@@ -356,6 +357,7 @@ function Canvas() {
             onClose={() => setSelectedId(null)}
             onFocusEntity={focusEntity}
             onAlign={setAlignFor}
+            onEditMapping={setMapFor}
           />
         )}
         {panelTab && (
@@ -375,6 +377,9 @@ function Canvas() {
       </div>
 
       {alignFor && <AlignModal entity={alignFor} exec={exec} onClose={() => setAlignFor(null)} />}
+      {mapFor && (
+        <TermMapModal entity={mapFor} doc={doc} exec={exec} onClose={() => setMapFor(null)} />
+      )}
       {newEntityOpen && (
         <NewEntityModal
           doc={doc}

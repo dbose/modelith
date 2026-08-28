@@ -11,6 +11,14 @@ export interface Stewardship {
   steward: string | null;
 }
 
+// R2RML term-map override (knowledge-graph mapping). All optional.
+export interface TermMap {
+  subject_template?: string | null;
+  class_iri?: string | null;
+  predicate_iri?: string | null;
+  datatype?: string | null;
+}
+
 export interface SubjectAreaRef {
   id: string;
   name: string;
@@ -34,6 +42,7 @@ export interface AttributeRow {
   nullable: boolean;
   ontology_iri: string | null;
   enum_values?: (string | number)[] | null;
+  term_map?: TermMap | null;
   udp?: Record<string, string | number | boolean> | null;
 }
 
@@ -51,6 +60,7 @@ export interface Entity {
   conceptual: Conceptual | null;
   attributes: AttributeRow[];
   key_groups?: KeyGroupRow[];
+  term_map?: TermMap | null;
   udp?: Record<string, string | number | boolean> | null;
   category?: {
     role: "supertype" | "subtype";
@@ -83,7 +93,12 @@ export interface PhysicalTable {
 }
 
 export interface ModelDoc {
-  project: { name: string; dbt_target: string | null; platform_targets: string[] };
+  project: {
+    name: string;
+    dbt_target: string | null;
+    platform_targets: string[];
+    kg_base_iri?: string | null;
+  };
   subject_areas: { id: string; name: string; definition: string | null }[];
   entities: Entity[];
   relationships: Relationship[];

@@ -6,6 +6,7 @@ vocabularies plug in by declaration. Depends only on `modelith-core` (§1.3).
 
 from mdl_ontology.layers import CoverageReport, check_layers, coverage_report
 from mdl_ontology.lock import Lock
+from mdl_ontology.r2rml_export import export_r2rml
 from mdl_ontology.rdf_export import export_rdf, export_shacl, serialize
 from mdl_ontology.registry import (
     OntologyRegistry,
@@ -24,6 +25,7 @@ __all__ = [
     "CoverageReport",
     "export_rdf",
     "export_shacl",
+    "export_r2rml",
     "serialize",
     "Lock",
 ]

@@ -273,7 +273,12 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
   padding: 8px 16px; border-radius: 8px; border: 1px solid var(--err); cursor: pointer;
   background: rgba(248, 113, 113, 0.14); color: var(--err); font-weight: 700; font-size: 13px;
 }
-.form-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; font-size: 12px; color: var(--text-dim); }
+.form-row { display: flex; flex-direction: column; gap: 4px; margin-bottom: 14px; font-size: 12px; color: var(--text-dim); }
+.form-row > label { font-weight: 600; letter-spacing: 0.02em; text-transform: uppercase; font-size: 10px; }
+.form-error { color: var(--err); font-size: 11px; }
+.form-preview { color: var(--text-dim); font-size: 11px; word-break: break-all; opacity: 0.85; }
+.form-preview::before { content: ""; }
+.form-hint { color: var(--text-dim); font-size: 11px; font-style: italic; opacity: 0.75; word-break: break-word; }
 
 /* term cards (ontology search) */
 .term-results { display: flex; flex-direction: column; gap: 8px; max-height: 44vh; overflow-y: auto; }

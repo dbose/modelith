@@ -26,6 +26,19 @@ def _enum_values(model: Model, domain_name: str | None) -> list | None:
     return None
 
 
+def _term_map(tm) -> dict | None:
+    """Project an R2RML TermMap override to the canvas wire shape, or None."""
+    if tm is None:
+        return None
+    out = {
+        "subject_template": tm.subject_template,
+        "class_iri": tm.class_iri,
+        "predicate_iri": tm.predicate_iri,
+        "datatype": tm.datatype,
+    }
+    return out if any(out.values()) else None
+
+
 def where_used(model: Model, conceptual_id: str) -> list[dict]:
     """Forward-traverse a conceptual entity to the dbt models that realise it:
     conceptual.id -> logical entities (realises == id) -> physical tables
@@ -106,6 +119,7 @@ def project(model: Model) -> dict:
                 "conceptual": conceptual,
                 "udp": entity_udp,
                 "category": category_role,
+                "term_map": _term_map(le.term_map),
                 "attributes": [
                     {
                         "id": a.id,
@@ -115,6 +129,7 @@ def project(model: Model) -> dict:
                         "nullable": a.nullable,
                         "ontology_iri": a.ontology.aligns_to if a.ontology else None,
                         "enum_values": _enum_values(model, a.domain),
+                        "term_map": _term_map(a.term_map),
                         "udp": a.udp or None,
                     }
                     for a in le.attributes
@@ -170,6 +185,7 @@ def project(model: Model) -> dict:
             "name": model.config.name,
             "dbt_target": model.config.dbt_target,
             "platform_targets": list(model.config.platform_targets),
+            "kg_base_iri": model.config.kg_base_iri,
         },
         "subject_areas": [
             {"id": sa.id, "name": sa.name, "definition": sa.definition}
