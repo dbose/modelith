@@ -243,9 +243,20 @@ def generate(
         typer.secho(f"  {verb} {label} to {dest}", fg=typer.colors.GREEN)
 
     if emit_r2rml:
+        from mdl_ontology import r2rml_coverage
+
         reg = build_registry(model_dir, repo.model.config.ontology_stack)
         reg.load()
-        text = serialize(export_r2rml(repo.model, target=tgt, registry=reg), "turtle")
+        # generate is a bulk "produce everything" flow, so it mints fallback IRIs for
+        # unmapped objects rather than failing — but warns so the gap is visible. Use
+        # `mdl export r2rml` (fail-loud) when coverage must be enforced.
+        cov = r2rml_coverage(repo.model, reg)
+        if not cov.ok:
+            typer.secho(f"  r2rml: {cov.summary()}", fg=typer.colors.YELLOW)
+        text = serialize(
+            export_r2rml(repo.model, target=tgt, registry=reg, allow_unmapped=True),
+            "turtle",
+        )
         dest = model_dir / "mapping.r2rml.ttl"
         if not dry_run:
             dest.write_text(text, encoding="utf-8")
@@ -745,6 +756,81 @@ def ontology_fetch(
     typer.secho(f"{len(results)} layer(s) ready", fg=typer.colors.GREEN)
 
 
+@ontology_app.command("align")
+def ontology_align(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    threshold: float = typer.Option(
+        0.35, "--threshold", help="Minimum match confidence (0..1) to propose"
+    ),
+    limit: int = typer.Option(5, "--limit", help="Max candidates per object"),
+    no_attributes: bool = typer.Option(
+        False, "--no-attributes", help="Align entities/terms only, skip attributes"
+    ),
+) -> None:
+    """Alignment pass (spec §2): propose ontology alignments for the model's objects
+    and write them to the decision ledger as proposals.
+
+    Non-blocking and non-committing: it matches each entity/attribute against the
+    merged closure of every configured ontology source (public + enterprise) and
+    records ranked candidates in .mdl/decisions.yaml. A human accepts them through the
+    SME app / PR, which is what writes the alignment (and its audit trail) into the
+    model YAML. Nothing here changes the model."""
+    from mdl_ontology import align_model, confidence_band
+
+    from mdl_reverse.ledger import Confidence, Decision, DecisionLedger
+
+    repo = _load(model_dir)
+    reg = build_registry(model_dir, repo.model.config.ontology_stack)
+    reg.load()
+    proposals = align_model(
+        repo.model,
+        reg,
+        threshold=threshold,
+        limit=limit,
+        include_attributes=not no_attributes,
+    )
+    if not proposals:
+        typer.secho(
+            "no alignment candidates found (are ontology sources configured?)",
+            fg=typer.colors.YELLOW,
+        )
+        return
+
+    ledger = DecisionLedger.load(model_dir)
+    added = 0
+    for p in proposals:
+        best = p.best
+        d = Decision(
+            kind="ontology_alignment",
+            signal="lexical_match",
+            confidence=Confidence(confidence_band(best.confidence)),
+            subject=f"{p.object_name} -> {best.prefixed or best.uri} ({best.source})",
+            evidence={
+                "object_id": p.object_id,
+                "object_kind": p.object_kind,
+                "object_name": p.object_name,
+                "matched_field": p.matched_field,
+                "candidates": [c.to_evidence() for c in p.candidates],
+            },
+        )
+        if ledger.should_propose(d):
+            ledger.record(d)
+            added += 1
+    ledger.save(model_dir)
+
+    for p in proposals:
+        best = p.best
+        typer.echo(
+            f"  {p.object_name:24} -> {best.prefixed or best.uri}  "
+            f"({best.confidence:.0%} via {best.source})"
+        )
+    typer.secho(
+        f"{len(proposals)} proposal(s), {added} new -> .mdl/decisions.yaml. "
+        f"Review + accept in the SME app or `mdl ontology promote`.",
+        fg=typer.colors.GREEN,
+    )
+
+
 new_app = typer.Typer(help="Scaffold model objects (mints ULIDs for you).")
 app.add_typer(new_app, name="new")
 
@@ -1048,19 +1134,37 @@ def export_r2rml_cmd(
     target: str = typer.Option(None, "--target", "-t", help="Physical target to map"),
     fmt: str = typer.Option("turtle", "--format", help="turtle|xml"),
     out: Path = typer.Option(None, "--out", "-o"),
+    allow_unmapped: bool = typer.Option(
+        False,
+        "--allow-unmapped",
+        help="Mint fallback IRIs for unmapped entities/attrs instead of failing",
+    ),
 ) -> None:
     """Export a W3C R2RML mapping: the logical model as a first-class knowledge graph.
 
     Emits the mapping (the deterministic term-map from warehouse rows to typed,
     ontology-aligned graph nodes), not triples. Feed it to Ontop for a virtual SPARQL
     endpoint over your warehouse, or to Morph-KGC to materialize a triple store.
-    Optional: skip it entirely if you don't want a knowledge graph.
+
+    Precondition (spec §5): every managed entity/attribute must carry a resolved
+    ontology mapping. By default this fails loudly listing what's unmapped; pass
+    --allow-unmapped to mint fallback IRIs on the project base instead.
     """
+    from mdl_ontology import UnmappedError
+
     repo = _load(model_dir)
     tgt = target or repo.model.config.dbt_target
     reg = build_registry(model_dir, repo.model.config.ontology_stack)
     reg.load()
-    g = export_r2rml(repo.model, target=tgt, registry=reg)
+    try:
+        g = export_r2rml(
+            repo.model, target=tgt, registry=reg, allow_unmapped=allow_unmapped
+        )
+    except UnmappedError as e:
+        typer.secho(e.report.summary(), fg=typer.colors.RED, err=True)
+        for line in e.report.report_lines():
+            typer.secho(line, fg=typer.colors.YELLOW, err=True)
+        raise typer.Exit(1) from e
     _emit_text(serialize(g, fmt), out, "r2rml")
 
 

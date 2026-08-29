@@ -2,3 +2,8 @@
 target/
 dbt_packages/
 logs/
+# Fetched ontology layers + cache-on-align snapshots — pinned by .mdl/lock.yaml,
+# not committed (spec §3). Run `mdl ontology fetch` to repopulate.
+.mdl/ontology-cache/
+# Reverse/generation working state (the committed lock/decisions stay tracked).
+.mdl/state/

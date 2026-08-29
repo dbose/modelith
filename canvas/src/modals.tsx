@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
-import { ontologySearch } from "./api";
-import type { Entity, ModelDoc, Relationship, TermCard } from "./types";
+import { ontologySearch, ontologySources } from "./api";
+import type {
+  Entity,
+  ModelDoc,
+  OntologySource,
+  Relationship,
+  TermCard,
+} from "./types";
 
 type Exec = (op: string, payload: Record<string, unknown>) => Promise<unknown>;
 
@@ -55,12 +61,20 @@ export function AlignModal({
   const [loaded, setLoaded] = useState<number | null>(null);
   const [picked, setPicked] = useState<TermCard | null>(null);
   const [predicate, setPredicate] = useState("skos:exactMatch");
-  const [layer, setLayer] = useState(entity.conceptual?.ontology?.layer ?? "core");
+  const [layer, setLayer] = useState(entity.conceptual?.ontology_layer ?? "core");
+  const [sources, setSources] = useState<OntologySource[]>([]);
+  const [within, setWithin] = useState<string>("");
+
+  useEffect(() => {
+    ontologySources()
+      .then((d) => setSources(d.ontologies))
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => {
       if (!q.trim()) return setResults([]);
-      ontologySearch(q)
+      ontologySearch(q, within || undefined)
         .then((d) => {
           setResults(d.results);
           setLoaded(d.loaded_terms);
@@ -68,7 +82,7 @@ export function AlignModal({
         .catch(() => setResults([]));
     }, 200);
     return () => clearTimeout(t);
-  }, [q]);
+  }, [q, within]);
 
   const apply = () => {
     if (!picked) return;
@@ -77,19 +91,41 @@ export function AlignModal({
       aligns_to: picked.prefixed,
       alignment: predicate,
       layer,
+      // record which resolver surfaced the term — the audit trail (spec §2/§4)
+      resolved_via: picked.source,
     }).then(onClose);
   };
 
   return (
     <Modal title={`Align '${entity.name}' to ontology`} onClose={onClose} wide>
+      {sources.length > 0 && (
+        <div className="src-picker">
+          <button
+            className={"src-chip" + (within === "" ? " active" : "")}
+            onClick={() => setWithin("")}
+          >
+            all sources
+          </button>
+          {sources.map((s) => (
+            <button
+              key={s.id}
+              className={"src-chip" + (within === s.id ? " active" : "")}
+              title={s.count != null ? `${s.count} terms` : "live resolver"}
+              onClick={() => setWithin(s.id)}
+            >
+              {s.name}
+            </button>
+          ))}
+        </div>
+      )}
       <input
         autoFocus
         className="edit-input modal-search"
-        placeholder="Search vocabulary terms…"
+        placeholder={within ? `Search within ${within}…` : "Search vocabulary terms…"}
         value={q}
         onChange={(e) => setQ(e.target.value)}
       />
-      {loaded === 0 && (
+      {loaded === 0 && sources.length === 0 && (
         <p className="empty-hint">
           No vocabulary loaded. Declare one in mdl-project.yaml's ontology_stack (or run
           `mdl ontology vendor fibo`).
@@ -104,7 +140,12 @@ export function AlignModal({
           >
             <div className="term-head">
               <span className="term-label">{t.label}</span>
-              <span className="term-source">{t.source}</span>
+              <span className="term-source">
+                {t.source_kind === "glossary-term" && (
+                  <span className="kind-badge">glossary</span>
+                )}
+                {t.source}
+              </span>
             </div>
             <code className="term-iri">{t.prefixed}</code>
             {t.definition && <p className="term-def">{t.definition}</p>}

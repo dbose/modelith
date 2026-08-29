@@ -298,6 +298,27 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
 .term-iri { font-size: 10px; color: var(--accent); display: block; margin: 2px 0; word-break: break-all; }
 .term-def { font-size: 11px; color: var(--text-dim); margin: 4px 0 0; line-height: 1.45; }
 
+/* glossary-vs-class kind badge on a search hit (spec §4 source_kind) */
+.kind-badge {
+  font-size: 8px; padding: 1px 5px; margin-right: 6px; border-radius: 999px;
+  background: rgba(240, 171, 252, 0.15); color: #f0abfc; letter-spacing: 0.04em;
+}
+
+/* two-phase browse source picker (spec §4) */
+.src-picker { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.src-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; padding: 3px 9px; border-radius: 999px;
+  background: var(--bg); border: 1px solid var(--border); color: var(--text-dim);
+  cursor: pointer;
+}
+.src-chip:hover { border-color: var(--border-strong); color: var(--text); }
+.src-chip.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.src-layer {
+  font-size: 8px; padding: 0 5px; border-radius: 999px; text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
 /* side panel */
 .side-panel {
   position: absolute; top: 12px; right: 12px; bottom: 12px; width: 380px;

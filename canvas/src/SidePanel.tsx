@@ -7,6 +7,7 @@ import {
   gitStatus,
   ontologyCoverage,
   ontologySearch,
+  ontologySources,
   ontologyStack,
   ontologyTerm,
   setDecisionVerdict,
@@ -15,6 +16,7 @@ import type {
   CoverageDoc,
   Decision,
   GitStatus,
+  OntologySource,
   StackDoc,
   TermCard,
   TermDetail,
@@ -70,10 +72,19 @@ function OntologyBrowser() {
     vocabs: [],
   });
   const [detail, setDetail] = useState<TermDetail | null>(null);
+  // two-phase browse (spec §4): pick a source, then search scoped to it
+  const [sources, setSources] = useState<OntologySource[]>([]);
+  const [within, setWithin] = useState<string>("");
+
+  useEffect(() => {
+    ontologySources()
+      .then((d) => setSources(d.ontologies))
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     const t = setTimeout(() => {
-      ontologySearch(q || "a")
+      ontologySearch(q || "a", within || undefined)
         .then((d) => {
           setResults(q ? d.results : []);
           setMeta({ loaded: d.loaded_terms, vocabs: d.vocabularies });
@@ -81,7 +92,7 @@ function OntologyBrowser() {
         .catch(() => undefined);
     }, 200);
     return () => clearTimeout(t);
-  }, [q]);
+  }, [q, within]);
 
   const open = useCallback((ref: string) => {
     ontologyTerm(ref).then(setDetail).catch(() => undefined);
@@ -128,15 +139,42 @@ function OntologyBrowser() {
 
   return (
     <div className="panel-body">
+      {sources.length > 0 && (
+        <div className="src-picker">
+          <button
+            className={"src-chip" + (within === "" ? " active" : "")}
+            onClick={() => setWithin("")}
+          >
+            all sources
+          </button>
+          {sources.map((s) => (
+            <button
+              key={s.id}
+              className={"src-chip" + (within === s.id ? " active" : "")}
+              title={
+                (s.description ?? "") +
+                (s.count != null ? ` · ${s.count} terms` : " · live")
+              }
+              onClick={() => setWithin(s.id)}
+            >
+              {s.name}
+              {s.layer && <span className={`src-layer layer-${s.layer}`}>{s.layer}</span>}
+            </button>
+          ))}
+        </div>
+      )}
       <input
         className="edit-input"
-        placeholder="Search vocabulary terms…"
+        placeholder={
+          within ? `Search within ${within}…` : "Search vocabulary terms…"
+        }
         value={q}
         onChange={(e) => setQ(e.target.value)}
       />
       <p className="meta-line">
-        {meta.loaded > 0
-          ? `${meta.loaded} terms loaded from: ${meta.vocabs.join(", ")}`
+        {sources.length > 0
+          ? `${sources.length} source${sources.length > 1 ? "s" : ""}: ${meta.vocabs.join(", ")}` +
+            (meta.loaded > 0 ? ` · ${meta.loaded} local terms indexed` : "")
           : "no vocabulary loaded — declare ontology_stack in mdl-project.yaml or run `mdl ontology vendor fibo`"}
       </p>
       <div className="term-results">
@@ -144,7 +182,14 @@ function OntologyBrowser() {
           <button key={t.iri} className="term-card" onClick={() => open(t.prefixed)}>
             <div className="term-head">
               <span className="term-label">{t.label}</span>
-              <span className="term-source">{t.source}</span>
+              <span className="term-source">
+                {t.source_kind === "glossary-term" && (
+                  <span className="kind-badge" title="glossary term">
+                    glossary
+                  </span>
+                )}
+                {t.source}
+              </span>
             </div>
             <code className="term-iri">{t.prefixed}</code>
             {t.definition && <p className="term-def">{t.definition}</p>}

@@ -77,13 +77,17 @@ def ontology_router(model_dir: Path, load_model, *, read_only: bool = False) -> 
     cache = RegistryCache(model_dir)
 
     @router.get("/search")
-    def search(q: str = "", limit: int = 20) -> JSONResponse:
+    def search(q: str = "", limit: int = 20, within: str = "") -> JSONResponse:
+        """Ranked term search. `within` scopes to one ontology id (browse phase two,
+        spec §4) so a large remote catalog stays usable."""
         model = load_model()
         reg = cache.get(model)
-        hits = reg.search(q, limit=limit) if q.strip() else []
+        scope = within or None
+        hits = reg.search(q, within=scope, limit=limit) if q.strip() else []
         return JSONResponse(
             {
                 "query": q,
+                "within": within,
                 "vocabularies": sorted(reg.sources),
                 "loaded_terms": reg.loaded_term_count(),
                 "results": [
@@ -93,6 +97,7 @@ def ontology_router(model_dir: Path, load_model, *, read_only: bool = False) -> 
                         "label": h.label,
                         "definition": h.definition,
                         "source": h.source,
+                        "source_kind": h.source_kind,
                     }
                     for h in hits
                 ],

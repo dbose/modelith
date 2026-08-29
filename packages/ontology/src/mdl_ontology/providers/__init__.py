@@ -15,7 +15,11 @@ from mdl_ontology.providers.base import (
     local_name,
     score,
 )
+from mdl_ontology.providers.collibra import CollibraOntologyDomainsResolver
 from mdl_ontology.providers.local import LocalFileProvider
+from mdl_ontology.providers.ols import OLS4Resolver, OLSCompatibleResolver
+from mdl_ontology.providers.ontoportal import OntoPortalResolver
+from mdl_ontology.providers.remote import RemoteProvider
 
 __all__ = [
     "SourceProvider",
@@ -23,6 +27,11 @@ __all__ = [
     "OntologyRef",
     "TermCard",
     "LocalFileProvider",
+    "RemoteProvider",
+    "OLS4Resolver",
+    "OLSCompatibleResolver",
+    "OntoPortalResolver",
+    "CollibraOntologyDomainsResolver",
     "local_name",
     "score",
 ]

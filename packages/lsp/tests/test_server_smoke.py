@@ -74,6 +74,7 @@ def test_lsp_stdio_handshake_and_publish(workspace):
         assert caps.get("hoverProvider")
         assert caps.get("codeActionProvider")
         assert caps.get("codeLensProvider") is not None
+        assert caps.get("completionProvider") is not None
         cmds = caps.get("executeCommandProvider", {}).get("commands", [])
         assert "mdl.lift" in cmds and "mdl.unmanage" in cmds
 

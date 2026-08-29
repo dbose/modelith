@@ -4,6 +4,14 @@ Vocabulary-agnostic: FIBO is one reference bundle; ACORD/FHIR/ISO 20022/GS1/cust
 vocabularies plug in by declaration. Depends only on `modelith-core` (§1.3).
 """
 
+from mdl_ontology.align import (
+    AlignmentProposal,
+    Candidate,
+    LexicalMatcher,
+    Matcher,
+    align_model,
+    confidence_band,
+)
 from mdl_ontology.fetch import (
     FetchError,
     FetchResult,
@@ -14,7 +22,13 @@ from mdl_ontology.fetch import (
 from mdl_ontology.ingest import save_ontology_upload
 from mdl_ontology.layers import CoverageReport, check_layers, coverage_report
 from mdl_ontology.lock import CACHE_REL, LOCK_MODES, Lock, OntologyLayerLock
-from mdl_ontology.r2rml_export import export_r2rml
+from mdl_ontology.providers.cache import cache_from_registry, cache_resolved_term
+from mdl_ontology.r2rml_export import (
+    R2RMLCoverage,
+    UnmappedError,
+    export_r2rml,
+    r2rml_coverage,
+)
 from mdl_ontology.rdf_export import export_rdf, export_shacl, serialize
 from mdl_ontology.registry import (
     OntologyRegistry,
@@ -34,6 +48,9 @@ __all__ = [
     "export_rdf",
     "export_shacl",
     "export_r2rml",
+    "r2rml_coverage",
+    "R2RMLCoverage",
+    "UnmappedError",
     "serialize",
     "Lock",
     "OntologyLayerLock",
@@ -44,5 +61,13 @@ __all__ = [
     "compute_lock",
     "FetchError",
     "FetchResult",
+    "cache_resolved_term",
+    "cache_from_registry",
     "save_ontology_upload",
+    "align_model",
+    "AlignmentProposal",
+    "Candidate",
+    "Matcher",
+    "LexicalMatcher",
+    "confidence_band",
 ]

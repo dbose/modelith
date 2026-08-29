@@ -86,6 +86,23 @@ def on_hover(params: lsp.HoverParams) -> lsp.Hover | None:
     )
 
 
+@server.feature(
+    lsp.TEXT_DOCUMENT_COMPLETION,
+    lsp.CompletionOptions(trigger_characters=[":", " "]),
+)
+def on_completion(params: lsp.CompletionParams) -> lsp.CompletionList:
+    if _ws is None:
+        return lsp.CompletionList(is_incomplete=False, items=[])
+    items = features.completion(
+        _ws,
+        _path(params.text_document.uri),
+        params.position.line,
+        params.position.character,
+    )
+    # incomplete when a remote resolver is configured — re-query as the user narrows
+    return lsp.CompletionList(is_incomplete=bool(items), items=items)
+
+
 @server.feature(lsp.TEXT_DOCUMENT_CODE_LENS)
 def on_code_lens(params: lsp.CodeLensParams) -> list[lsp.CodeLens]:
     if _ws is None:

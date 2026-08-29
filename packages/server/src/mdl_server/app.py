@@ -25,6 +25,26 @@ from mdl_server.projection import project
 STATIC_DIR = Path(__file__).parent / "static"
 
 
+def _cache_on_align(model_dir: Path, op: str, payload: dict) -> None:
+    """After a successful alignment, snapshot the resolved term into the local cache
+    so a term picked from a REMOTE resolver still validates / exports offline
+    (spec §4 cache-on-align). Best-effort: never fails the command."""
+    if op != "set_alignment":
+        return
+    ref = payload.get("aligns_to")
+    if not ref:
+        return
+    try:
+        from mdl_ontology import build_registry, cache_from_registry
+
+        repo = ModelRepo.load(model_dir)
+        reg = build_registry(model_dir, repo.model.config.ontology_stack)
+        reg.load()
+        cache_from_registry(model_dir, reg, ref)
+    except Exception:  # noqa: BLE001 - caching is an optimisation, not a guarantee
+        return
+
+
 def _dir_fingerprint(model_dir: Path) -> tuple:
     """Cheap change detector: (count, max mtime, total size) over model YAML files.
     Git stays the source of truth — any on-disk edit changes the fingerprint and
@@ -154,6 +174,7 @@ def create_app(model_dir: Path, *, read_only: bool = False) -> FastAPI:
             except commands.CommandError as e:
                 return JSONResponse({"ok": False, "error": str(e)}, status_code=422)
             cache["repo"] = None  # bust the model cache
+            _cache_on_align(model_dir, op, payload)
             return JSONResponse(
                 {
                     "ok": True,
@@ -183,11 +204,78 @@ def create_app(model_dir: Path, *, read_only: bool = False) -> FastAPI:
     return app
 
 
+def _spawn_demo_ols(model_dir: Path):
+    """If the project declares a `demo_ols:` block in mdl-project.yaml, spawn the
+    bundled mock OLS4 server as a child process so `mdl serve` demonstrates remote
+    resolution with one command, fully offline. Returns the Popen (or None).
+
+    The block is a demo convenience only — a real deployment points its `type: ols`
+    source straight at a live OLS4 URL and omits `demo_ols`. Shape:
+
+        demo_ols:
+          script: ols/mock_ols.py    # relative to the model dir
+          host: 127.0.0.1
+          port: 4901
+    """
+    import subprocess
+    import sys
+
+    from mdl_core.yaml_io import load_str
+
+    project = model_dir / "mdl-project.yaml"
+    if not project.exists():
+        return None
+    try:
+        cfg = load_str(project.read_text(encoding="utf-8")) or {}
+    except Exception:  # noqa: BLE001 - a bad config must not stop the server
+        return None
+    demo = cfg.get("demo_ols")
+    if not isinstance(demo, dict) or not demo.get("script"):
+        return None
+    script = (model_dir / demo["script"]).resolve()
+    if not script.exists():
+        print(f"demo_ols: script not found at {script}; skipping")
+        return None
+    host = str(demo.get("host", "127.0.0.1"))
+    port = str(demo.get("port", 4901))
+    try:
+        proc = subprocess.Popen(  # noqa: S603 - trusted demo script from the repo
+            [sys.executable, str(script), "--host", host, "--port", port],
+        )
+    except Exception as e:  # noqa: BLE001
+        print(f"demo_ols: could not start mock OLS ({e}); continuing without it")
+        return None
+    print(f"demo_ols: mock OLS4 spawned on http://{host}:{port}/api (pid {proc.pid})")
+    return proc
+
+
 def serve(
     model_dir: Path, *, host: str = "127.0.0.1", port: int = 4800, read_only: bool = False
 ) -> None:
+    import atexit
+
     import uvicorn
 
-    uvicorn.run(
-        create_app(model_dir, read_only=read_only), host=host, port=port, log_level="warning"
-    )
+    ols_proc = _spawn_demo_ols(model_dir)
+    if ols_proc is not None:
+
+        def _stop_ols() -> None:
+            if ols_proc.poll() is None:
+                ols_proc.terminate()
+                try:
+                    ols_proc.wait(timeout=3)
+                except Exception:  # noqa: BLE001
+                    ols_proc.kill()
+
+        atexit.register(_stop_ols)
+
+    try:
+        uvicorn.run(
+            create_app(model_dir, read_only=read_only),
+            host=host,
+            port=port,
+            log_level="warning",
+        )
+    finally:
+        if ols_proc is not None and ols_proc.poll() is None:
+            ols_proc.terminate()

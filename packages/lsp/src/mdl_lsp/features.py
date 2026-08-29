@@ -302,6 +302,95 @@ def hover(ws: ModelWorkspace, path: Path, line: int, character: int) -> lsp.Hove
     return None
 
 
+# --- ontology completion (spec §1 UX) ------------------------------------------
+
+# A line like `  uri: fibo:Fin` or the legacy `  aligns_to: fibo:Fin`, capturing the
+# already-typed value so we can complete it. Also matches a bare `  - ` list item
+# opening an ontology_refs entry.
+_URI_LINE = re.compile(r"^(?P<indent>\s*)(-\s*)?(uri|aligns_to):\s*(?P<val>\S*)\s*$")
+_BARE_ITEM = re.compile(r"^\s*-\s*(?P<val>\S*)\s*$")
+
+
+def _in_ontology_refs_block(lines: list[str], line: int) -> bool:
+    """True if `line` sits inside an `ontology_refs:` list (walk up: an earlier
+    less-or-equally indented key that is `ontology_refs:` and no intervening
+    different top-level key)."""
+    indent = len(lines[line]) - len(lines[line].lstrip())
+    for i in range(line - 1, -1, -1):
+        s = lines[i]
+        if not s.strip():
+            continue
+        cur = len(s) - len(s.lstrip())
+        if cur < indent and s.lstrip().startswith("ontology_refs:"):
+            return True
+        # a shallower non-list key that isn't ontology_refs ends the block
+        if cur < indent and not s.lstrip().startswith("-"):
+            return False
+    return False
+
+
+def completion(
+    ws: ModelWorkspace, path: Path, line: int, character: int
+) -> list[lsp.CompletionItem]:
+    """Autocomplete ontology term IRIs on an `ontology_refs` `uri:` line (spec §1).
+
+    Fires only inside a model YAML file, on a `uri:`/`aligns_to:` line or a bare list
+    item under `ontology_refs:`. Queries the workspace registry (across every
+    configured resolver — local files, lock cache, remote OLS/OntoPortal/Collibra) and
+    returns ranked completions with the term label + definition as detail. Uses the
+    cached registry; a remote resolver is debounced/cached at the provider layer, so
+    this never fires a live round-trip per keystroke beyond that."""
+    if ws.model_dir is None or ws.model_dir not in path.parents and path.parent != ws.model_dir:
+        return []
+    if path.suffix not in (".yaml", ".yml"):
+        return []
+    text = _read(path)
+    lines = text.splitlines()
+    if line >= len(lines):
+        return []
+    cur = lines[line]
+
+    m = _URI_LINE.match(cur)
+    typed = None
+    if m:
+        typed = m.group("val")
+    else:
+        bare = _BARE_ITEM.match(cur)
+        if bare and _in_ontology_refs_block(lines, line):
+            typed = bare.group("val")
+    if typed is None:
+        return []
+
+    reg = ws.registry
+    if reg is None:
+        return []
+    # search on the local-name part of whatever's typed (after a ':' prefix), or all
+    query = typed.split(":", 1)[-1] if ":" in typed else typed
+    try:
+        hits = reg.search(query or "a", limit=25)
+    except Exception:  # noqa: BLE001 - a failing resolver yields no completions
+        return []
+
+    items: list[lsp.CompletionItem] = []
+    for h in hits:
+        insert = h.prefixed or h.iri
+        detail = h.label or ""
+        if h.source:
+            detail = f"{detail}  ·  {h.source}" if detail else h.source
+        doc = h.definition or h.iri
+        items.append(
+            lsp.CompletionItem(
+                label=insert,
+                kind=lsp.CompletionItemKind.Value,
+                detail=detail or None,
+                documentation=doc,
+                insert_text=insert,
+                filter_text=f"{insert} {h.label or ''}",
+            )
+        )
+    return items
+
+
 def _enclosing_schema_model(ws, lines: list[str], line: int):
     for i in range(line, -1, -1):
         m = re.match(r"\s*- name:\s*([A-Za-z_][A-Za-z0-9_]*)\s*$", lines[i])

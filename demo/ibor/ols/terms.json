@@ -1,0 +1,89 @@
+{
+  "ontology": {
+    "id": "fibo-demo",
+    "title": "FIBO (demo subset)",
+    "description": "A small hand-curated FIBO subset for the Modelith IBoR demo. Not the real FIBO — just enough financial-industry terms to show ontology-anchored modelling and remote resolution."
+  },
+  "terms": [
+    {
+      "iri": "https://spec.edmcouncil.org/fibo/ontology/FND/Parties/Parties/PartyInRole",
+      "obo_id": "fibo:PartyInRole",
+      "label": "Party In Role",
+      "description": "A relationship that establishes the specific capacity in which a party acts in some context.",
+      "synonyms": ["Counterparty", "Role Player"],
+      "parents": ["fibo:Party"]
+    },
+    {
+      "iri": "https://spec.edmcouncil.org/fibo/ontology/FND/Parties/Parties/Party",
+      "obo_id": "fibo:Party",
+      "label": "Party",
+      "description": "A person or organization that is the subject of, or is otherwise involved in, some transaction, contract, or agreement.",
+      "synonyms": ["Legal Person"],
+      "parents": []
+    },
+    {
+      "iri": "https://spec.edmcouncil.org/fibo/ontology/FBC/FinancialInstruments/FinancialInstruments/FinancialInstrument",
+      "obo_id": "fibo:FinancialInstrument",
+      "label": "Financial Instrument",
+      "description": "A tradable monetary contract that gives rise to both a financial asset for one party and a financial liability or equity instrument for another.",
+      "synonyms": ["Security", "Tradable Instrument"],
+      "parents": ["fibo:Contract"]
+    },
+    {
+      "iri": "https://spec.edmcouncil.org/fibo/ontology/FBC/FinancialInstruments/FinancialInstruments/Contract",
+      "obo_id": "fibo:Contract",
+      "label": "Contract",
+      "description": "An agreement between two or more parties creating obligations that are enforceable.",
+      "synonyms": [],
+      "parents": []
+    },
+    {
+      "iri": "https://spec.edmcouncil.org/fibo/ontology/SEC/Securities/Positions/Position",
+      "obo_id": "fibo:Position",
+      "label": "Position",
+      "description": "A holding, being a quantity of a specific financial instrument held by or on behalf of a party.",
+      "synonyms": ["Holding"],
+      "parents": []
+    },
+    {
+      "iri": "https://spec.edmcouncil.org/fibo/ontology/FBC/ProductsAndServices/ClientsAndAccounts/Portfolio",
+      "obo_id": "fibo:Portfolio",
+      "label": "Portfolio",
+      "description": "A collection of financial assets such as instruments and cash held by or on behalf of an investor.",
+      "synonyms": [],
+      "parents": []
+    },
+    {
+      "iri": "https://spec.edmcouncil.org/fibo/ontology/FBC/FinancialInstruments/FinancialInstruments/FinancialTransaction",
+      "obo_id": "fibo:FinancialTransaction",
+      "label": "Financial Transaction",
+      "description": "An economic event whereby ownership of a financial instrument or amount of money moves between parties.",
+      "synonyms": ["Trade"],
+      "parents": []
+    },
+    {
+      "iri": "https://spec.edmcouncil.org/fibo/ontology/FND/Accounting/CurrencyAmount/MonetaryPrice",
+      "obo_id": "fibo:MonetaryPrice",
+      "label": "Monetary Price",
+      "description": "A price expressed as a monetary amount per unit of a financial instrument.",
+      "synonyms": ["Price"],
+      "parents": ["fibo:MonetaryAmount"]
+    },
+    {
+      "iri": "https://spec.edmcouncil.org/fibo/ontology/FND/Accounting/CurrencyAmount/MonetaryAmount",
+      "obo_id": "fibo:MonetaryAmount",
+      "label": "Monetary Amount",
+      "description": "An amount of money in a specified currency.",
+      "synonyms": ["Amount"],
+      "parents": []
+    },
+    {
+      "iri": "https://spec.edmcouncil.org/fibo/ontology/IND/MarketIndicesAndStatistics/MarketIndicesAndStatistics/MarketIndex",
+      "obo_id": "fibo:MarketIndex",
+      "label": "Market Index",
+      "description": "A benchmark statistic measuring the value of a section of a market, used as a performance reference.",
+      "synonyms": ["Benchmark", "Index"],
+      "parents": []
+    }
+  ]
+}

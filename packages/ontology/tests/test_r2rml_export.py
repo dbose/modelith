@@ -78,7 +78,7 @@ def _model() -> Model:
 
 
 def _graph() -> Graph:
-    return export_r2rml(_model(), target="duckdb_dev")
+    return export_r2rml(_model(), target="duckdb_dev", allow_unmapped=True)
 
 
 def test_triplesmap_per_managed_entity():
@@ -149,7 +149,7 @@ def test_keyless_entity_gets_blank_node_subject():
         name="link",
         attributes=[Attribute(id="l_a", name="a", domain="text", nullable=True)],
     )
-    g = export_r2rml(m, target="duckdb_dev")
+    g = export_r2rml(m, target="duckdb_dev", allow_unmapped=True)
     term_types = set(g.objects(predicate=RR.termType))
     assert RR.BlankNode in term_types
 
@@ -180,7 +180,7 @@ def _aligned_model() -> Model:
 def test_explicit_base_iri_overrides_default():
     m = _model()
     m.config.kg_base_iri = "https://acme.com/id/"
-    ttl = serialize(export_r2rml(m, target="duckdb_dev"))
+    ttl = serialize(export_r2rml(m, target="duckdb_dev", allow_unmapped=True))
     assert "https://acme.com/id/" in ttl
     # no minted IRI uses the derived default when an explicit base is set
     non_prefix_lines = [ln for ln in ttl.splitlines() if not ln.strip().startswith("@prefix")]
@@ -189,7 +189,7 @@ def test_explicit_base_iri_overrides_default():
 
 def test_aligned_ontology_iri_becomes_class_when_no_override():
     # the gap this feature fixes: alignment now flows into rr:class
-    g = export_r2rml(_aligned_model())
+    g = export_r2rml(_aligned_model(), allow_unmapped=True)
     classes = set(g.objects(predicate=RR["class"]))
     assert URIRef("http://fibo/Customer") in classes
 
@@ -197,7 +197,7 @@ def test_aligned_ontology_iri_becomes_class_when_no_override():
 def test_explicit_class_iri_overrides_alignment():
     m = _aligned_model()
     m.logical_entities["cust"].term_map = TermMap(class_iri="http://acme.com/Customer")
-    g = export_r2rml(m)
+    g = export_r2rml(m, allow_unmapped=True)
     classes = {str(o) for o in g.objects(predicate=RR["class"])}
     assert "http://acme.com/Customer" in classes
     assert "http://fibo/Customer" not in classes
@@ -209,7 +209,7 @@ def test_subject_template_override_verbatim():
         subject_template="https://acme.com/id/customer/{customer_id}"
     )
     templates = {
-        str(o) for o in export_r2rml(m).objects(predicate=RR.template)
+        str(o) for o in export_r2rml(m, allow_unmapped=True).objects(predicate=RR.template)
     }
     assert "https://acme.com/id/customer/{customer_id}" in templates
 
@@ -220,7 +220,7 @@ def test_attribute_predicate_and_datatype_override():
         predicate_iri="http://acme.com/hasId",
         datatype="http://www.w3.org/2001/XMLSchema#string",
     )
-    g = export_r2rml(m)
+    g = export_r2rml(m, allow_unmapped=True)
     preds = {str(o) for o in g.objects(predicate=RR.predicate)}
     dtypes = {str(o) for o in g.objects(predicate=RR.datatype)}
     assert "http://acme.com/hasId" in preds
@@ -230,7 +230,7 @@ def test_attribute_predicate_and_datatype_override():
 def test_default_base_derives_from_project_name():
     # with no explicit kg_base_iri, the base is a URN derived from the project name
     # ("sales" -> urn:sales:), and never carries a modelith.dev vendor host
-    ttl = serialize(export_r2rml(_model(), target="duckdb_dev"))
+    ttl = serialize(export_r2rml(_model(), target="duckdb_dev", allow_unmapped=True))
     non_prefix = [ln for ln in ttl.splitlines() if not ln.strip().startswith("@prefix")]
     assert any("urn:sales:" in ln for ln in non_prefix)
     assert not any("modelith.dev" in ln for ln in non_prefix)

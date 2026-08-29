@@ -29,11 +29,16 @@ cd modelith/demo/ibor
 
 mdl validate -m model                 # the seven-entity model is valid
 cd transform/warehouse && dbt build   # generated dbt builds green against DuckDB
+cd ../.. && mdl serve -m model        # ER canvas + browse the (bundled) FIBO ontology
 ```
 
 Then break a generated column's contract, run `dbt parse`, and
 `mdl drift --check -m model --manifest transform/warehouse/target/manifest.json` reports
-it as breaking. See [demo/ibor](demo/ibor/README.md) for the full walkthrough.
+it as breaking. Or open the ontology browser in the canvas and align an entity to a FIBO
+term — the demo starts a local ontology server for you. See
+[demo/ibor](demo/ibor/README.md) for the full walkthrough and
+[Ontology and knowledge graph, step by step](#ontology-and-knowledge-graph-step-by-step)
+for the ontology workflow.
 
 ## Why
 
@@ -204,7 +209,7 @@ Modelith represents the core data-modeling taxonomy as first-class, git-tracked 
 | Subtypes and supertypes | Category clusters with a discriminator and a physical materialization strategy (single-table or table-per-subtype) |
 | User-defined properties | Extensible metadata on any object, flowing through to dbt `meta` |
 | Subject areas | Diagram partitioning with color grouping on the canvas |
-| Ontology alignment | Four-layer stack (industry / core / domain / specialised), SKOS predicates, FIBO out of the box |
+| Ontology alignment | Four-layer stack (industry / core / domain / specialised), SKOS predicates, a list of `ontology_refs` per object with provenance; local files, lockfile-pinned bundles, or live resolvers (OLS / OntoPortal / Collibra) |
 | Design patterns | SCD2 and Data Vault (hub / link / satellite), emitting working SQL, not stubs |
 
 ## What it does
@@ -225,7 +230,7 @@ deterministically from the one definition:
 | Neo4j | `mdl export graph` | A Cypher schema: node-key, unique, and existence constraints, plus relationship types |
 | Semantic layer | `mdl emit semantic` | MetricFlow semantic models and metrics, or OSI |
 | Ontology | `mdl export rdf` / `shacl` | RDF/OWL with SKOS alignments, and SHACL shapes |
-| Knowledge graph | `mdl export r2rml` | A W3C R2RML mapping: the deterministic term-map from warehouse rows to typed, ontology-aligned graph nodes |
+| Knowledge graph | `mdl export r2rml` | A W3C R2RML mapping: the deterministic term-map from warehouse rows to typed, ontology-aligned graph nodes; fails loud on any unmapped entity unless `--allow-unmapped` |
 
 `mdl generate --emit-contract` (also `--emit-pydantic`, `--emit-graph`, `--emit-r2rml`)
 turns Modelith into a contract factory: on every regeneration it drops a fresh, valid
@@ -258,9 +263,178 @@ in a reviewable ledger.
 classifies each difference as breaking, additive, or cosmetic, with a CI gate mode and a
 reconcile mode. A 400-model breaking change classifies in under thirty seconds.
 
+**Ontology anchoring.** Bind your entities and attributes to industry and enterprise
+ontology terms, browse and search those ontologies from the canvas or your editor, pin
+them reproducibly, and export a knowledge graph that fails loudly on anything unmapped.
+See [Ontology and knowledge graph, step by step](#ontology-and-knowledge-graph-step-by-step)
+below.
+
 **Governance sync.** A neutral governance graph maps to an external catalog through a
 customer-owned Jinja profile. A Collibra adapter ships, along with OpenLineage emission
 and a conformance kit that validates a bespoke mapping in CI.
+
+## Ontology and knowledge graph, step by step
+
+Modelith treats an ontology the way a build treats a dependency: you declare a source,
+pin it, and reference terms — nothing is copied into your repo by hand. A term can come
+from a local file, a public registry, or an enterprise catalog, and it is bound and
+pinned identically regardless of where it was found. This section walks the whole loop.
+
+Everything below works offline against the bundled IBoR demo, which ships a small mock
+FIBO server that `mdl serve` starts for you:
+
+```bash
+cd demo/ibor
+mdl serve -m model        # opens the canvas AND auto-starts the demo ontology server
+```
+
+### 1. Declare an ontology source
+
+A source is one entry in `ontology_stack` in `mdl-project.yaml`. It is either a **local
+file** vocabulary or a **remote resolver** browsed live. All four types are configured
+the same way:
+
+```yaml
+ontology_stack:
+  - name: fibo                       # a local RDF/OWL/Turtle vocabulary
+    layer: industry
+    format: turtle
+    path: ontologies/industry/fibo/2024.03
+    prefixes:
+      fibo: "https://spec.edmcouncil.org/fibo/ontology/"
+
+  - name: ols                        # public OLS4 (no auth) — live search only
+    layer: industry
+    type: ols
+    url: https://www.ebi.ac.uk/ols4/api
+
+  - name: bioportal                  # OntoPortal / BioPortal (API key)
+    layer: domain
+    type: ontoportal
+    url: https://data.bioontology.org
+    apikey_env: BIOPORTAL_APIKEY
+
+  - name: collibra                   # Collibra Ontology Domains (bearer token)
+    layer: core
+    type: collibra
+    url: https://acme.collibra.com
+    token_env: COLLIBRA_TOKEN
+    domain_types: [Ontology]
+```
+
+`layer` places the source in the four-layer stack (industry / core / domain /
+specialised). A remote resolver is strictly a live-lookup convenience — it is never a
+build-time dependency, and its API keys/tokens are read from environment variables, never
+stored in the repo.
+
+### 2. Pin and fetch (reproducible builds)
+
+For a source you want pinned to an exact version, lock it and fetch it. The lock records
+a sha256; the content lands in a **gitignored** cache, never committed:
+
+```bash
+# pin an immutable file/URL (artifact mode), binding its prefix so IRIs resolve offline
+mdl ontology lock industry https://spec.edmcouncil.org/.../fibo.ttl \
+  --mode artifact --version 2024.03 \
+  --prefix fibo --prefix-iri "https://spec.edmcouncil.org/fibo/ontology/"
+
+# pin a live triple store as a point-in-time snapshot (endpoint_snapshot mode)
+mdl ontology lock enterprise https://ontology.internal/sparql \
+  --mode endpoint_snapshot --snapshot-tag 2026-08-15
+
+# on a fresh clone / in CI: fetch + hash-verify every locked layer, fail-closed on drift
+mdl ontology fetch
+```
+
+`mdl ontology fetch` is the `dbt deps` / `npm ci` of ontologies: it reproduces the exact
+pinned content into `.mdl/ontology-cache/` and aborts if a hash no longer matches. For a
+small private ontology you would rather review in git, `mdl ontology add <file>` vendors
+it into the repo and wires the source entry for you instead.
+
+### 3. Browse, search, and align
+
+Open the canvas (`mdl serve`) and click the ontology browser (the ⬡ toolbar button):
+
+1. Pick a **source** from the chips at the top (or "all sources"). Picking one scopes
+   search to that vocabulary — essential when a catalog has millions of terms.
+2. Type a query. Hits come back live, tagged with their source, with definitions and a
+   class hierarchy you can drill into. Glossary terms and ontology classes are
+   distinguished with a badge.
+3. Select an entity, and in its inspector click **Align…**. Search, pick a term, choose a
+   SKOS predicate (`exactMatch` / `closeMatch` / `broadMatch`), and confirm.
+
+![The ontology browser: a source picker with "all sources" and "FIBO (demo subset)" chips, and live search results for "financial" tagged with their fibo-ols source and definitions](docs/assets/ontology-browser.jpg)
+
+Every hit drills into a detail card with its definition, source, and class hierarchy:
+
+![The term detail card for Party In Role, showing its definition, fibo-ols source, and a broader link to Party](docs/assets/ontology-term-detail.jpg)
+
+The alignment is written into the entity's YAML under `ontology_refs` — a **list**, so an
+object can carry several bindings — with `resolved_via` provenance recording which
+resolver found it. A term picked from a remote resolver is also snapshotted into the local
+cache so it still validates and exports offline.
+
+![The entity inspector showing an accepted ontology alignment: layer core, fibo:FinancialInstrument with a skos:closeMatch predicate, resolved via fibo-ols](docs/assets/inspector-aligned.jpg)
+
+You can also align in YAML directly, with autocomplete. In VS Code / Cursor / Windsurf (or
+any LSP editor), typing under `ontology_refs:` on a `uri:` line offers ranked completions
+from every configured resolver, showing the term label, source, and definition:
+
+```yaml
+ontology_layer: core
+ontology_refs:
+  - predicate: skos:exactMatch
+    uri: fibo:FinancialInstrument     # <- autocompletes against your ontology sources
+    resolved_via: ols
+```
+
+![The LSP completion popup on a `uri:` line in instrument.yaml, suggesting fibo:FinancialInstrument with its source and definition](docs/assets/lsp-autocomplete.png)
+
+### 4. Reverse an existing project, then align in bulk
+
+Reversing a dbt project (`mdl reverse`) lifts a logical model but leaves it unaligned. The
+**alignment pass** proposes bindings for the whole model at once, matching each entity and
+attribute against the *merged closure* of every configured source (public plus enterprise
+extensions), and writes ranked candidates to the decision ledger — **nothing is
+auto-applied**:
+
+```bash
+mdl ontology align                 # propose alignments -> .mdl/decisions.yaml
+```
+
+Each proposal carries a confidence and its candidate list. A subject-matter expert reviews
+and accepts them in the glossary app (or `mdl ontology promote`), which is what writes the
+final alignment and its audit trail (`resolved_by`, `approved_at`) into the model. An
+object can end up with several bindings — an accepted one and a proposed one awaiting
+review, each showing its predicate and source:
+
+![The inspector showing two ontology refs on one entity: an accepted fibo:FinancialInstrument via ols4, and a proposed acme-core:TradableAsset via collibra with a Promote button](docs/assets/inspector-multi-ref.jpg)
+
+### 5. Validate coverage
+
+```bash
+mdl ontology check                 # four-layer rules + industry-coverage report
+mdl validate                       # includes ontology-layer diagnostics
+```
+
+`check` reports the CDO-facing coverage number (what share of core terms are aligned) and
+flags downward alignments, non-SKOS predicates, exactMatch cycles, and unresolvable IRIs.
+
+### 6. Export the knowledge graph (fail-loud)
+
+With entities aligned, emit the R2RML mapping. By default it **fails loudly** and lists
+anything still unmapped, rather than silently minting placeholder IRIs:
+
+```bash
+mdl export r2rml                   # fails if any managed entity/attribute is unmapped
+mdl export r2rml --allow-unmapped  # mint fallback IRIs on the project base instead
+```
+
+Feed the mapping to [Ontop](https://ontop-vkg.org/) for a virtual SPARQL endpoint over
+your warehouse, or to [Morph-KGC](https://github.com/morph-kgc/morph-kgc) to materialize a
+triple store. The mapping, the lockfile, and the alignments are all git-tracked and
+reproducible; the fetched ontology content is not. See
+[docs/knowledge-graph.md](docs/knowledge-graph.md).
 
 **Semantic layer.** Emit MetricFlow semantic models and metrics, or OSI (version-isolated),
 with joinability and fan-out validation.
@@ -294,10 +468,13 @@ mdl reverse --project <manifest|schema.yml>       lift a dbt project into a mode
 mdl drift --manifest <m> [--check|--reconcile]    compare model to compiled warehouse
 mdl serve [--read-only]                           web canvas + read API
 mdl glossary [--read-only]                        SME glossary app
-mdl ontology search|check|promote|vendor          vocabulary and alignment lifecycle
+mdl ontology search|check                         browse; layer rules + coverage report
+mdl ontology lock|fetch|add                       pin a source, fetch+verify, vendor a file
+mdl ontology align|promote                        propose alignments (§2), accept them
 mdl emit semantic --format metricflow|osi         semantic layer
 mdl emit pydantic                                 Pydantic v2 data models
 mdl export contract|graph                         ODCS data contract, Neo4j Cypher schema
+mdl export r2rml [--allow-unmapped]               R2RML KG mapping (fails loud on unmapped)
 mdl export json-schema|rdf|shacl                  interchange out
 mdl import osi|erwin                              interchange in
 mdl gov plan|apply|pull|publish|import            catalog sync

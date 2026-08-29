@@ -5,6 +5,7 @@ import type {
   DiagnosticsDoc,
   GitStatus,
   ModelDoc,
+  OntologySource,
   StackDoc,
   TermCard,
   TermDetail,
@@ -38,11 +39,19 @@ export class ApiError extends Error {
 export const fetchModel = () => get<ModelDoc>("/api/model");
 export const fetchDiagnostics = () => get<DiagnosticsDoc>("/api/diagnostics");
 
-// ontology (E1)
-export const ontologySearch = (q: string) =>
-  get<{ results: TermCard[]; loaded_terms: number; vocabularies: string[] }>(
-    `/api/ontology/search?q=${encodeURIComponent(q)}`,
+// ontology (E1 + spec §4 two-phase browse)
+export const ontologySearch = (q: string, within?: string) =>
+  get<{
+    results: TermCard[];
+    loaded_terms: number;
+    vocabularies: string[];
+    within: string;
+  }>(
+    `/api/ontology/search?q=${encodeURIComponent(q)}` +
+      (within ? `&within=${encodeURIComponent(within)}` : ""),
   );
+export const ontologySources = () =>
+  get<{ ontologies: OntologySource[] }>("/api/ontology/ontologies");
 export const ontologyTerm = (ref: string) =>
   get<TermDetail>(`/api/ontology/term?ref=${encodeURIComponent(ref)}`);
 export const ontologyStack = () => get<StackDoc>("/api/ontology/stack");

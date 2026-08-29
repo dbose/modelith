@@ -112,7 +112,56 @@ class OntologyRegistry:
             prov.add_files(source.path, source.format, source.modules)
             for pfx, ns in source.prefixes.items():
                 self.prefixes[pfx] = ns
-        # Remote provider construction is wired in phase 2 (ols/ontoportal/collibra).
+        else:
+            remote = self._make_remote(source)
+            if remote is not None:
+                self.providers.append(remote)
+                for pfx, ns in source.prefixes.items():
+                    self.prefixes[pfx] = ns
+
+    def _make_remote(self, source: VocabularySource):
+        """Construct a remote resolver from a declared source (spec §4). A remote
+        resolver is live-lookup/UX only — never a build dependency. An unknown type
+        is skipped (with the source still registered) rather than raising, so one
+        misconfigured entry can't break the whole registry."""
+        t = source.type
+        if t in ("ols", "ols4", "ols-compatible", "ols_compatible"):
+            from mdl_ontology.providers.ols import OLS4Resolver, OLSCompatibleResolver
+
+            cls = OLSCompatibleResolver if "compatible" in t else OLS4Resolver
+            return cls(
+                source.name,
+                source.layer,
+                source.url or "",
+                apikey_env=source.apikey_env,
+                token_env=source.token_env,
+                ontologies=source.ontologies,
+                prefixes=source.prefixes,
+            )
+        if t in ("ontoportal", "bioportal"):
+            from mdl_ontology.providers.ontoportal import OntoPortalResolver
+
+            return OntoPortalResolver(
+                source.name,
+                source.layer,
+                source.url or "",
+                apikey_env=source.apikey_env,
+                ontologies=source.ontologies,
+                prefixes=source.prefixes,
+            )
+        if t in ("collibra", "collibra-ontology"):
+            from mdl_ontology.providers.collibra import CollibraOntologyDomainsResolver
+
+            return CollibraOntologyDomainsResolver(
+                source.name,
+                source.layer,
+                source.url or "",
+                token_env=source.token_env,
+                domain_types=source.domain_types,
+                attributes=source.attributes,
+                prefixes=source.prefixes,
+            )
+        return None  # unknown remote type: registered but contributes no provider
 
     def register_lock_layers(self, lock) -> None:
         """Register each lock-pinned ontology layer as a local provider over its
@@ -235,4 +284,19 @@ def build_registry(
             lock = None
     if lock is not None and getattr(lock, "ontology_layers", None):
         reg.register_lock_layers(lock)
+    # Cache-on-align bucket (spec §4): terms cached when aligning to a remote resolver
+    # browse/validate offline like any other local vocabulary.
+    from mdl_ontology.lock import CACHE_REL
+
+    resolved_dir = reg.root / CACHE_REL / "resolved"
+    if resolved_dir.exists() and "resolved" not in reg.sources:
+        reg.register(
+            VocabularySource(
+                name="resolved",
+                layer="industry",
+                type="local",
+                path=f"{CACHE_REL}/resolved",
+                format="turtle",
+            )
+        )
     return reg

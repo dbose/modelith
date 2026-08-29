@@ -135,7 +135,18 @@ export interface TermCard {
   prefixed: string;
   label: string;
   definition: string | null;
-  source: string;
+  source: string; // resolver / vocabulary that produced it (== resolved_via)
+  source_kind?: string; // "ontology-class" | "glossary-term"
+}
+
+// One browsable vocabulary a source exposes (two-phase browse, spec §4).
+export interface OntologySource {
+  id: string;
+  name: string;
+  description: string | null;
+  namespace: string | null;
+  count: number | null;
+  layer: string | null;
 }
 
 export interface TermDetail extends TermCard {

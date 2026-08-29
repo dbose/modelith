@@ -24,6 +24,8 @@ Per managed logical entity, the emitter produces one rr:TriplesMap:
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+
 from rdflib import BNode, Graph, Literal, URIRef
 
 from mdl_core.ir import Attribute, LogicalEntity, Model, PhysicalTable
@@ -134,17 +136,96 @@ def _subject_template(
     return f"{base}{le.id}/" + "_".join("{" + c + "}" for c in cols)
 
 
+class UnmappedError(RuntimeError):
+    """R2RML export was asked to run on entities/attributes with no resolved ontology
+    mapping. Carries the missing-mappings report so callers can render it."""
+
+    def __init__(self, report: R2RMLCoverage) -> None:
+        self.report = report
+        super().__init__(report.summary())
+
+
+@dataclass
+class R2RMLCoverage:
+    """What is/isn't mapped for R2RML export (spec §5). An entity is mapped when it has
+    a `term_map.class_iri` or its conceptual entity carries a resolved `ontology_refs`;
+    an attribute when it has a `term_map.predicate_iri` or a resolved `ontology_refs`.
+    Unmapped objects would otherwise get a silently-minted project-base IRI."""
+
+    unmapped_entities: list[str] = field(default_factory=list)  # entity names
+    unmapped_attributes: list[str] = field(default_factory=list)  # "Entity.attr"
+    total_entities: int = 0
+    total_attributes: int = 0
+
+    @property
+    def ok(self) -> bool:
+        return not self.unmapped_entities and not self.unmapped_attributes
+
+    def summary(self) -> str:
+        n = len(self.unmapped_entities) + len(self.unmapped_attributes)
+        return (
+            f"R2RML export: {n} object(s) have no resolved ontology mapping "
+            f"({len(self.unmapped_entities)} entities, "
+            f"{len(self.unmapped_attributes)} attributes). Align them (mdl ontology "
+            f"align) or set a term_map, or pass --allow-unmapped to mint fallback IRIs."
+        )
+
+    def report_lines(self) -> list[str]:
+        lines: list[str] = []
+        if self.unmapped_entities:
+            lines.append("unmapped entities (no class IRI):")
+            lines.extend(f"  - {n}" for n in self.unmapped_entities)
+        if self.unmapped_attributes:
+            lines.append("unmapped attributes (no predicate IRI):")
+            lines.extend(f"  - {n}" for n in self.unmapped_attributes)
+        return lines
+
+
+def r2rml_coverage(model: Model, registry=None) -> R2RMLCoverage:
+    """Report which managed entities/attributes lack a resolved ontology mapping and
+    would fall back to a minted IRI (spec §5 precondition)."""
+    rpt = R2RMLCoverage()
+    for le in model.logical_entities.values():
+        if le.unmanaged:
+            continue
+        rpt.total_entities += 1
+        has_class = bool(le.term_map and le.term_map.class_iri) or bool(
+            _entity_aligned_iri(model, le, registry)
+        )
+        if not has_class:
+            rpt.unmapped_entities.append(le.name)
+        for attr in le.attributes:
+            rpt.total_attributes += 1
+            has_pred = bool(attr.term_map and attr.term_map.predicate_iri) or bool(
+                attr.aligned_uri
+            )
+            if not has_pred:
+                rpt.unmapped_attributes.append(f"{le.name}.{attr.name}")
+    return rpt
+
+
 def export_r2rml(
     model: Model,
     *,
     target: str | None = None,
     registry=None,
+    allow_unmapped: bool = False,
 ) -> Graph:
     """Emit an R2RML mapping (itself an RDF graph) from the logical + physical model.
 
     `target` selects the physical target (dbt target) whose table names to map; when
     None, the first physical table per entity (or the entity name) is used.
+
+    Precondition (spec §5): every managed entity/attribute must carry a resolved
+    ontology mapping (from §1 authoring or §2 alignment). By default this **fails
+    loudly** with a missing-mappings report rather than silently minting fallback IRIs;
+    pass `allow_unmapped=True` to mint them anyway.
     """
+    if not allow_unmapped:
+        cov = r2rml_coverage(model, registry)
+        if not cov.ok:
+            raise UnmappedError(cov)
+
     g = Graph()
     bind(g, registry, r2rml=True)
     base = base_iri_for(model)

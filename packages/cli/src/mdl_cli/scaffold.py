@@ -35,16 +35,33 @@ name: {project_name}
 dbt_target: duckdb_dev
 platform_targets:
   - duckdb_dev
-# Industry vocabularies plug in by declaration — FIBO is only one example.
-# Add ACORD / FHIR / ISO 20022 / GS1 / your own the same way:
+# Ontology sources plug in by declaration. A source is either a local file
+# vocabulary (default type: local) or a remote resolver browsed live for
+# autocomplete/search (types: ols, ols-compatible, ontoportal, collibra). FIBO is
+# only one example — ACORD / FHIR / ISO 20022 / your own plug in the same way.
 # ontology_stack:
-#   - name: fibo
+#   - name: fibo                       # local file vocabulary
 #     layer: industry
 #     format: turtle
 #     path: ontologies/industry/fibo/2024.03
 #     modules: [fnd, fbc]
 #     prefixes:
 #       fibo-fnd-pty-pty: "https://spec.edmcouncil.org/fibo/ontology/FND/Parties/Parties/"
+#   - name: ols                        # public OLS4 (no auth) — live search only
+#     layer: industry
+#     type: ols
+#     url: https://www.ebi.ac.uk/ols4/api
+#   - name: bioportal                  # OntoPortal/BioPortal (needs an API key)
+#     layer: domain
+#     type: ontoportal
+#     url: https://data.bioontology.org
+#     apikey_env: BIOPORTAL_APIKEY
+#   - name: collibra                   # Collibra Ontology Domains (bearer token)
+#     layer: core
+#     type: collibra
+#     url: https://acme.collibra.com
+#     token_env: COLLIBRA_TOKEN
+#     domain_types: [Ontology]
 ontology_stack: []
 naming:
   logical_case: snake
