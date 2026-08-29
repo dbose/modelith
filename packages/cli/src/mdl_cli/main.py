@@ -290,6 +290,18 @@ def reverse(
     interactive: bool = typer.Option(
         False, "--interactive", help="Prompt to accept/reject medium-confidence proposals"
     ),
+    naming: Path = typer.Option(
+        None,
+        "--naming",
+        help="YAML of reverse naming overrides (rollup/staging/surrogate/scd2 prefixes) "
+        "merged with the built-in defaults; also read from out/mdl-project.yaml if present",
+    ),
+    review: bool = typer.Option(
+        True,
+        "--review/--no-review",
+        help="Print a classification summary (what was excluded / marked rollup / "
+        "stripped) so misclassifications on non-standard names are visible",
+    ),
 ) -> None:
     """Reverse-engineer a dbt project into a Modelith model (spec §6).
 
@@ -297,6 +309,13 @@ def reverse(
     The manifest only lists columns documented in .yml; the catalog has the real
     warehouse columns, which is what lets reverse spot surrogate keys and SCD2
     tracking columns to strip.
+
+    If your project uses non-default naming (medallion `gold_`, `f_`/`d_`, non-English),
+    pass --naming <file.yaml> with the conventions to add. Overrides are additive:
+
+        reverse:
+          rollup_prefixes: [gold_, ber_]     # kept: mart_/rpt_/... + these
+          staging_prefixes: [bronze_, silver_]
     """
     # Accept either a manifest.json or a schema.yml (warehouse-free path).
     if project.name.endswith(".yml") or project.name.endswith(".yaml"):
@@ -306,9 +325,12 @@ def reverse(
 
         proj = _rm(project)
 
+    reverse_naming = _load_reverse_naming(naming, out)
+
     ledger = DecisionLedger.load(out)
     result = run_reverse(
-        proj, project_name=name, target=target, ledger=ledger, interactive=interactive
+        proj, project_name=name, target=target, ledger=ledger,
+        interactive=interactive, naming=reverse_naming,
     )
 
     if interactive:
@@ -331,6 +353,80 @@ def reverse(
     for d in result.proposals:
         mark = {"accepted": "✓", "rejected": "✗", "proposed": "?"}[d.verdict.value]
         typer.echo(f"  {mark} [{d.confidence.value}] {d.subject}")
+
+    if review:
+        _render_classification(result)
+
+
+def _render_classification(result) -> None:
+    """Show what reverse classified, grouped by the rule that fired, so an engineer can
+    spot a misfire (a `gold_` mart treated as an entity, a real dim demoted to a rollup,
+    a natural key stripped) without a prompt-per-item wall."""
+    from mdl_reverse import classification_summary
+
+    s = classification_summary(result)
+
+    def _group(title: str, items: list[str], color) -> None:
+        if not items:
+            return
+        typer.secho(f"\n{title} ({len(items)})", fg=color, bold=True)
+        shown = items[:12]
+        typer.echo("  " + ", ".join(shown) + ("  …" if len(items) > 12 else ""))
+
+    typer.secho("\nClassification review", fg=typer.colors.CYAN, bold=True)
+    _group("kept as business entities", s.entities_kept, typer.colors.GREEN)
+    _group("managed but no business key (check these)", s.entities_keyless, typer.colors.YELLOW)
+    _group("marked reporting rollup (unmanaged)", s.rollups_unmanaged, typer.colors.BLUE)
+    _group("excluded as staging/intermediate", s.excluded_staging, typer.colors.BLUE)
+    _group("SCD2 pattern detected", s.scd2_detected, typer.colors.BLUE)
+    _group("Data Vault detected", s.data_vault, typer.colors.BLUE)
+    _group("surrogate keys stripped", s.surrogate_keys_stripped, typer.colors.BLUE)
+    typer.secho(
+        "\nIf a model was mis-classified (non-standard naming), re-run with "
+        "`--naming <file>` to teach reverse your conventions.",
+        fg=typer.colors.CYAN,
+    )
+
+
+def _load_reverse_naming(naming_file: Path | None, out: Path):
+    """Build the reverse naming config from a --naming file and/or the target project's
+    mdl-project.yaml `naming.reverse` block, merged into the built-in defaults. Returns
+    None (defaults) when nothing is declared."""
+    from mdl_core.yaml_io import load_file
+    from mdl_reverse.lifting import ReverseNaming
+
+    overrides: dict = {}
+
+    def _reverse_block(doc: dict) -> dict:
+        # accept either a top-level `reverse:` block or `naming.reverse:`
+        if not isinstance(doc, dict):
+            return {}
+        if isinstance(doc.get("reverse"), dict):
+            return doc["reverse"]
+        nm = doc.get("naming")
+        if isinstance(nm, dict) and isinstance(nm.get("reverse"), dict):
+            return nm["reverse"]
+        return {}
+
+    # existing project config first, explicit --naming file wins on top
+    proj_cfg = out / "mdl-project.yaml"
+    if proj_cfg.exists():
+        try:
+            overrides.update(_reverse_block(load_file(proj_cfg)))
+        except Exception:  # noqa: BLE001 - a bad config must not block reverse
+            pass
+    if naming_file is not None:
+        if not naming_file.exists():
+            typer.secho(f"--naming file not found: {naming_file}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(1)
+        overrides.update(_reverse_block(load_file(naming_file)) or {})
+        if not overrides:
+            typer.secho(
+                f"--naming {naming_file} has no `reverse:` block; using defaults",
+                fg=typer.colors.YELLOW,
+            )
+
+    return ReverseNaming.merged(overrides) if overrides else None
 
 
 def _prompt_proposals(ledger: DecisionLedger, result, out: Path, target: str) -> None:

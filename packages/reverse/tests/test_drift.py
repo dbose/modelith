@@ -71,6 +71,50 @@ def test_type_change_nonnarrowing_still_breaking(model_dir: Path):
     assert changed and changed[0].severity == DriftSeverity.breaking
 
 
+def test_scd2_system_columns_are_cosmetic_not_breaking():
+    """F2 regression: a reversed SCD2 model whose emitter uses valid_from/valid_to must
+    not fail its own drift gate when the source manifest used dbt_valid_from/to. The
+    same tracking column under different vendor prefixes is a cosmetic rename."""
+    from mdl_core.ir import (
+        Attribute,
+        ConceptualEntity,
+        LogicalEntity,
+        Model,
+        ProjectConfig,
+    )
+    from mdl_reverse.manifest import ManifestColumn, ManifestModel, ManifestProjection
+
+    m = Model(ProjectConfig(name="t"))
+    ce = ConceptualEntity(id="01J0000000000000000000CE00", name="Customer")
+    le = LogicalEntity(
+        id="01J0000000000000000000LE00", name="dim_customers", realises=ce.id,
+        pattern="scd2",
+        attributes=[Attribute(id="01J000000000000000000A100", name="customer_id",
+                              role="business_key", domain="bigint")],
+    )
+    m.add(ce)
+    m.add(le)
+
+    # manifest: business col + dbt-snapshot tracking columns
+    man = ManifestProjection(models={
+        "dim_customers": ManifestModel(name="dim_customers", unique_id="model.t.dim_customers",
+            contract_enforced=True,
+            columns={
+                "customer_id": ManifestColumn("customer_id", "BIGINT"),
+                "dbt_valid_from": ManifestColumn("dbt_valid_from", "TIMESTAMP"),
+                "dbt_valid_to": ManifestColumn("dbt_valid_to", "TIMESTAMP"),
+                "dbt_scd_id": ManifestColumn("dbt_scd_id", "VARCHAR"),
+            })
+    })
+    report = compute_drift(m, man, TARGET)
+    kinds = {i.kind for i in report.items}
+    assert DriftKind.system_column_renamed in kinds
+    assert not report.has_breaking, [i.detail for i in report.items if i.severity == DriftSeverity.breaking]
+    # the reconciled pairs are cosmetic
+    renames = [i for i in report.items if i.kind == DriftKind.system_column_renamed]
+    assert all(i.severity == DriftSeverity.cosmetic for i in renames)
+
+
 def test_unmanaged_model(model_dir: Path):
     def add_model(raw):
         raw["nodes"]["model.testproj.stray"] = {

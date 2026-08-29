@@ -12,7 +12,12 @@ from mdl_reverse.drift import (
 )
 from mdl_reverse.ledger import Confidence, Decision, DecisionLedger, Verdict
 from mdl_reverse.manifest import ManifestColumn, ManifestModel, read_manifest
-from mdl_reverse.reverse import ReverseResult, reverse
+from mdl_reverse.reverse import (
+    ClassificationSummary,
+    ReverseResult,
+    classification_summary,
+    reverse,
+)
 from mdl_reverse.schema_reader import read_schema_yml
 
 __all__ = [
@@ -26,6 +31,8 @@ __all__ = [
     "DriftSeverity",
     "reverse",
     "ReverseResult",
+    "ClassificationSummary",
+    "classification_summary",
     "DecisionLedger",
     "Decision",
     "Verdict",

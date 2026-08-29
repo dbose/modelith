@@ -53,6 +53,34 @@ class DriftKind(str, Enum):
     unmanaged_model = "unmanaged_model"
     description_changed = "description_changed"
     contract_disabled = "contract_disabled"
+    system_column_renamed = "system_column_renamed"
+
+
+# SCD2 tracking columns are the same *system* column under different vendor prefixes:
+# Modelith's own emitter uses valid_from / valid_to / is_current / mdl_scd_id /
+# mdl_row_hash; a dbt-snapshot source uses dbt_valid_from / dbt_valid_to /
+# dbt_is_current / dbt_scd_id / dbt_updated_at. Reversing a snapshot table and drifting
+# it against the original manifest otherwise double-counts each as breaking+additive
+# (found dogfooding a reversed 32-entity warehouse). Canonicalise so the pair is a
+# single cosmetic rename, not a breaking drift.
+_SCD2_ROLE = {
+    # valid_from
+    "valid_from": "scd2:valid_from", "dbt_valid_from": "scd2:valid_from",
+    "effective_from": "scd2:valid_from", "start_date": "scd2:valid_from",
+    # valid_to
+    "valid_to": "scd2:valid_to", "dbt_valid_to": "scd2:valid_to",
+    "effective_to": "scd2:valid_to", "end_date": "scd2:valid_to",
+    # is_current
+    "is_current": "scd2:is_current", "dbt_is_current": "scd2:is_current",
+    "current_flag": "scd2:is_current", "is_active": "scd2:is_current",
+    # scd id / hash / updated-at (all interchangeable SCD2 bookkeeping)
+    "mdl_scd_id": "scd2:scd_id", "dbt_scd_id": "scd2:scd_id",
+    "mdl_row_hash": "scd2:row_hash", "dbt_updated_at": "scd2:updated_at",
+}
+
+
+def _scd2_role(col: str) -> str | None:
+    return _SCD2_ROLE.get(col.lower())
 
 
 @dataclass
@@ -179,9 +207,54 @@ def _diff_columns(exp: ExpectedModel, man, report: DriftReport) -> None:
     exp_cols = exp.columns
     man_cols = man.columns
 
-    for col in sorted(set(exp_cols) - set(man_cols)):
-        # In the model, missing from the manifest: the compiled project dropped it.
+    model_only = set(exp_cols) - set(man_cols)
+    manifest_only = set(man_cols) - set(exp_cols)
+
+    # First reconcile SCD2 system columns that only differ by vendor prefix
+    # (valid_from vs dbt_valid_from, ...). Same role on both sides => a single
+    # cosmetic rename, and neither side counts as breaking/additive.
+    man_by_role = {_scd2_role(c): c for c in manifest_only if _scd2_role(c)}
+    for col in sorted(model_only):
+        role = _scd2_role(col)
+        if role and role in man_by_role:
+            man_name = man_by_role.pop(role)
+            model_only.discard(col)
+            manifest_only.discard(man_name)
+            report.add(
+                DriftItem(
+                    severity=DriftSeverity.cosmetic,
+                    kind=DriftKind.system_column_renamed,
+                    model=exp.name,
+                    column=col,
+                    detail=(
+                        f"SCD2 system column {exp.name}.{col} is named {man_name!r} in "
+                        f"the dbt project (same tracking column, different prefix)"
+                    ),
+                    payload={"model_name": col, "manifest_name": man_name},
+                )
+            )
+
+    for col in sorted(model_only):
         ec = exp_cols[col]
+        # An SCD2 system column present in the model (added by the pattern) but not in
+        # the manifest is Modelith bookkeeping the emitter will (re)create on generate,
+        # not a breaking loss of business data. Note it as cosmetic.
+        if _scd2_role(col):
+            report.add(
+                DriftItem(
+                    severity=DriftSeverity.cosmetic,
+                    kind=DriftKind.system_column_renamed,
+                    model=exp.name,
+                    column=col,
+                    detail=(
+                        f"SCD2 system column {exp.name}.{col} is not in the dbt project "
+                        f"yet; the SCD2 pattern adds it on generate"
+                    ),
+                    payload={"data_type": ec.data_type, "system": True},
+                )
+            )
+            continue
+        # In the model, missing from the manifest: the compiled project dropped it.
         report.add(
             DriftItem(
                 severity=DriftSeverity.breaking,
@@ -193,7 +266,7 @@ def _diff_columns(exp: ExpectedModel, man, report: DriftReport) -> None:
             )
         )
 
-    for col in sorted(set(man_cols) - set(exp_cols)):
+    for col in sorted(manifest_only):
         mc = man_cols[col]
         report.add(
             DriftItem(

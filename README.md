@@ -255,9 +255,14 @@ automatically. See [docs/knowledge-graph.md](docs/knowledge-graph.md).
 
 **Reverse engineering.** Point `mdl reverse` at a compiled dbt project (`manifest.json`
 plus `catalog.json`) and get a logical model back. It excludes staging and intermediate
-models, collapses SCD2 column triples into a pattern, strips surrogate keys, detects Data
-Vault structures, and infers relationships from tests and naming, recording every decision
-in a reviewable ledger.
+models, collapses SCD2 column triples into a pattern, strips surrogate keys (keeping a
+conformed dimension's natural key), marks reporting rollups unmanaged rather than minting
+keyless entities, detects Data Vault structures, and infers relationships from tests and
+naming, recording every decision in a reviewable ledger. After the run it prints a
+classification summary (what was excluded, marked a rollup, or stripped) so a
+misclassification on non-standard naming is visible immediately, not discovered at PR
+time; the conventions it keys off are overridable via `mdl reverse --naming <file.yaml>`
+(medallion `gold_`, `f_`/`d_`, non-English). See [Reverse engineering a real warehouse](#reverse-engineering-a-real-warehouse) below.
 
 **Drift detection.** `mdl drift` compares the committed model to a compiled warehouse and
 classifies each difference as breaking, additive, or cosmetic, with a CI gate mode and a
@@ -272,6 +277,80 @@ below.
 **Governance sync.** A neutral governance graph maps to an external catalog through a
 customer-owned Jinja profile. A Collibra adapter ships, along with OpenLineage emission
 and a conformance kit that validates a bespoke mapping in CI.
+
+## Reverse engineering a real warehouse
+
+`mdl reverse` lifts a compiled dbt project into a logical model. On a real, organically
+grown warehouse the heuristics do a lot automatically — but their conventions are
+US-dbt/Kimball by default, so a shop with different naming (medallion `bronze_`/`gold_`,
+`f_`/`d_` facts and dims, non-English) can be misclassified. Two things make that safe:
+a **classification review** that surfaces every decision, and a **`--naming` override**
+that teaches reverse your conventions.
+
+### 1. Reverse and read the review
+
+```bash
+mdl reverse --project transform/target/manifest.json --out model
+```
+
+Reverse excludes staging/intermediate models, detects SCD2 dimensions, strips surrogate
+keys (while keeping a conformed dimension's natural key, e.g. `date_key` on `dim_date`),
+marks keyless reporting rollups (`mart_`/`rpt_`/`agg_`) as unmanaged rather than minting
+junk entities, and infers relationships from tests. Every decision lands in a reviewable
+ledger, and it prints a summary grouped by the rule that fired:
+
+```text
+Classification review
+
+kept as business entities (2)
+  dim_customers, dim_date
+managed but no business key (check these) (1)
+  gold_daily_kpi
+excluded as staging/intermediate (1)
+  stg_raw
+surrogate keys stripped (1)
+  dim_customers.customer_sk
+```
+
+The `managed but no business key (check these)` group is the tell: anything there is
+likely a rollup or view whose naming reverse didn't recognise. (Use `--no-review` to
+silence the summary in scripts.)
+
+### 2. Override the naming conventions
+
+If the review shows misses, point reverse at a YAML of overrides. **Everything is
+additive** — merged with the built-in defaults — so you declare only what's
+non-standard; `stg_`/`dim_`/`mart_`/`_sk`/`valid_from` keep working:
+
+```yaml
+# naming.yaml — reverse conventions for a German medallion warehouse
+reverse:
+  staging_prefixes: [bronze_, silver_]   # raw + cleansed layers -> excluded like stg_/int_
+  rollup_prefixes:  [ber_]               # ber_ (Bericht = report) -> reporting rollup
+  strong_surrogate_suffixes: [_hs]       # this shop hashes keys as _hs, not _sk
+  scd2_from: [gueltig_ab]                # SCD2 validity columns in German
+  scd2_to:   [gueltig_bis]
+```
+
+```bash
+mdl reverse --project transform/target/manifest.json --out model --naming naming.yaml
+```
+
+Now `bronze_`/`silver_` are excluded, `ber_` tables become unmanaged rollups, `_hs`
+columns are stripped as surrogate keys, and `gueltig_ab`/`gueltig_bis` are recognised as
+an SCD2 pair. The overridable lists (all additive):
+
+| Key | What it matches |
+|---|---|
+| `staging_prefixes` / `staging_tags` | models excluded as staging/intermediate |
+| `rollup_prefixes` / `rollup_tags` | keyless reporting rollups kept unmanaged |
+| `strong_surrogate_suffixes` | key suffixes always stripped as surrogates (`_sk`, `_hk`, …) |
+| `surrogate_exact` | exact column names that are surrogate/hash columns |
+| `hash_types` | physical types that mark a `_key` column as a hash surrogate |
+| `scd2_from` / `scd2_to` / `scd2_current` | SCD2 validity column names |
+
+You can also drop the same `reverse:` block into your project's `mdl-project.yaml` under
+`naming:` — re-reverses then pick it up without the flag.
 
 ## Ontology and knowledge graph, step by step
 
@@ -464,7 +543,7 @@ mdl delete entity <name> [--cascade]              remove an object, safely
 mdl validate [--format json]                      schema, refs, ontology, naming
 mdl lint [--fix]                                  naming-standards lint
 mdl generate [--target] [--emit-contract] [...]   emit the dbt project (+ optional targets)
-mdl reverse --project <manifest|schema.yml>       lift a dbt project into a model
+mdl reverse --project <manifest|schema.yml> [--naming <f>]  lift a dbt project into a model
 mdl drift --manifest <m> [--check|--reconcile]    compare model to compiled warehouse
 mdl serve [--read-only]                           web canvas + read API
 mdl glossary [--read-only]                        SME glossary app

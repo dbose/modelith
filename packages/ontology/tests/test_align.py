@@ -11,7 +11,7 @@ from mdl_ontology import (
     export_r2rml,
     r2rml_coverage,
 )
-from mdl_ontology.align import LexicalMatcher
+from mdl_ontology.align import LexicalMatcher, normalize_name
 from mdl_ontology.providers.base import ResolvedTerm
 
 from mdl_core.ids import new_ulid
@@ -107,6 +107,36 @@ def test_lexical_matcher_scores_exact_label_highest():
     weak = m.score("portfolio", _TERMS[2])  # "Party"
     assert exact > weak
     assert 0.0 <= exact <= 1.0
+
+
+# --- reversed-name normalization (F1 friction fix) -------------------------
+
+
+def test_normalize_name_strips_layer_prefix_and_singularizes():
+    assert normalize_name("dim_customers") == "customer"
+    assert normalize_name("fct_order_items") == "order item"
+    assert normalize_name("stg_orders") == "order"
+    assert normalize_name("MartDailyRevenue") == "daily revenue"
+    assert normalize_name("Parties") == "party"
+    # an all-layer-words name keeps its tokens rather than emptying out
+    assert normalize_name("mart") in ("mart", "mart")
+
+
+def test_align_matches_reversed_dim_names():
+    """The F1 case: reversed names like `Customers` (plural, ex-`dim_`) must still
+    match a `Customer` ontology term. Before the normalization fix this returned
+    nothing."""
+    terms = [
+        ResolvedTerm("u:Customer", "fibo:Customer", "Customer", "A buyer.", "fibo"),
+        ResolvedTerm("u:Order", "fibo:Order", "Order", "A purchase request.", "fibo"),
+    ]
+    reg = _StubRegistry(terms)
+    ce_customers = ConceptualEntity(id=new_ulid(), name="Customers")
+    ce_orders = ConceptualEntity(id=new_ulid(), name="Orders")
+    props = align_model(_model(ce_customers, ce_orders), reg, include_attributes=False)
+    by_name = {p.object_name: p.best.prefixed for p in props}
+    assert by_name.get("Customers") == "fibo:Customer"
+    assert by_name.get("Orders") == "fibo:Order"
 
 
 # --- R2RML fail-loud -------------------------------------------------------

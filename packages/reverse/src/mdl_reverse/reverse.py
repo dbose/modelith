@@ -73,6 +73,55 @@ class ReverseResult:
         return len(self.model.logical_entities)
 
 
+@dataclass
+class ClassificationSummary:
+    """What reverse decided, grouped by the rule that fired — so a misclassification
+    on a non-standard name (`gold_` treated as an entity, a real dim demoted to a
+    rollup) is visible at reverse time, not discovered later at PR review."""
+
+    excluded_staging: list[str] = field(default_factory=list)
+    rollups_unmanaged: list[str] = field(default_factory=list)
+    scd2_detected: list[str] = field(default_factory=list)
+    data_vault: list[str] = field(default_factory=list)
+    surrogate_keys_stripped: list[str] = field(default_factory=list)  # "entity.col"
+    entities_kept: list[str] = field(default_factory=list)  # governed business entities
+    entities_keyless: list[str] = field(default_factory=list)  # managed but no BK
+
+    def line_count(self) -> int:
+        return sum(
+            len(v) for v in (
+                self.excluded_staging, self.rollups_unmanaged, self.scd2_detected,
+                self.data_vault, self.surrogate_keys_stripped,
+            )
+        )
+
+
+def classification_summary(result: ReverseResult) -> ClassificationSummary:
+    """Derive the per-rule classification summary from a ReverseResult."""
+    s = ClassificationSummary(excluded_staging=sorted(result.excluded))
+    for d in result.proposals:
+        ev = d.evidence or {}
+        if d.kind == "reporting_rollup":
+            s.rollups_unmanaged.append(ev.get("model", d.subject))
+        elif d.kind == "scd2_pattern":
+            s.scd2_detected.append(ev.get("model", d.subject))
+        elif d.kind == "data_vault_pattern":
+            s.data_vault.append(ev.get("model", d.subject))
+        elif d.kind == "strip_column" and ev.get("reason") == "surrogate_key":
+            s.surrogate_keys_stripped.append(
+                f"{ev.get('model', '?')}.{ev.get('column', '?')}"
+            )
+    for le in result.model.logical_entities.values():
+        if le.unmanaged:
+            continue
+        has_bk = any(a.role == "business_key" for a in le.attributes)
+        (s.entities_kept if has_bk else s.entities_keyless).append(le.name)
+    for lst in (s.rollups_unmanaged, s.scd2_detected, s.data_vault,
+                s.surrogate_keys_stripped, s.entities_kept, s.entities_keyless):
+        lst.sort()
+    return s
+
+
 def reverse(
     manifest: ManifestProjection,
     *,
@@ -81,12 +130,18 @@ def reverse(
     ledger: DecisionLedger | None = None,
     interactive: bool = False,
     auto_accept_high: bool = True,
+    naming: lifting.ReverseNaming | None = None,
 ) -> ReverseResult:
     """Lift a manifest into IR. `auto_accept_high` accepts high-confidence signals
     (FK constraints, relationships tests) by default per §6.2; medium signals are
     proposed only. `interactive=False` (the default, CI-safe) records proposals
-    but does not prompt."""
+    but does not prompt.
+
+    `naming` overrides the built-in reverse conventions (rollup/staging/surrogate/scd2
+    prefixes) so divergent-named projects (medallion `gold_`, `f_`/`d_`, non-English)
+    are handled; None uses the defaults."""
     ledger = ledger or DecisionLedger()
+    naming = naming or lifting.DEFAULT_NAMING
     config = ProjectConfig(
         name=project_name,
         dbt_target=target,
@@ -99,7 +154,7 @@ def reverse(
     # 1) Select business models (exclude staging/intermediate).
     business: dict[str, ManifestModel] = {}
     for name, mm in manifest.models.items():
-        if lifting.is_staging(name, mm.tags):
+        if lifting.is_staging(name, mm.tags, naming=naming):
             excluded.append(name)
             continue
         business[name] = mm
@@ -110,7 +165,7 @@ def reverse(
     le_by_name: dict[str, LogicalEntity] = {}
     for name in sorted(business):
         mm = business[name]
-        le, ce, entity_proposals = _lift_entity(mm, name, ledger, auto_accept_high)
+        le, ce, entity_proposals = _lift_entity(mm, name, ledger, auto_accept_high, naming)
         model.add(ce)
         model.add(le)
         le_by_name[name] = le
@@ -132,6 +187,7 @@ def _lift_entity(
     name: str,
     ledger: DecisionLedger,
     auto_accept_high: bool,
+    naming: lifting.ReverseNaming = lifting.DEFAULT_NAMING,
 ) -> tuple[LogicalEntity, ConceptualEntity, list[Decision]]:
     proposals: list[Decision] = []
     col_names = list(mm.columns)
@@ -141,7 +197,7 @@ def _lift_entity(
     le_ulid = le_ulid or new_ulid()
 
     # SCD2 detection -> pattern + strip tracking columns from the logical view.
-    scd = lifting.detect_scd2(col_names)
+    scd = lifting.detect_scd2(col_names, naming)
     dv = lifting.detect_data_vault(name, col_names)
     pattern = None
     if scd.is_scd2:
@@ -171,13 +227,21 @@ def _lift_entity(
             proposals.append(d)
 
     scd_tracking = {c.lower() for c in scd.tracking_cols}
-    bks = {c.lower() for c in lifting.business_key_candidates(name, col_names)}
+    col_types = {cn: c.data_type for cn, c in mm.columns.items() if c.data_type}
+    bks = {
+        c.lower()
+        for c in lifting.business_key_candidates(name, col_names, col_types, naming)
+    }
 
     attributes: list[Attribute] = []
     for col_name, col in mm.columns.items():
         cl = col_name.lower()
-        # Strip surrogate keys and SCD2 tracking columns from the logical entity.
-        if lifting.is_surrogate_key(col_name):
+        # Strip surrogate keys and SCD2 tracking columns from the logical entity. A
+        # `_key` that is the dimension's natural key (e.g. date_key on dim_date) is
+        # kept — is_surrogate_key uses the entity name + type to decide.
+        if lifting.is_surrogate_key(
+            col_name, entity=name, data_type=col.data_type, naming=naming
+        ):
             _propose_strip(name, col_name, "surrogate_key", ledger, proposals, auto_accept_high)
             continue
         if cl in scd_tracking:
@@ -195,6 +259,23 @@ def _lift_entity(
             )
         )
 
+    # A reporting rollup (mart_/rpt_/agg_/kpi_ with no business key) is kept for
+    # lineage but marked unmanaged, so it doesn't pollute the governed model as a
+    # keyless "business entity". The engineer can promote it if it IS one.
+    is_rollup = lifting.is_reporting_rollup(name, col_names, col_types, mm.tags, naming)
+    if is_rollup:
+        d = Decision(
+            kind="reporting_rollup",
+            signal="rollup_naming",
+            confidence=Confidence.medium_high,
+            subject=f"model {name!r} looks like a reporting rollup; kept unmanaged",
+            evidence={"model": name, "reason": "rollup name + no business key"},
+            verdict=Verdict.accepted if auto_accept_high else Verdict.proposed,
+        )
+        if ledger.should_propose(d):
+            ledger.record(d)
+            proposals.append(d)
+
     ce_ulid = new_ulid()
     ce = ConceptualEntity(
         id=ce_ulid,
@@ -207,6 +288,7 @@ def _lift_entity(
         realises=ce_ulid,
         attributes=attributes,
         pattern=pattern,
+        unmanaged=True if is_rollup else None,
     )
     return le, ce, proposals
 

@@ -21,11 +21,55 @@ touching the pass.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Protocol
 
 from mdl_core.ir import Attribute, ConceptualEntity, LogicalEntity, Model, Term
 from mdl_ontology.providers.base import ResolvedTerm, score
+
+# dbt layer / modeling prefixes that carry no business meaning — stripped before
+# matching so `dim_customers` / `fct_orders` / `mart_kpi` match the concept, not the
+# layer. Order matters only for readability; matching is set membership.
+_LAYER_TOKENS = frozenset(
+    {"dim", "fct", "fact", "stg", "stage", "staging", "int", "intermediate",
+     "mart", "marts", "rpt", "report", "reporting", "agg", "snap", "snapshot",
+     "base", "ref", "raw", "src", "source", "tmp", "wrk", "work"}
+)
+
+
+def _singularize(word: str) -> str:
+    """Cheap English singularizer — enough to turn Customers -> Customer,
+    Parties -> Party, Addresses -> Address. Not linguistically complete."""
+    w = word
+    if len(w) > 4 and w.lower().endswith("ies"):
+        return w[:-3] + "y"
+    if len(w) > 4 and w.lower().endswith(("ses", "xes", "zes", "ches", "shes")):
+        return w[:-2]
+    if len(w) > 3 and w.lower().endswith("s") and not w.lower().endswith("ss"):
+        return w[:-1]
+    return w
+
+
+def _tokenize(name: str) -> list[str]:
+    """Split a snake_case / camelCase / PascalCase name into lowercase word tokens."""
+    # snake / kebab first, then camel/pascal within each part
+    parts = re.split(r"[_\-\s]+", name)
+    tokens: list[str] = []
+    for p in parts:
+        tokens.extend(re.findall(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z]+|[A-Z]+|\d+", p) or [p])
+    return [t.lower() for t in tokens if t]
+
+
+def normalize_name(name: str) -> str:
+    """Strip modeling-layer prefixes, singularize, and rejoin — the business term a
+    reversed entity/attribute name actually denotes. `dim_customers` -> `customer`,
+    `fct_order_items` -> `order item`, `MartDailyRevenue` -> `daily revenue`."""
+    toks = [t for t in _tokenize(name) if t not in _LAYER_TOKENS]
+    if not toks:  # name was ALL layer words (e.g. "mart") — keep the original tokens
+        toks = _tokenize(name)
+    toks = [_singularize(t) for t in toks]
+    return " ".join(toks)
 
 
 class Matcher(Protocol):
@@ -90,32 +134,54 @@ def _confidence_band(c: float) -> str:
 
 
 def _query_for(name: str, definition: str | None, synonyms: list[str]) -> str:
-    """Build the match query from the object's own text. Name carries the most
-    signal; definition/synonyms broaden recall."""
-    parts = [name]
+    """The scoring query: the normalized business name plus synonyms and definition
+    keywords, so a term whose label differs from the raw name still matches."""
+    parts = [normalize_name(name)]
     parts.extend(synonyms or [])
-    return " ".join(parts).strip()
+    if definition:
+        parts.append(definition)
+    return " ".join(p for p in parts if p).strip()
+
+
+def _search_terms(name: str, synonyms: list[str]) -> list[str]:
+    """The retrieval queries sent to the registry — the normalized name and any
+    synonyms, tried independently so a resolver's substring search finds candidates
+    it would miss on the raw `dim_*` name."""
+    terms: list[str] = []
+    for t in [normalize_name(name), name, *(synonyms or [])]:
+        t = (t or "").strip()
+        if t and t not in terms:
+            terms.append(t)
+    return terms
 
 
 def _rank(
-    query: str,
+    name: str,
+    definition: str | None,
+    synonyms: list[str],
     registry,
     matcher: Matcher,
     *,
     limit: int,
     threshold: float,
 ) -> list[Candidate]:
-    try:
-        hits = registry.search(query, limit=max(limit * 3, 10))
-    except Exception:  # noqa: BLE001 - a failing resolver yields no candidates
-        return []
-    scored: list[Candidate] = []
-    seen: set[str] = set()
-    for h in hits:
-        if h.iri in seen:
+    hits = []
+    seen_iri: set[str] = set()
+    for q in _search_terms(name, synonyms):
+        try:
+            for h in registry.search(q, limit=max(limit * 3, 10)):
+                if h.iri not in seen_iri:
+                    seen_iri.add(h.iri)
+                    hits.append(h)
+        except Exception:  # noqa: BLE001 - a failing resolver yields no candidates
             continue
-        seen.add(h.iri)
-        conf = matcher.score(query, h)
+    norm = normalize_name(name)
+    query = _query_for(name, definition, synonyms)
+    scored: list[Candidate] = []
+    for h in hits:
+        # score on the normalized name (captures an exact/near label match) and on the
+        # fuller query (recall via synonyms/definition); keep the stronger signal.
+        conf = max(matcher.score(norm, h), matcher.score(query, h) * 0.9)
         if conf < threshold:
             continue
         scored.append(
@@ -157,11 +223,13 @@ def align_model(
     def _consider(obj, kind: str, defn: str | None, synonyms: list[str]) -> None:
         if skip_aligned and _has_alignment(obj):
             return
-        query = _query_for(obj.name, defn, synonyms)
-        cands = _rank(query, registry, matcher, limit=limit, threshold=threshold)
+        cands = _rank(
+            obj.name, defn, synonyms, registry, matcher,
+            limit=limit, threshold=threshold,
+        )
         if not cands:
             return
-        matched = "name+synonyms" if synonyms else "name"
+        matched = "name+definition" if defn else ("name+synonyms" if synonyms else "name")
         proposals.append(AlignmentProposal(obj.id, kind, obj.name, matched, cands))
 
     for ce in model.conceptual_entities.values():
@@ -188,6 +256,7 @@ __all__ = [
     "AlignmentProposal",
     "align_model",
     "confidence_band",
+    "normalize_name",
 ]
 
 
