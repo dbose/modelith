@@ -279,14 +279,15 @@ def _check_ontology_layers(model: Model, diags: DiagnosticSet) -> None:
         *model.terms.values(),
     ]
     for obj in objs:
-        ont = obj.ontology
-        if ont is None or ont.layer is None:
+        layer = obj.ontology_layer
+        if layer is None:
             continue
-        own_rank = _LAYER_ORDER.get(ont.layer)
+        own_rank = _LAYER_ORDER.get(layer)
         if own_rank is None:
             continue
+        has_alignment = any(r.uri for r in obj.ontology_refs)
         # `core` term must have an industry alignment or explicit exemption (rule 3).
-        if ont.layer == "core" and not ont.aligns_to and not ont.no_industry_equivalent:
+        if layer == "core" and not has_alignment and not obj.no_industry_equivalent:
             diags.add(
                 Diagnostic(
                     code="MDL-E202",
@@ -302,13 +303,13 @@ def _check_ontology_layers(model: Model, diags: DiagnosticSet) -> None:
         # (that needs the ontology package, M4). We validate the intra-model case
         # where alignment carries a declared target layer via naming convention is
         # deferred; for now enforce that non-industry layers declare an alignment.
-        if own_rank > 0 and not ont.aligns_to and not ont.no_industry_equivalent:
+        if own_rank > 0 and not has_alignment and not obj.no_industry_equivalent:
             diags.add(
                 Diagnostic(
                     code="MDL-W203",
                     severity=Severity.warning,
                     message=(
-                        f"{obj.kind.value} {obj.name!r} in layer {ont.layer!r} declares "
+                        f"{obj.kind.value} {obj.name!r} in layer {layer!r} declares "
                         f"no upward alignment"
                     ),
                     path=obj.id,
@@ -334,15 +335,17 @@ def _check_proposed_alignments(model: Model, diags: DiagnosticSet) -> None:
     them to accepted (collaboration model §5.1)."""
     objs = [*model.conceptual_entities.values(), *model.terms.values()]
     for o in objs:
-        if o.ontology and o.ontology.status == "proposed":
-            diags.add(
-                Diagnostic(
-                    code="MDL-W206",
-                    severity=Severity.warning,
-                    message=(
-                        f"{o.name!r}: ontology alignment to {o.ontology.aligns_to!r} is "
-                        f"proposed — awaiting architect promotion (mdl ontology promote)"
-                    ),
-                    path=o.id,
+        for ref in o.ontology_refs:
+            if ref.status == "proposed" and ref.uri:
+                diags.add(
+                    Diagnostic(
+                        code="MDL-W206",
+                        severity=Severity.warning,
+                        message=(
+                            f"{o.name!r}: ontology alignment to {ref.uri!r} is "
+                            f"proposed — awaiting architect promotion "
+                            f"(mdl ontology promote)"
+                        ),
+                        path=o.id,
+                    )
                 )
-            )

@@ -103,8 +103,11 @@ def test_set_alignment_and_clear(model_dir):
     )
     repo = ModelRepo.load(model_dir)
     ce = repo.model.conceptual_entities[repo.model.logical_entities[eid].realises]
-    assert ce.ontology.aligns_to == "fibo-fnd-agr-ctr:Contract"
-    assert ce.ontology.layer == "core"
+    assert ce.ontology_layer == "core"
+    assert ce.aligned_uri == "fibo-fnd-agr-ctr:Contract"
+    ref = ce.primary_ref
+    assert ref.uri == "fibo-fnd-agr-ctr:Contract"
+    assert ref.predicate == "skos:exactMatch"
 
 
 def test_set_term_map_on_entity_and_clear(model_dir):
@@ -148,7 +151,7 @@ def test_bad_subject_template_column_flagged(model_dir):
     apply_command(model_dir, "clear_alignment", {"id": eid})
     repo = ModelRepo.load(model_dir)
     ce = repo.model.conceptual_entities[repo.model.logical_entities[eid].realises]
-    assert ce.ontology is None or ce.ontology.aligns_to is None
+    assert ce.aligned_uri is None
 
 
 def test_relationship_lifecycle(model_dir):

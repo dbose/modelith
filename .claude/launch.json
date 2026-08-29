@@ -10,7 +10,7 @@
     {
       "name": "ibor",
       "runtimeExecutable": "uv",
-      "runtimeArgs": ["run", "mdl", "serve", "-m", "/tmp/pension-ibor/model", "--port", "4802"],
+      "runtimeArgs": ["run", "mdl", "serve", "-m", "demo/ibor/model", "--port", "4802"],
       "port": 4802
     }
   ]

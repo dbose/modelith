@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { AttributeRow, Entity, ModelDoc, Relationship } from "./types";
+import type { AttributeRow, Entity, ModelDoc, OntologyRef, Relationship } from "./types";
 
 type Exec = (op: string, payload: Record<string, unknown>) => Promise<unknown>;
 
@@ -93,41 +93,37 @@ export function Inspector({
           {!readOnly && (
             <span className="h3-actions">
               <button className="mini-btn" onClick={() => onAlign(entity)}>
-                {c?.ontology?.aligns_to ? "Re-align…" : "Align…"}
+                {(c?.ontology_refs?.length ?? 0) > 0 ? "Add / re-align…" : "Align…"}
               </button>
-              {c?.ontology?.aligns_to && (
+              {(c?.ontology_refs?.length ?? 0) > 0 && (
                 <button
                   className="mini-btn danger"
                   onClick={() => exec("clear_alignment", { id: entity.id })}
+                  title="Clear every alignment on this object"
                 >
-                  Clear
+                  Clear all
                 </button>
               )}
             </span>
           )}
         </h3>
-        {c?.ontology?.aligns_to ? (
-          <>
-            <div className="kv">
-              <span className="k">aligns to</span>
-              <code className="v">{c.ontology.aligns_to}</code>
-            </div>
-            {c.ontology.alignment && (
-              <div className="kv">
-                <span className="k">predicate</span>
-                <code className="v">{c.ontology.alignment}</code>
-              </div>
+        {c?.ontology_layer && (
+          <div className="kv">
+            <span className="k">layer</span>
+            <span className={`chip layer-${c.ontology_layer}`}>{c.ontology_layer}</span>
+            {c.no_industry_equivalent && (
+              <span className="chip" title="reviewed: no industry equivalent">
+                no industry equivalent
+              </span>
             )}
-            {c.ontology.layer && (
-              <div className="kv">
-                <span className="k">layer</span>
-                <span className={`chip layer-${c.ontology.layer}`}>{c.ontology.layer}</span>
-              </div>
-            )}
-          </>
-        ) : (
-          <p className="empty-hint">not aligned to any ontology term</p>
+          </div>
         )}
+        <OntologyRefs
+          entityId={entity.id}
+          refs={c?.ontology_refs ?? []}
+          readOnly={readOnly}
+          exec={exec}
+        />
       </section>
 
       <section>
@@ -309,6 +305,77 @@ export function Inspector({
 }
 
 // --- widgets -----------------------------------------------------------------
+
+/** The full ontology_refs list (spec §1): each binding shown with its predicate,
+ * term IRI, resolved-in layer, source and a proposed/accepted state. A proposed ref
+ * can be promoted (architect action, §5.1) or cleared individually. */
+function OntologyRefs({
+  entityId,
+  refs,
+  readOnly,
+  exec,
+}: {
+  entityId: string;
+  refs: OntologyRef[];
+  readOnly: boolean;
+  exec: Exec;
+}) {
+  const withUri = refs.filter((r) => r.uri);
+  if (withUri.length === 0) {
+    return <p className="empty-hint">not aligned to any ontology term</p>;
+  }
+  return (
+    <div className="ref-list">
+      {withUri.map((r, i) => {
+        const proposed = r.status === "proposed";
+        return (
+          <div key={`${r.uri}-${i}`} className={"ref-card" + (proposed ? " proposed" : "")}>
+            <div className="ref-head">
+              <code className="ref-uri" title={r.uri ?? undefined}>
+                {r.uri}
+              </code>
+              <span className={"ref-status " + (proposed ? "proposed" : "accepted")}>
+                {proposed ? "proposed" : "accepted"}
+              </span>
+            </div>
+            <div className="ref-meta">
+              {r.predicate && <span className="ref-pill">{r.predicate}</span>}
+              {r.layer && <span className={`chip layer-${r.layer}`}>{r.layer}</span>}
+              {r.resolved_via && (
+                <span className="ref-via" title="resolver that found this term">
+                  via {r.resolved_via}
+                </span>
+              )}
+              {typeof r.confidence === "number" && (
+                <span className="ref-via">conf {Math.round(r.confidence * 100)}%</span>
+              )}
+            </div>
+            {!readOnly && (
+              <div className="ref-actions">
+                {proposed && (
+                  <button
+                    className="mini-btn"
+                    onClick={() => exec("promote_alignment", { id: entityId, uri: r.uri })}
+                    title="Accept this proposed alignment (architect action)"
+                  >
+                    Promote
+                  </button>
+                )}
+                <button
+                  className="mini-btn danger"
+                  onClick={() => exec("clear_alignment", { id: entityId, uri: r.uri })}
+                  title="Remove this alignment"
+                >
+                  Remove
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 function EditableText({
   value,

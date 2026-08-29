@@ -559,6 +559,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pygls" },
     { name = "pyshacl" },
+    { name = "python-multipart" },
     { name = "rdflib" },
     { name = "ruamel-yaml" },
     { name = "typer" },
@@ -582,6 +583,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2.6" },
     { name = "pygls", specifier = ">=2.0" },
     { name = "pyshacl", specifier = ">=0.25" },
+    { name = "python-multipart", specifier = ">=0.0.18" },
     { name = "rdflib", specifier = ">=7.0" },
     { name = "ruamel-yaml", specifier = ">=0.18" },
     { name = "typer", specifier = ">=0.12" },
@@ -697,6 +699,7 @@ name = "modelith-ontology"
 version = "0.1.0"
 source = { editable = "packages/ontology" }
 dependencies = [
+    { name = "httpx" },
     { name = "modelith-core" },
     { name = "pyshacl" },
     { name = "rdflib" },
@@ -704,6 +707,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "httpx", specifier = ">=0.27" },
     { name = "modelith-core", editable = "packages/core" },
     { name = "pyshacl", specifier = ">=0.25" },
     { name = "rdflib", specifier = ">=7.0" },
@@ -733,6 +737,7 @@ dependencies = [
     { name = "modelith-core" },
     { name = "modelith-ontology" },
     { name = "modelith-reverse" },
+    { name = "python-multipart" },
     { name = "uvicorn" },
 ]
 
@@ -742,6 +747,7 @@ requires-dist = [
     { name = "modelith-core", editable = "packages/core" },
     { name = "modelith-ontology", editable = "packages/ontology" },
     { name = "modelith-reverse", editable = "packages/reverse" },
+    { name = "python-multipart", specifier = ">=0.0.18" },
     { name = "uvicorn", specifier = ">=0.29" },
 ]
 
@@ -980,6 +986,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/b1/51/a849f96e117386044471c8ec2bd6cfebacda285da9525c9106aeb28da671/pytest_cov-7.1.0.tar.gz", hash = "sha256:30674f2b5f6351aa09702a9c8c364f6a01c27aae0c1366ae8016160d1efc56b2", size = 55592 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9d/7a/d968e294073affff457b041c2be9868a40c1c71f4a35fcc1e45e5493067b/pytest_cov-7.1.0-py3-none-any.whl", hash = "sha256:a0461110b7865f9a271aa1b51e516c9a95de9d696734a2f71e3e78f46e1d4678", size = 22876 },
+]
+
+[[package]]
+name = "python-multipart"
+version = "0.0.32"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/5b/42/55c32bb9b12693c092ad250a0e82edb5b31ddeda6eb772de5f308b3804ad/python_multipart-0.0.32.tar.gz", hash = "sha256:be54b7f3fa167bb83e4fcd936b887b708f4e57fe75911c02aebf53efaf8d938e", size = 46881 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e1/04/e8135ebd1ad02c56ec633277529b2602ff99ff634be76cdba5744cf554fd/python_multipart-0.0.32-py3-none-any.whl", hash = "sha256:ff6d3f776f16878c894e52e107296ffc890e913c611b1a4ec6c44e2821fe2e23", size = 30042 },
 ]
 
 [[package]]

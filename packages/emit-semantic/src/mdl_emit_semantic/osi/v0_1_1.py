@@ -125,11 +125,12 @@ def _dataset(model: Model, le: LogicalEntity, targets, pt_by_target) -> dict:
 def _attr_context(attr) -> tuple[dict, dict]:
     ai: dict = {}
     ext: dict = {}
-    if attr.ontology and attr.ontology.aligns_to:
-        ai["instructions"] = f"Aligned to ontology term {attr.ontology.aligns_to}"
-        ext = {"vendor_name": VENDOR, "ontology_iri": attr.ontology.aligns_to}
-        if attr.ontology.alignment:
-            ext["ontology_alignment"] = attr.ontology.alignment
+    ref = attr.primary_ref
+    if ref and ref.uri:
+        ai["instructions"] = f"Aligned to ontology term {ref.uri}"
+        ext = {"vendor_name": VENDOR, "ontology_iri": ref.uri}
+        if ref.predicate:
+            ext["ontology_alignment"] = ref.predicate
     return ai, ext
 
 
@@ -142,10 +143,10 @@ def _entity_context(model: Model, le: LogicalEntity) -> tuple[dict, dict]:
             ai["instructions"] = ce.definition.strip()
         if ce.synonyms:
             ai["synonyms"] = list(ce.synonyms)
-        if ce.ontology and ce.ontology.aligns_to:
-            ext["ontology_iri"] = ce.ontology.aligns_to
-            if ce.ontology.layer:
-                ext["ontology_layer"] = ce.ontology.layer
+        if ce.aligned_uri:
+            ext["ontology_iri"] = ce.aligned_uri
+            if ce.ontology_layer:
+                ext["ontology_layer"] = ce.ontology_layer
         ext["glossary_term"] = ce.name
     return ai, ext
 

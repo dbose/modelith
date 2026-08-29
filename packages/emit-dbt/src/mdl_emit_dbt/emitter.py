@@ -347,8 +347,8 @@ class DbtEmitter:
                 if constraints:
                     col["constraints"] = constraints
                 col_meta = {"mdl_ulid": attr.id}
-                if attr.ontology and attr.ontology.aligns_to:
-                    col_meta["ontology_iri"] = attr.ontology.aligns_to
+                if attr.aligned_uri:
+                    col_meta["ontology_iri"] = attr.aligned_uri
                 if attr.udp:  # user-defined properties flow into dbt meta
                     col_meta.update(attr.udp)
                 col["meta"] = col_meta
@@ -393,8 +393,8 @@ class DbtEmitter:
                 # ontology, stewardship, UDPs) -> include it in the fingerprint.
                 fp_objs.append(ce)
                 meta["glossary_term"] = ce.name
-                if ce.ontology and ce.ontology.aligns_to:
-                    meta["ontology_iri"] = ce.ontology.aligns_to
+                if ce.aligned_uri:
+                    meta["ontology_iri"] = ce.aligned_uri
                 if ce.stewardship:
                     if ce.stewardship.owner:
                         meta["owner"] = ce.stewardship.owner

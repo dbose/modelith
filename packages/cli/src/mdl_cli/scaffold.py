@@ -11,6 +11,11 @@ _GITIGNORE = """\
 target/
 dbt_packages/
 logs/
+# Fetched ontology layers — pinned by .mdl/lock.yaml, not committed (spec §3).
+# Run `mdl ontology fetch` to repopulate. Like node_modules to package-lock.json.
+.mdl/ontology-cache/
+# Reverse/generation working state (the committed lock/decisions stay tracked).
+.mdl/state/
 """
 
 

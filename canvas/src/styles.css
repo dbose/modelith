@@ -329,6 +329,27 @@ div.stack-term { cursor: default; }
 .align-arrow { font-size: 10px; color: var(--accent); white-space: nowrap; }
 .align-arrow.unresolved { color: var(--warn); }
 .align-arrow.missing { color: var(--err); font-style: italic; }
+.align-arrow.proposed { color: var(--warn); font-style: italic; }
+
+/* ontology_refs list (Inspector, spec §1) */
+.ref-list { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+.ref-card {
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 6px 8px; background: var(--bg);
+}
+.ref-card.proposed { border-color: var(--warn); }
+.ref-head { display: flex; align-items: baseline; gap: 8px; justify-content: space-between; }
+.ref-uri { font-family: var(--mono); font-size: 12px; word-break: break-all; }
+.ref-status { font-size: 9px; text-transform: uppercase; letter-spacing: 0.04em; }
+.ref-status.accepted { color: var(--accent); }
+.ref-status.proposed { color: var(--warn); }
+.ref-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 5px; }
+.ref-pill {
+  font-size: 10px; padding: 1px 6px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent);
+}
+.ref-via { font-size: 10px; color: var(--text-dim); }
+.ref-actions { display: flex; gap: 6px; margin-top: 6px; }
 
 /* changes view */
 .dirty-list { list-style: none; padding: 0; margin: 0 0 10px; font-size: 12px; }

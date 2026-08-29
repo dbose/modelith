@@ -605,6 +605,146 @@ def ontology_vendor(
     )
 
 
+@ontology_app.command("add")
+def ontology_add(
+    file: Path = typer.Argument(..., help="A local .ttl / .jsonld / .owl ontology file"),
+    layer: str = typer.Option("core", "--layer", help="industry|core|domain|specialised"),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    prefix: str = typer.Option(None, "--prefix", help="Prefix to register (e.g. acme-core)"),
+    prefix_iri: str = typer.Option(
+        None, "--prefix-iri", help="Namespace IRI for the prefix (inferred if omitted)"
+    ),
+    name: str = typer.Option(None, "--name", help="Source name (defaults to the file stem)"),
+) -> None:
+    """Vendor a private ontology file into the repo and wire it into ontology_stack.
+
+    Copies the file to ontologies/<layer>/<name>.<ext> and appends a `local` source
+    to mdl-project.yaml, so `mdl serve`/`mdl ontology search` browse it immediately."""
+    from mdl_ontology import save_ontology_upload
+
+    if not file.exists():
+        typer.secho(f"no such file: {file}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+    try:
+        result = save_ontology_upload(
+            model_dir,
+            filename=file.name,
+            content=file.read_bytes(),
+            layer=layer,
+            prefix=prefix,
+            prefix_iri=prefix_iri,
+            name=name,
+        )
+    except ValueError as e:
+        typer.secho(str(e), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from e
+    typer.secho(
+        f"added {result['name']} ({result['term_count']} terms) as {result['layer']} "
+        f"-> {result['path']}; wired into mdl-project.yaml",
+        fg=typer.colors.GREEN,
+    )
+
+
+@ontology_app.command("lock")
+def ontology_lock(
+    layer: str = typer.Argument(..., help="Layer name (industry|core|domain|...)"),
+    source: str = typer.Argument(..., help="Artifact URL/path or SPARQL endpoint"),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    mode: str = typer.Option(
+        "artifact", "--mode", help="artifact | endpoint_snapshot"
+    ),
+    version: str = typer.Option(None, "--version", help="Artifact version label"),
+    snapshot_tag: str = typer.Option(
+        None, "--snapshot-tag", help="Endpoint snapshot point-in-time tag"
+    ),
+    fmt: str = typer.Option("turtle", "--format", help="RDF serialization"),
+    prefix: str = typer.Option(
+        None, "--prefix", help="Prefix this layer resolves (e.g. fibo-fnd-pty-pty)"
+    ),
+    prefix_iri: str = typer.Option(
+        None, "--prefix-iri", help="Namespace IRI the prefix expands to"
+    ),
+) -> None:
+    """Pin an ontology layer in .mdl/lock.yaml (spec §3): fetch it once, record its
+    sha256, and cache it under .mdl/ontology-cache/. No ontology file is committed —
+    the lock pins the content, `mdl ontology fetch` reproduces it.
+
+    Pass --prefix/--prefix-iri so the layer's prefixed alignments (e.g.
+    fibo-fnd-pty-pty:PartyInRole) resolve offline against the fetched cache."""
+    from mdl_ontology import LOCK_MODES, Lock, compute_lock
+
+    if mode not in LOCK_MODES:
+        typer.secho(
+            f"bad --mode {mode!r}; expected one of {', '.join(LOCK_MODES)}",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(1)
+    if bool(prefix) != bool(prefix_iri):
+        typer.secho(
+            "pass --prefix and --prefix-iri together, or neither",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(1)
+    try:
+        pin = compute_lock(
+            model_dir,
+            layer,
+            mode,
+            source,
+            version=version,
+            snapshot_tag=snapshot_tag,
+            fmt=fmt,
+        )
+    except Exception as e:  # noqa: BLE001 - surface any fetch failure cleanly
+        typer.secho(f"lock failed: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from e
+    if prefix and prefix_iri:
+        pin.prefixes[prefix] = prefix_iri
+    lock = Lock.load(model_dir)
+    lock.ontology_layers[layer] = pin
+    lock.save(model_dir)
+    typer.secho(
+        f"pinned {layer} ({mode}) sha256:{pin.sha256[:12]}… in .mdl/lock.yaml; "
+        f"cached under .mdl/ontology-cache/{layer}/",
+        fg=typer.colors.GREEN,
+    )
+
+
+@ontology_app.command("fetch")
+def ontology_fetch(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    no_verify: bool = typer.Option(
+        False, "--no-verify", help="Skip sha256 verification (not recommended)"
+    ),
+) -> None:
+    """Fetch + hash-verify every locked ontology layer into .mdl/ontology-cache/
+    (spec §3). Fail-closed on a hash mismatch, like `dbt deps` / `npm ci`."""
+    from mdl_ontology import FetchError, Lock, fetch_all
+
+    lock = Lock.load(model_dir)
+    if not lock.ontology_layers:
+        typer.secho(
+            "no ontology layers pinned; add one with `mdl ontology lock <layer> <source>`",
+            fg=typer.colors.YELLOW,
+        )
+        return
+    try:
+        results = fetch_all(model_dir, lock, verify=not no_verify)
+    except FetchError as e:
+        typer.secho(str(e), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from e
+    for r in results:
+        state = "cached" if r.cached else "fetched"
+        typer.secho(
+            f"  {r.layer}: {state} -> {r.path.relative_to(model_dir)} "
+            f"(sha256:{r.sha256[:12]}…)",
+            fg=typer.colors.GREEN,
+        )
+    typer.secho(f"{len(results)} layer(s) ready", fg=typer.colors.GREEN)
+
+
 new_app = typer.Typer(help="Scaffold model objects (mints ULIDs for you).")
 app.add_typer(new_app, name="new")
 

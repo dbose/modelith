@@ -48,9 +48,9 @@ def _entity_aligned_iri(model: Model, le: LogicalEntity, registry) -> str | None
     if not le.realises:
         return None
     ce = model.conceptual_entities.get(le.realises)
-    if ce is None or ce.ontology is None:
+    if ce is None or not ce.aligned_uri:
         return None
-    return _resolve_iri(ce.ontology.aligns_to, registry)
+    return _resolve_iri(ce.aligned_uri, registry)
 
 
 def _physical_table_for(
@@ -106,8 +106,8 @@ def _predicate_iri(attr: Attribute, registry, base: str) -> URIRef:
         resolved = _resolve_iri(attr.term_map.predicate_iri, registry)
         if resolved:
             return URIRef(resolved)
-    if attr.ontology and attr.ontology.aligns_to:
-        resolved = _resolve_iri(attr.ontology.aligns_to, registry)
+    if attr.aligned_uri:
+        resolved = _resolve_iri(attr.aligned_uri, registry)
         if resolved:
             return URIRef(resolved)
     return term_uri(attr.id, base)

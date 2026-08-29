@@ -16,9 +16,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import JSONResponse
 from mdl_ontology import build_registry, coverage_report
+from mdl_ontology.ingest import save_ontology_upload
 from mdl_ontology.registry import OntologyRegistry
 
 from mdl_core.ir import Model
@@ -65,8 +66,13 @@ class RegistryCache:
         return self._registry
 
 
-def ontology_router(model_dir: Path, load_model) -> APIRouter:
-    """`load_model` is a callable returning the current (cached) Model."""
+def ontology_router(model_dir: Path, load_model, *, read_only: bool = False) -> APIRouter:
+    """`load_model` is a callable returning the current (cached) Model.
+
+    Read endpoints are always available. When `read_only` is False, the upload
+    endpoint (`POST /upload`) is added so the canvas can vendor a private ontology
+    file into the repo and wire it into `ontology_stack`.
+    """
     router = APIRouter(prefix="/api/ontology")
     cache = RegistryCache(model_dir)
 
@@ -79,7 +85,7 @@ def ontology_router(model_dir: Path, load_model) -> APIRouter:
             {
                 "query": q,
                 "vocabularies": sorted(reg.sources),
-                "loaded_terms": len(set(reg.graph.subjects())),
+                "loaded_terms": reg.loaded_term_count(),
                 "results": [
                     {
                         "iri": h.iri,
@@ -118,18 +124,24 @@ def ontology_router(model_dir: Path, load_model) -> APIRouter:
         external: dict[str, dict] = {}
 
         def _add(obj, obj_kind: str) -> None:
-            ont = obj.ontology
-            if ont is None or ont.layer is None:
+            layer = obj.ontology_layer
+            if layer is None:
                 return
-            aligned = None
-            if ont.aligns_to:
-                card = reg.describe(ont.aligns_to)
-                aligned = {
-                    "ref": ont.aligns_to,
-                    "predicate": ont.alignment,
-                    "resolved": card is not None,
-                    "label": card["label"] if card else ont.aligns_to.split(":")[-1],
-                }
+            aligned_refs = []
+            for ref in obj.ontology_refs:
+                if not ref.uri:
+                    continue
+                card = reg.describe(ref.uri)
+                aligned_refs.append(
+                    {
+                        "ref": ref.uri,
+                        "predicate": ref.predicate,
+                        "resolved": card is not None,
+                        "resolved_via": ref.resolved_via,
+                        "status": ref.status,
+                        "label": card["label"] if card else ref.uri.split(":")[-1],
+                    }
+                )
                 if card:
                     external[card["iri"]] = {
                         "iri": card["iri"],
@@ -138,14 +150,16 @@ def ontology_router(model_dir: Path, load_model) -> APIRouter:
                         "definition": card["definition"],
                         "source": card["source"],
                     }
-            layers.setdefault(ont.layer, []).append(
+            layers.setdefault(layer, []).append(
                 {
                     "id": obj.id,
                     "name": obj.name,
                     "kind": obj_kind,
                     "definition": obj.definition,
-                    "aligned_to": aligned,
-                    "no_industry_equivalent": ont.no_industry_equivalent,
+                    # primary alignment (back-compat) + the full list
+                    "aligned_to": aligned_refs[0] if aligned_refs else None,
+                    "aligned_refs": aligned_refs,
+                    "no_industry_equivalent": obj.no_industry_equivalent,
                 }
             )
 
@@ -176,5 +190,50 @@ def ontology_router(model_dir: Path, load_model) -> APIRouter:
                 "by_layer": rpt.by_layer,
             }
         )
+
+    @router.get("/ontologies")
+    def ontologies() -> JSONResponse:
+        """Browse phase one: the vocabularies each configured source indexes."""
+        reg = cache.get(load_model())  # cache.get already calls reg.load()
+        out = [
+            {
+                "id": r.id,
+                "name": r.name,
+                "description": r.description,
+                "namespace": r.namespace,
+                "count": r.count,
+                "layer": reg.sources.get(r.id).layer if r.id in reg.sources else None,
+            }
+            for r in reg.list_ontologies()
+        ]
+        return JSONResponse({"ontologies": out})
+
+    if not read_only:
+
+        @router.post("/upload")
+        async def upload(
+            file: UploadFile = File(...),  # noqa: B008 - FastAPI dependency idiom
+            layer: str = Form("core"),
+            prefix: str = Form(""),
+            prefix_iri: str = Form(""),
+            name: str = Form(""),
+        ) -> JSONResponse:
+            """Vendor a private ontology file into the repo and wire it into
+            `ontology_stack`. Writes `ontologies/<layer>/<name>.<ext>` and appends a
+            local source entry to `mdl-project.yaml` (comment-preserving)."""
+            try:
+                result = save_ontology_upload(
+                    model_dir,
+                    filename=file.filename or "ontology.ttl",
+                    content=await file.read(),
+                    layer=layer,
+                    prefix=prefix or None,
+                    prefix_iri=prefix_iri or None,
+                    name=name or None,
+                )
+            except ValueError as e:
+                return JSONResponse({"ok": False, "error": str(e)}, status_code=422)
+            cache._registry = None  # bust so the new vocab loads on next read
+            return JSONResponse(result)
 
     return router

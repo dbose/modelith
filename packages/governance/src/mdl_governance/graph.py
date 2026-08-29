@@ -59,9 +59,9 @@ def build_graph(model: Model) -> GovernanceGraph:
 
     for ce in model.conceptual_entities.values():
         attrs = {"definition": ce.definition}
-        if ce.ontology:
-            attrs["ontology_iri"] = ce.ontology.aligns_to
-            attrs["ontology_layer"] = ce.ontology.layer
+        if ce.aligned_uri or ce.ontology_layer:
+            attrs["ontology_iri"] = ce.aligned_uri
+            attrs["ontology_layer"] = ce.ontology_layer
         if ce.stewardship:
             attrs["owner"] = ce.stewardship.owner
             attrs["steward"] = ce.stewardship.steward
@@ -77,9 +77,9 @@ def build_graph(model: Model) -> GovernanceGraph:
 
     for term in model.terms.values():
         attrs = {"definition": term.definition}
-        if term.ontology:
-            attrs["ontology_iri"] = term.ontology.aligns_to
-            attrs["ontology_layer"] = term.ontology.layer
+        if term.aligned_uri or term.ontology_layer:
+            attrs["ontology_iri"] = term.aligned_uri
+            attrs["ontology_layer"] = term.ontology_layer
         g.assets.append(
             GovernanceAsset(
                 external_id=external_id(term.id),
@@ -106,8 +106,8 @@ def build_graph(model: Model) -> GovernanceGraph:
         )
         for attr in le.attributes:
             a_attrs = {"role": attr.role, "nullable": attr.nullable, "domain": attr.domain}
-            if attr.ontology:
-                a_attrs["ontology_iri"] = attr.ontology.aligns_to
+            if attr.aligned_uri:
+                a_attrs["ontology_iri"] = attr.aligned_uri
             g.assets.append(
                 GovernanceAsset(
                     external_id=external_id(attr.id),

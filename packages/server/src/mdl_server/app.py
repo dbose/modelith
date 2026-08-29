@@ -98,7 +98,7 @@ def create_app(model_dir: Path, *, read_only: bool = False) -> FastAPI:
         return {"status": "ok", "model_dir": str(model_dir), "read_only": read_only}
 
     # Ontology + glossary read APIs — always available (read-only + edit modes).
-    app.include_router(ontology_router(model_dir, lambda: _load().model))
+    app.include_router(ontology_router(model_dir, lambda: _load().model, read_only=read_only))
     app.include_router(glossary_router(lambda: _load().model))
 
     @app.get("/api/decisions")

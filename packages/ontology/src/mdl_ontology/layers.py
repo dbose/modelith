@@ -12,6 +12,12 @@ Layers: industry < core < domain < specialised. Rules enforced:
    `no_industry_equivalent: true` (§3.1 rule 3) — the CDO coverage report.
 4. A specialised term duplicating a domain term by definition similarity raises a
    warning with the candidate (cheap offline token similarity; §3.1 rule 4).
+
+Alignment lives in `ontology_refs` (spec §1): a list of `{predicate, uri, layer,
+...}`. The object's own layer sits on `ontology_layer`; `no_industry_equivalent`
+and `rationale` are object-level coverage facts. These checks read that shape; a
+legacy single `ontology` alignment is folded into the same shape on load (see
+`mdl_core.ir._OntologyMixin`).
 """
 
 from __future__ import annotations
@@ -53,6 +59,11 @@ def _ontology_objects(model: Model) -> list[ConceptualEntity | Term]:
     return [*model.conceptual_entities.values(), *model.terms.values()]
 
 
+def _refs(o) -> list:
+    """The object's ontology_refs (empty list when absent)."""
+    return getattr(o, "ontology_refs", None) or []
+
+
 def check_layers(model: Model, registry=None) -> DiagnosticSet:
     diags = DiagnosticSet()
     objs = _ontology_objects(model)
@@ -70,57 +81,65 @@ def check_layers(model: Model, registry=None) -> DiagnosticSet:
 
 def _check_predicates(objs, diags: DiagnosticSet) -> None:
     for o in objs:
-        ont = o.ontology
-        if ont and ont.alignment and ont.alignment not in _VALID_PREDICATES:
-            diags.add(
-                Diagnostic(
-                    code="MDL-E210",
-                    severity=Severity.error,
-                    message=f"{o.name!r} uses non-SKOS alignment predicate {ont.alignment!r}",
-                    path=o.id,
+        for ref in _refs(o):
+            if ref.predicate and ref.predicate not in _VALID_PREDICATES:
+                diags.add(
+                    Diagnostic(
+                        code="MDL-E210",
+                        severity=Severity.error,
+                        message=(
+                            f"{o.name!r} uses non-SKOS alignment predicate "
+                            f"{ref.predicate!r}"
+                        ),
+                        path=o.id,
+                    )
                 )
-            )
 
 
 def _check_upward(objs, by_name: dict, diags: DiagnosticSet) -> None:
     """No downward alignment: a term must not align to a term in a lower layer."""
     for o in objs:
-        ont = o.ontology
-        if not ont or ont.layer is None or not ont.aligns_to:
-            continue
-        own = _LAYER_RANK.get(ont.layer)
+        own = _LAYER_RANK.get(o.ontology_layer) if o.ontology_layer else None
         if own is None:
             continue
-        target = _resolve_modelled(ont.aligns_to, by_name)
-        if target is None:
-            continue  # external IRI; layer checked via registry, not here
-        t_ont = target.ontology
-        t_rank = _LAYER_RANK.get(t_ont.layer) if t_ont and t_ont.layer else None
-        if t_rank is None:
-            continue
-        if t_rank > own:
-            diags.add(
-                Diagnostic(
-                    code="MDL-E211",
-                    severity=Severity.error,
-                    message=(
-                        f"{o.name!r} ({ont.layer}) aligns downward to "
-                        f"{target.name!r} ({t_ont.layer}); alignment must be upward"
-                    ),
-                    path=o.id,
-                )
+        for ref in _refs(o):
+            if not ref.uri:
+                continue
+            target = _resolve_modelled(ref.uri, by_name)
+            if target is None:
+                continue  # external IRI; layer checked via registry, not here
+            t_rank = (
+                _LAYER_RANK.get(target.ontology_layer)
+                if target.ontology_layer
+                else None
             )
+            if t_rank is None:
+                continue
+            if t_rank > own:
+                diags.add(
+                    Diagnostic(
+                        code="MDL-E211",
+                        severity=Severity.error,
+                        message=(
+                            f"{o.name!r} ({o.ontology_layer}) aligns downward to "
+                            f"{target.name!r} ({target.ontology_layer}); "
+                            f"alignment must be upward"
+                        ),
+                        path=o.id,
+                    )
+                )
 
 
 def _check_exactmatch_cycles(objs, by_name: dict, diags: DiagnosticSet) -> None:
     """exactMatch is transitive-checked and must not create a cycle (§3.1 rule 2)."""
     edges: dict[str, str] = {}
     for o in objs:
-        ont = o.ontology
-        if ont and ont.alignment == "skos:exactMatch" and ont.aligns_to:
-            target = _resolve_modelled(ont.aligns_to, by_name)
-            if target is not None:
-                edges[o.id] = target.id
+        for ref in _refs(o):
+            if ref.predicate == "skos:exactMatch" and ref.uri:
+                target = _resolve_modelled(ref.uri, by_name)
+                if target is not None:
+                    edges[o.id] = target.id
+                    break  # one exactMatch edge per object is enough to trace a cycle
     for start in edges:
         seen = set()
         cur = start
@@ -142,10 +161,10 @@ def _check_exactmatch_cycles(objs, by_name: dict, diags: DiagnosticSet) -> None:
 
 def _check_core_coverage(objs, diags: DiagnosticSet) -> None:
     for o in objs:
-        ont = o.ontology
-        if not ont or ont.layer != "core":
+        if o.ontology_layer != "core":
             continue
-        if not ont.aligns_to and not ont.no_industry_equivalent:
+        has_alignment = any(ref.uri for ref in _refs(o))
+        if not has_alignment and not o.no_industry_equivalent:
             diags.add(
                 Diagnostic(
                     code="MDL-E202",
@@ -157,7 +176,7 @@ def _check_core_coverage(objs, diags: DiagnosticSet) -> None:
                     path=o.id,
                 )
             )
-        elif ont.no_industry_equivalent and not ont.rationale:
+        elif o.no_industry_equivalent and not o.rationale:
             diags.add(
                 Diagnostic(
                     code="MDL-W204",
@@ -174,9 +193,9 @@ def _check_core_coverage(objs, diags: DiagnosticSet) -> None:
 def _check_duplicate_terms(objs, diags: DiagnosticSet) -> None:
     """A specialised term duplicating a domain term by definition similarity (§3.1
     rule 4). Cheap offline token-Jaccard; do not over-engineer."""
-    domain_terms = [o for o in objs if o.ontology and o.ontology.layer == "domain"]
+    domain_terms = [o for o in objs if o.ontology_layer == "domain"]
     for o in objs:
-        if not o.ontology or o.ontology.layer != "specialised" or not o.definition:
+        if o.ontology_layer != "specialised" or not o.definition:
             continue
         for dt in domain_terms:
             if not dt.definition:
@@ -200,33 +219,32 @@ def _check_duplicate_terms(objs, diags: DiagnosticSet) -> None:
 def _check_iri_resolvable(objs, registry, diags: DiagnosticSet) -> None:
     """Unresolvable prefixed IRIs are a validation error (spec §3.2)."""
     for o in objs:
-        ont = o.ontology
-        if not ont or not ont.aligns_to:
-            continue
-        # only check external (prefixed, non-modelled) IRIs
-        if _looks_like_iri(ont.aligns_to) and not registry.resolves(ont.aligns_to):
-            diags.add(
-                Diagnostic(
-                    code="MDL-E213",
-                    severity=Severity.error,
-                    message=f"{o.name!r} aligns to unresolvable IRI {ont.aligns_to!r}",
-                    path=o.id,
+        for ref in _refs(o):
+            if not ref.uri:
+                continue
+            # only check external (prefixed, non-modelled) IRIs
+            if _looks_like_iri(ref.uri) and not registry.resolves(ref.uri):
+                diags.add(
+                    Diagnostic(
+                        code="MDL-E213",
+                        severity=Severity.error,
+                        message=f"{o.name!r} aligns to unresolvable IRI {ref.uri!r}",
+                        path=o.id,
+                    )
                 )
-            )
 
 
 def coverage_report(model: Model) -> CoverageReport:
     rpt = CoverageReport()
     for o in _ontology_objects(model):
-        ont = o.ontology
-        layer = ont.layer if ont else None
+        layer = o.ontology_layer
         if layer:
             rpt.by_layer[layer] = rpt.by_layer.get(layer, 0) + 1
         if layer == "core":
             rpt.total_core += 1
-            if ont.aligns_to:
+            if any(ref.uri for ref in _refs(o)):
                 rpt.core_with_industry += 1
-            elif ont.no_industry_equivalent:
+            elif o.no_industry_equivalent:
                 rpt.core_exempt += 1
             else:
                 rpt.core_uncovered.append(o.name)

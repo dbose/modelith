@@ -1,28 +1,33 @@
-"""Generic vocabulary registry (spec §3, generalised).
+"""Ontology term registry (spec §3, generalised).
 
-FIBO is only *one example* of an industry-layer ontology. The registry is
-vocabulary-agnostic: any RDF/OWL/Turtle vocabulary — ACORD, FHIR, ISO 20022, GS1,
-or a customer's own — plugs in by declaration, no code changes. A vocabulary is
-described by a `VocabularySource` (name, layer, prefixes, files, optional module
-filter). The registry loads the declared modules into a single rdflib Graph and
-resolves prefixed IRIs against it.
+FIBO is only *one example* of an industry-layer ontology. Terms come from two kinds
+of source, resolved through one facade:
 
-Declared in `mdl-project.yaml` under `ontology_stack`, e.g.:
+- **local file vocabularies** — any RDF/OWL/Turtle declared in `mdl-project.yaml`
+  under `ontology_stack` (ACORD, FHIR, ISO 20022, a customer's own private ontology);
+- **remote enterprise registries / catalogs** — OLS, OntoPortal, Collibra, queried
+  over REST (added in later phases).
+
+`OntologyRegistry` is a facade over these `SourceProvider`s: it fans `search` and
+`list_ontologies` across them and merges the results, and routes `describe`/`expand`/
+`resolves` to the owning provider. A caller never cares whether a term lives in the
+repo or an enterprise catalog.
+
+Declared in `mdl-project.yaml`, e.g.:
 
     ontology_stack:
-      - name: fibo
+      - type: local                       # default; a file vocabulary
+        name: fibo
         layer: industry
         format: turtle
         path: ontologies/industry/fibo/2024.03
         modules: [fnd, fbc, sec]           # optional; load only these submodules
         prefixes:
           fibo-fnd-pty-pty: "https://spec.edmcouncil.org/fibo/ontology/FND/Parties/Parties/"
-      - name: fhir
+      - type: ols                          # a remote registry (phase 2)
+        name: ols
         layer: industry
-        format: turtle
-        path: ontologies/industry/fhir/r5
-        prefixes:
-          fhir: "http://hl7.org/fhir/"
+        url: https://www.ebi.ac.uk/ols4/api
 """
 
 from __future__ import annotations
@@ -30,241 +35,204 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from rdflib import Graph, URIRef
-from rdflib.namespace import SKOS
+# Re-exported for backward compatibility with existing callers/imports.
+from mdl_ontology.providers.base import OntologyRef, ResolvedTerm, SourceProvider, TermCard
+from mdl_ontology.providers.local import LocalFileProvider
 
-# rdflib format name per declared `format`.
-_FORMATS = {
-    "turtle": "turtle",
-    "ttl": "turtle",
-    "xml": "xml",
-    "owl": "xml",
-    "rdfxml": "xml",
-    "jsonld": "json-ld",
-    "nt": "nt",
-    "n3": "n3",
-}
+__all__ = [
+    "VocabularySource",
+    "ResolvedTerm",
+    "OntologyRef",
+    "TermCard",
+    "SourceProvider",
+    "OntologyRegistry",
+    "build_registry",
+]
 
 
 @dataclass
 class VocabularySource:
+    """A declared ontology source. `type` selects the provider (default `local`);
+    remote types (ols, ontoportal, collibra) carry `url`/auth fields used later."""
+
     name: str
     layer: str  # industry | core | domain | specialised
+    type: str = "local"
     prefixes: dict[str, str] = field(default_factory=dict)
     path: str | None = None  # dir or file, relative to project root
     format: str = "turtle"
     modules: list[str] | None = None  # submodule filter (e.g. FIBO fnd/fbc); None = all
+    # Remote-source fields (unused by the local provider; consumed in later phases).
+    url: str | None = None
+    apikey_env: str | None = None
+    token_env: str | None = None
+    ontologies: list[str] | None = None  # scope a remote source to these vocab ids
+    domain_types: list[str] | None = None  # Collibra: which domain types are ontologies
+    attributes: dict[str, str] | None = None  # Collibra: attr-name map (URI/Definition)
 
     @classmethod
     def from_config(cls, entry: dict) -> VocabularySource:
         return cls(
             name=str(entry["name"]),
             layer=str(entry.get("layer", "industry")),
+            type=str(entry.get("type", "local")),
             prefixes=dict(entry.get("prefixes") or {}),
             path=entry.get("path"),
             format=str(entry.get("format", "turtle")),
             modules=list(entry["modules"]) if entry.get("modules") else None,
+            url=entry.get("url"),
+            apikey_env=entry.get("apikey_env"),
+            token_env=entry.get("token_env"),
+            ontologies=list(entry["ontologies"]) if entry.get("ontologies") else None,
+            domain_types=list(entry["domain_types"]) if entry.get("domain_types") else None,
+            attributes=dict(entry["attributes"]) if entry.get("attributes") else None,
         )
 
 
-@dataclass
-class ResolvedTerm:
-    iri: str
-    prefixed: str
-    label: str | None
-    definition: str | None
-    source: str  # vocabulary name
-
-
 class OntologyRegistry:
-    """Loads declared vocabularies into one graph and resolves/searches IRIs."""
+    """Facade over the configured term-source providers."""
 
     def __init__(self, project_root: Path) -> None:
         self.root = Path(project_root)
-        self.graph = Graph()
         self.sources: dict[str, VocabularySource] = {}
-        # prefix -> namespace IRI, merged across all sources
+        self.providers: list[SourceProvider] = []
+        self._local: dict[str, LocalFileProvider] = {}
+        # prefix -> namespace IRI, merged across local sources (for expand/prefixed).
         self.prefixes: dict[str, str] = {}
 
     def register(self, source: VocabularySource) -> None:
         self.sources[source.name] = source
-        for pfx, ns in source.prefixes.items():
-            self.prefixes[pfx] = ns
-            self.graph.bind(pfx.replace(":", "_"), ns, replace=True)
+        if source.type == "local":
+            prov = self._local.get(source.name)
+            if prov is None:
+                prov = LocalFileProvider(source.name, source.layer, self.root)
+                self._local[source.name] = prov
+                self.providers.append(prov)
+            prov.bind_prefixes(source.prefixes)
+            prov.add_files(source.path, source.format, source.modules)
+            for pfx, ns in source.prefixes.items():
+                self.prefixes[pfx] = ns
+        # Remote provider construction is wired in phase 2 (ols/ontoportal/collibra).
+
+    def register_lock_layers(self, lock) -> None:
+        """Register each lock-pinned ontology layer as a local provider over its
+        fetched cache dir (`.mdl/ontology-cache/<layer>/`), so a lock-based layer
+        browses/validates exactly like a committed one — offline, from the cache
+        the lock pins (spec §3). Layers whose cache is not yet fetched simply
+        contribute nothing until `mdl ontology fetch` runs."""
+        from mdl_ontology.lock import CACHE_REL
+
+        for layer_name, pin in getattr(lock, "ontology_layers", {}).items():
+            # A committed `ontology_stack` entry of the same name wins — don't
+            # double-register the same cache onto it (that double-loads the graph).
+            if layer_name in self.sources:
+                continue
+            cache_sub = f"{CACHE_REL}/{layer_name}"
+            if not (self.root / cache_sub).exists():
+                continue
+            src = VocabularySource(
+                name=layer_name,
+                layer=layer_name,
+                type="local",
+                path=cache_sub,
+                format=pin.fmt,
+                prefixes=dict(getattr(pin, "prefixes", {}) or {}),
+            )
+            self.register(src)
 
     def load(self) -> list[str]:
-        """Materialise declared vocabularies. Returns the list of files loaded.
-        Module-selective (spec §3.2): if `modules` is set, only files whose name
-        contains a module token are parsed (FIBO ships hundreds of files)."""
+        """Materialise local vocabularies. Returns the loaded file paths. Remote
+        providers have nothing to load (they query on demand)."""
         loaded: list[str] = []
-        for source in self.sources.values():
-            if not source.path:
-                continue
-            base = self.root / source.path
-            files = self._files_for(base, source)
-            fmt = _FORMATS.get(source.format.lower(), "turtle")
-            for f in files:
-                try:
-                    self.graph.parse(str(f), format=fmt)
-                    loaded.append(str(f.relative_to(self.root)))
-                except Exception:  # noqa: BLE001 - tolerate a bad file, report via loaded
-                    continue
+        for prov in self._local.values():
+            loaded.extend(prov.load())
         return loaded
 
-    def _files_for(self, base: Path, source: VocabularySource) -> list[Path]:
-        if base.is_file():
-            return [base]
-        if not base.exists():
-            return []
-        exts = {".ttl", ".rdf", ".owl", ".xml", ".jsonld", ".nt", ".n3"}
-        files = sorted(p for p in base.rglob("*") if p.suffix.lower() in exts)
-        if source.modules:
-            mods = {m.lower() for m in source.modules}
-            files = [f for f in files if _matches_module(f, mods)]
-        return files
+    def loaded_term_count(self) -> int:
+        """Number of distinct terms across local file vocabularies (browse stat)."""
+        subjects: set[str] = set()
+        for prov in self._local.values():
+            subjects.update(str(s) for s in prov.graph.subjects())
+        return len(subjects)
 
-    # --- resolution --------------------------------------------------------
+    # --- fan-out ------------------------------------------------------------
 
-    def expand(self, prefixed: str) -> str | None:
-        """`fibo-fnd-pty-pty:PartyInRole` -> full IRI, using declared prefixes."""
-        if ":" not in prefixed:
-            return None
-        pfx, local = prefixed.split(":", 1)
-        ns = self.prefixes.get(pfx)
-        if ns is None:
-            return None
-        return ns + local
+    def list_ontologies(self) -> list[OntologyRef]:
+        refs: list[OntologyRef] = []
+        for prov in self.providers:
+            try:
+                refs.extend(prov.list_ontologies())
+            except Exception:  # noqa: BLE001 - one bad source must not break browse
+                continue
+        return refs
 
-    def resolves(self, prefixed: str) -> bool:
-        """True if the IRI expands AND exists as a subject in the loaded graph.
-        Unresolvable IRIs are a validation error, not a warning (spec §3.2)."""
-        iri = self.expand(prefixed)
-        if iri is None:
-            return False
-        if len(self.graph) == 0:
-            # No vocab files loaded (e.g. offline/no bundle): a well-formed prefix
-            # is accepted syntactically so validation degrades gracefully.
-            return True
-        ref = URIRef(iri)
-        return (ref, None, None) in self.graph or (None, None, ref) in self.graph
-
-    def search(self, query: str, *, limit: int = 10) -> list[ResolvedTerm]:
-        """Rank loaded classes by label/definition match (spec §3.2 `ontology
-        search`). Simple token overlap — no external service (offline, §13.4)."""
-        q = query.lower().strip()
-        results: list[tuple[int, ResolvedTerm]] = []
+    def search(
+        self, query: str, *, within: str | None = None, limit: int = 10
+    ) -> list[ResolvedTerm]:
+        """Merge ranked hits across providers. `within` scopes to one ontology id."""
+        merged: list[ResolvedTerm] = []
         seen: set[str] = set()
-        for subj in set(self.graph.subjects()):
-            if not isinstance(subj, URIRef):
+        for prov in self.providers:
+            try:
+                hits = prov.search(query, within=within, limit=limit)
+            except Exception:  # noqa: BLE001 - a failing remote source is skipped
                 continue
-            iri = str(subj)
-            if iri in seen:
-                continue
-            seen.add(iri)
-            label = self._first_literal(subj, SKOS.prefLabel) or _local_name(iri)
-            definition = self._first_literal(subj, SKOS.definition)
-            hay = f"{label} {definition or ''}".lower()
-            score = _score(q, hay, label.lower())
-            if score > 0:
-                results.append(
-                    (
-                        score,
-                        ResolvedTerm(
-                            iri=iri,
-                            prefixed=self._prefixed_for(iri),
-                            label=label,
-                            definition=definition,
-                            source=self._source_for(iri),
-                        ),
-                    )
-                )
-        results.sort(key=lambda t: (-t[0], t[1].label or ""))
-        return [r for _, r in results[:limit]]
+            for t in hits:
+                if t.iri in seen:
+                    continue
+                seen.add(t.iri)
+                merged.append(t)
+        # Providers already rank internally; keep first-seen order but cap.
+        return merged[:limit]
 
     def describe(self, ref: str) -> dict | None:
-        """Full term card for a prefixed name or IRI: label, definition, source,
-        and skos:broader / narrower neighbours (for the canvas ontology browser)."""
-        iri = self.expand(ref) if not ref.startswith("http") else ref
-        if iri is None:
-            return None
-        subj = URIRef(iri)
-        if (subj, None, None) not in self.graph and (None, None, subj) not in self.graph:
-            return None
-
-        def _card(u: URIRef) -> dict:
-            return {
-                "iri": str(u),
-                "prefixed": self._prefixed_for(str(u)),
-                "label": self._first_literal(u, SKOS.prefLabel) or _local_name(str(u)),
-            }
-
-        broader = [
-            _card(o) for o in self.graph.objects(subj, SKOS.broader) if isinstance(o, URIRef)
-        ]
-        narrower = [
-            _card(s) for s in self.graph.subjects(SKOS.broader, subj) if isinstance(s, URIRef)
-        ]
-        return {
-            "iri": iri,
-            "prefixed": self._prefixed_for(iri),
-            "label": self._first_literal(subj, SKOS.prefLabel) or _local_name(iri),
-            "definition": self._first_literal(subj, SKOS.definition),
-            "source": self._source_for(iri),
-            "broader": sorted(broader, key=lambda c: c["label"]),
-            "narrower": sorted(narrower, key=lambda c: c["label"]),
-        }
-
-    def _first_literal(self, subj, pred) -> str | None:
-        for o in self.graph.objects(subj, pred):
-            return str(o)
+        for prov in self.providers:
+            try:
+                card = prov.describe(ref)
+            except Exception:  # noqa: BLE001
+                continue
+            if card is not None:
+                return card.to_dict()
         return None
 
-    def _prefixed_for(self, iri: str) -> str:
-        for pfx, ns in self.prefixes.items():
-            if iri.startswith(ns):
-                return f"{pfx}:{iri[len(ns):]}"
-        return iri
+    def expand(self, prefixed: str) -> str | None:
+        if ":" not in prefixed:
+            return None
+        pfx, tail = prefixed.split(":", 1)
+        ns = self.prefixes.get(pfx)
+        return ns + tail if ns is not None else None
 
-    def _source_for(self, iri: str) -> str:
-        for src in self.sources.values():
-            for ns in src.prefixes.values():
-                if iri.startswith(ns):
-                    return src.name
-        return "unknown"
-
-
-def _matches_module(path: Path, mods: set[str]) -> bool:
-    parts = {p.lower() for p in path.parts}
-    stem = path.stem.lower()
-    return any(m in stem or m in parts for m in mods)
-
-
-def _local_name(iri: str) -> str:
-    for sep in ("#", "/"):
-        if sep in iri:
-            return iri.rsplit(sep, 1)[-1]
-    return iri
+    def resolves(self, prefixed: str) -> bool:
+        # A source resolves it if any provider vouches for it.
+        any_local = bool(self._local)
+        for prov in self.providers:
+            try:
+                if prov.resolves(prefixed):
+                    return True
+            except Exception:  # noqa: BLE001
+                continue
+        # No provider resolved it. If there are no local files at all, degrade
+        # gracefully for a well-formed prefix (matches the original empty-graph rule).
+        if not any_local and self.expand(prefixed) is not None:
+            return True
+        return False
 
 
-def _score(query: str, haystack: str, label: str) -> int:
-    if not query:
-        return 0
-    score = 0
-    if query == label:
-        score += 100
-    if query in label:
-        score += 40
-    if query in haystack:
-        score += 10
-    for tok in query.split():
-        if tok in haystack:
-            score += 2
-    return score
-
-
-def build_registry(project_root: Path, ontology_stack: list[dict]) -> OntologyRegistry:
+def build_registry(
+    project_root: Path, ontology_stack: list[dict], lock=None
+) -> OntologyRegistry:
     reg = OntologyRegistry(project_root)
     for entry in ontology_stack or []:
         if isinstance(entry, dict):
             reg.register(VocabularySource.from_config(entry))
+    # Lock-pinned layers (spec §3) browse from the gitignored fetch cache.
+    if lock is None:
+        from mdl_ontology.lock import Lock
+
+        try:
+            lock = Lock.load(project_root)
+        except Exception:  # noqa: BLE001 - a missing/broken lock must not break browse
+            lock = None
+    if lock is not None and getattr(lock, "ontology_layers", None):
+        reg.register_lock_layers(lock)
     return reg

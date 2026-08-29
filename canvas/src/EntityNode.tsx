@@ -45,11 +45,17 @@ export const EntityNode = memo(function EntityNode({ data, selected }: NodeProps
         </span>
         <span className="entity-badges">
           {entity.pattern && <span className="badge pattern">{entity.pattern}</span>}
-          {entity.conceptual?.ontology?.aligns_to && (
-            <span className="badge ontology" title={entity.conceptual.ontology.aligns_to}>
-              {"⚙"}
-            </span>
-          )}
+          {(() => {
+            const refs = (entity.conceptual?.ontology_refs ?? []).filter((r) => r.uri);
+            if (refs.length === 0) return null;
+            const title = refs.map((r) => r.uri).join("\n");
+            return (
+              <span className="badge ontology" title={title}>
+                {"⚙"}
+                {refs.length > 1 ? ` ${refs.length}` : ""}
+              </span>
+            );
+          })()}
         </span>
       </div>
 

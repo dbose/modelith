@@ -30,11 +30,13 @@ def export_rdf(model: Model, *, layer: str = "conceptual", registry=None) -> Gra
 
     if layer in ("conceptual", "all"):
         for ce in model.conceptual_entities.values():
-            _emit_concept(g, ce.id, ce.name, ce.definition, ce.ontology, registry)
+            _emit_concept(g, ce.id, ce.name, ce.definition, ce.ontology_refs, registry)
             for syn in ce.synonyms:
                 g.add((_term_uri(ce.id), SKOS.altLabel, Literal(syn)))
         for term in model.terms.values():
-            _emit_concept(g, term.id, term.name, term.definition, term.ontology, registry)
+            _emit_concept(
+                g, term.id, term.name, term.definition, term.ontology_refs, registry
+            )
 
     if layer in ("logical", "all"):
         for le in model.logical_entities.values():
@@ -48,14 +50,15 @@ def export_rdf(model: Model, *, layer: str = "conceptual", registry=None) -> Gra
                 g.add((a_uri, RDF.type, OWL.DatatypeProperty))
                 g.add((a_uri, RDFS.label, Literal(attr.name)))
                 g.add((a_uri, RDFS.domain, uri))
-                if attr.ontology and attr.ontology.aligns_to and registry:
-                    tgt = registry.expand(attr.ontology.aligns_to) or attr.ontology.aligns_to
-                    pred = _SKOS_PRED.get(attr.ontology.alignment or "", SKOS.closeMatch)
-                    g.add((a_uri, pred, URIRef(tgt)))
+                for ref in attr.ontology_refs:
+                    if ref.uri and registry:
+                        tgt = registry.expand(ref.uri) or ref.uri
+                        pred = _SKOS_PRED.get(ref.predicate or "", SKOS.closeMatch)
+                        g.add((a_uri, pred, URIRef(tgt)))
     return g
 
 
-def _emit_concept(g: Graph, ulid, name, definition, ontology, registry) -> None:
+def _emit_concept(g: Graph, ulid, name, definition, ontology_refs, registry) -> None:
     uri = _term_uri(ulid)
     g.add((uri, RDF.type, OWL.Class))
     g.add((uri, RDF.type, SKOS.Concept))
@@ -63,13 +66,15 @@ def _emit_concept(g: Graph, ulid, name, definition, ontology, registry) -> None:
     g.add((uri, RDFS.label, Literal(name)))
     if definition:
         g.add((uri, SKOS.definition, Literal(definition)))
-    if ontology and ontology.aligns_to:
+    for ref in ontology_refs or []:
+        if not ref.uri:
+            continue
         tgt = None
         if registry is not None:
-            tgt = registry.expand(ontology.aligns_to)
-        tgt = tgt or (ontology.aligns_to if ontology.aligns_to.startswith("http") else None)
+            tgt = registry.expand(ref.uri)
+        tgt = tgt or (ref.uri if ref.uri.startswith("http") else None)
         if tgt:
-            pred = _SKOS_PRED.get(ontology.alignment or "", SKOS.closeMatch)
+            pred = _SKOS_PRED.get(ref.predicate or "", SKOS.closeMatch)
             g.add((uri, pred, URIRef(tgt)))
 
 

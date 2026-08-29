@@ -18,7 +18,7 @@ from mdl_server.projection import where_used
 
 
 def _term_card(model: Model, obj) -> dict:
-    ont = obj.ontology
+    ref = obj.primary_ref
     is_ce = isinstance(obj, ConceptualEntity)
     sa = None
     if is_ce and obj.subject_area:
@@ -36,14 +36,25 @@ def _term_card(model: Model, obj) -> dict:
             if is_ce and obj.stewardship
             else None
         ),
+        "ontology_layer": obj.ontology_layer,
+        "ontology_refs": [
+            {
+                "predicate": r.predicate,
+                "uri": r.uri,
+                "layer": r.layer,
+                "resolved_via": r.resolved_via,
+                "status": r.status,
+            }
+            for r in obj.ontology_refs
+        ],
         "ontology": (
             {
-                "aligns_to": ont.aligns_to,
-                "alignment": ont.alignment,
-                "layer": ont.layer,
-                "status": ont.status,
+                "aligns_to": ref.uri,
+                "alignment": ref.predicate,
+                "layer": obj.ontology_layer,
+                "status": ref.status,
             }
-            if ont
+            if ref
             else None
         ),
         # where-used only applies to conceptual entities (terms aren't realised)

@@ -284,13 +284,19 @@ def _create_term(repo: ModelRepo, p: dict) -> str:
     t: dict = {"id": t_id, "kind": "term", "name": p["name"]}
     if p.get("definition"):
         t["definition"] = p["definition"]
-    ont: dict = {"layer": p["layer"]}
+    t["ontology_layer"] = p["layer"]
     if p.get("aligns_to"):
-        ont["aligns_to"] = p["aligns_to"]
-        ont["alignment"] = p.get("alignment", "skos:closeMatch")
-        # SME-created alignments are proposals until an architect promotes (§5.1)
-        ont["status"] = p.get("status", "proposed")
-    t["ontology"] = ont
+        ref: dict = {
+            "predicate": p.get("alignment", "skos:closeMatch"),
+            "uri": p["aligns_to"],
+            # SME-created alignments are proposals until an architect promotes (§5.1)
+            "status": p.get("status", "proposed"),
+        }
+        if p.get("resolved_via"):
+            ref["resolved_via"] = p["resolved_via"]
+        if p.get("ref_layer"):
+            ref["layer"] = p["ref_layer"]
+        t["ontology_refs"] = [ref]
     repo.add_file(f"conceptual/terms/{_slug(p['name'])}.yaml", t, t_id)
     return t_id
 
@@ -450,30 +456,70 @@ def _update_relationship(repo: ModelRepo, p: dict) -> None:
 # --- ontology alignment -----------------------------------------------------------
 
 
+def _migrate_ontology_node(node) -> None:
+    """Fold a legacy `ontology:` block on a YAML node into the new object-level
+    layer + `ontology_refs` shape, in place, so a mutated file converges on load."""
+    ont = node.pop("ontology", None)
+    if not ont:
+        return
+    if ont.get("layer") and "ontology_layer" not in node:
+        node["ontology_layer"] = ont["layer"]
+    if ont.get("no_industry_equivalent"):
+        node["no_industry_equivalent"] = True
+    if ont.get("rationale") and "rationale" not in node:
+        node["rationale"] = ont["rationale"]
+    if ont.get("aligns_to"):
+        ref = {"uri": ont["aligns_to"]}
+        if ont.get("alignment"):
+            ref["predicate"] = ont["alignment"]
+        if ont.get("layer"):
+            ref["layer"] = ont["layer"]
+        if ont.get("status"):
+            ref["status"] = ont["status"]
+        refs = node.setdefault("ontology_refs", [])
+        if not any(r.get("uri") == ref["uri"] for r in refs):
+            refs.append(ref)
+
+
 def _set_alignment(repo: ModelRepo, p: dict) -> None:
     _require(p, "id", "aligns_to")
     _, node = _conceptual_node(repo, p["id"])
-    ont = node.setdefault("ontology", {})
-    ont["aligns_to"] = p["aligns_to"]
-    ont["alignment"] = p.get("alignment", "skos:closeMatch")
+    _migrate_ontology_node(node)
     if p.get("layer"):
-        ont["layer"] = p["layer"]
-    elif "layer" not in ont:
-        ont["layer"] = "core"
+        node["ontology_layer"] = p["layer"]
+    elif "ontology_layer" not in node:
+        node["ontology_layer"] = "core"
+    node.pop("no_industry_equivalent", None)
+    refs = node.setdefault("ontology_refs", [])
+    ref = next((r for r in refs if r.get("uri") == p["aligns_to"]), None)
+    if ref is None:
+        ref = {"uri": p["aligns_to"]}
+        refs.append(ref)
+    ref["predicate"] = p.get("alignment", "skos:closeMatch")
+    if p.get("resolved_via"):
+        ref["resolved_via"] = p["resolved_via"]
+    if p.get("ref_layer"):
+        ref["layer"] = p["ref_layer"]
     if "status" in p:
-        ont["status"] = p["status"]
-    ont.pop("no_industry_equivalent", None)
+        ref["status"] = p["status"]
 
 
 def _clear_alignment(repo: ModelRepo, p: dict) -> None:
     _require(p, "id")
     _, node = _conceptual_node(repo, p["id"])
-    ont = node.get("ontology")
-    if ont is not None:
-        ont.pop("aligns_to", None)
-        ont.pop("alignment", None)
-        if not ont:
-            node.pop("ontology", None)
+    _migrate_ontology_node(node)
+    refs = node.get("ontology_refs")
+    if refs is None:
+        return
+    if p.get("uri"):
+        # clear one specific ref
+        remaining = [r for r in refs if r.get("uri") != p["uri"]]
+        refs[:] = remaining
+    else:
+        # clear all alignments (object keeps its layer)
+        refs[:] = []
+    if not refs:
+        node.pop("ontology_refs", None)
 
 
 _TERM_MAP_FIELDS = ("subject_template", "class_iri", "predicate_iri", "datatype")
@@ -542,13 +588,32 @@ def _set_unmanaged(repo: ModelRepo, p: dict) -> None:
 
 
 def _promote_alignment(repo: ModelRepo, p: dict) -> None:
-    """Promote a proposed ontology alignment to accepted (collab model §5.1)."""
+    """Promote a proposed ontology alignment to accepted (collab model §5.1).
+
+    Promotes the ref matching `uri` when given, else every proposed ref on the
+    object. Stamps `approved_at` as the audit trail (spec §2)."""
     _require(p, "id")
     _, node = _conceptual_node(repo, p["id"])
-    ont = node.get("ontology")
-    if not ont or not ont.get("aligns_to"):
+    _migrate_ontology_node(node)
+    refs = node.get("ontology_refs") or []
+    if not any(r.get("uri") for r in refs):
         raise CommandError("object has no ontology alignment to promote")
-    ont["status"] = "accepted"
+    target_uri = p.get("uri")
+    approved_at = p.get("approved_at")
+    promoted = False
+    for r in refs:
+        if not r.get("uri"):
+            continue
+        if target_uri and r.get("uri") != target_uri:
+            continue
+        r["status"] = "accepted"
+        if approved_at:
+            r["approved_at"] = approved_at
+        if p.get("resolved_by"):
+            r["resolved_by"] = p["resolved_by"]
+        promoted = True
+    if not promoted:
+        raise CommandError("no matching ontology ref to promote")
 
 
 _HANDLERS = {

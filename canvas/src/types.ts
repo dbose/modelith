@@ -1,9 +1,24 @@
 // Wire types mirroring packages/server/src/mdl_server/projection.py
 
+// Back-compat single-alignment view, derived from the primary ref (spec §1).
 export interface Ontology {
   aligns_to: string | null;
   alignment: string | null;
   layer: string | null;
+  status?: string | null;
+}
+
+// One ontology binding (spec §1). A modelled object may carry several.
+export interface OntologyRef {
+  predicate: string | null;
+  uri: string | null;
+  layer: string | null;
+  resolved_via: string | null;
+  resolved_by?: string | null;
+  confidence?: number | null;
+  resolved_at?: string | null;
+  approved_at?: string | null;
+  status: string | null;
 }
 
 export interface Stewardship {
@@ -30,7 +45,10 @@ export interface Conceptual {
   definition: string | null;
   synonyms: string[];
   subject_area: SubjectAreaRef | null;
-  ontology: Ontology | null;
+  ontology_layer: string | null;
+  no_industry_equivalent?: boolean;
+  ontology_refs: OntologyRef[];
+  ontology: Ontology | null; // back-compat, derived from the primary ref
   stewardship: Stewardship | null;
 }
 
@@ -41,6 +59,7 @@ export interface AttributeRow {
   role: "business_key" | "surrogate_key" | "attribute" | "measure";
   nullable: boolean;
   ontology_iri: string | null;
+  ontology_refs?: OntologyRef[];
   enum_values?: (string | number)[] | null;
   term_map?: TermMap | null;
   udp?: Record<string, string | number | boolean> | null;
@@ -124,13 +143,23 @@ export interface TermDetail extends TermCard {
   narrower: { iri: string; prefixed: string; label: string }[];
 }
 
+export interface StackAlignedRef {
+  ref: string;
+  predicate: string | null;
+  resolved: boolean;
+  resolved_via?: string | null;
+  status?: string | null;
+  label: string;
+}
+
 export interface StackTerm {
   id: string;
   name: string;
   kind: string;
   definition: string | null;
   no_industry_equivalent: boolean;
-  aligned_to: { ref: string; predicate: string | null; resolved: boolean; label: string } | null;
+  aligned_to: StackAlignedRef | null; // primary alignment (back-compat)
+  aligned_refs?: StackAlignedRef[]; // the full list
 }
 
 export interface StackDoc {
@@ -189,6 +218,8 @@ export interface GlossaryTerm {
   synonyms: string[];
   subject_area: { id: string; name?: string } | null;
   stewardship: { owner: string | null; steward: string | null } | null;
+  ontology_layer?: string | null;
+  ontology_refs?: OntologyRef[];
   ontology: {
     aligns_to: string | null;
     alignment: string | null;

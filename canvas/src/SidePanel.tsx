@@ -206,15 +206,28 @@ function LayersView({
               onClick={() => onFocusEntity(t.id)}
             >
               {t.name}
-              {t.aligned_to && (
-                <span className={"align-arrow" + (t.aligned_to.resolved ? "" : " unresolved")}>
+              {(t.aligned_refs ?? (t.aligned_to ? [t.aligned_to] : [])).map((a, i) => (
+                <span
+                  key={`${a.ref}-${i}`}
+                  className={
+                    "align-arrow" +
+                    (a.resolved ? "" : " unresolved") +
+                    (a.status === "proposed" ? " proposed" : "")
+                  }
+                  title={
+                    a.ref + (a.resolved_via ? ` (via ${a.resolved_via})` : "")
+                  }
+                >
                   {"↑ "}
-                  {t.aligned_to.label}
+                  {a.label}
+                  {a.status === "proposed" ? " ·prop" : ""}
                 </span>
-              )}
-              {!t.aligned_to && !t.no_industry_equivalent && (
-                <span className="align-arrow missing">unaligned</span>
-              )}
+              ))}
+              {!t.aligned_to &&
+                (t.aligned_refs?.length ?? 0) === 0 &&
+                !t.no_industry_equivalent && (
+                  <span className="align-arrow missing">unaligned</span>
+                )}
             </button>
           ))}
         </div>

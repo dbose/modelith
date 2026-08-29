@@ -83,3 +83,65 @@ def test_coverage_endpoint(fclient):
     doc = fclient.get("/api/ontology/coverage").json()
     assert doc["total_core"] >= 1
     assert 0 <= doc["coverage_pct"] <= 100
+
+
+_ACME_TTL = b"""
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix acme: <https://acme.com/ont/core/> .
+acme:Counterparty a owl:Class ; rdfs:label "Counterparty" ;
+    rdfs:comment "A party to a financial contract." .
+"""
+
+
+def _client(model_dir, *, read_only=False):
+    from fastapi.testclient import TestClient
+    from mdl_server import create_app
+
+    return TestClient(create_app(model_dir, read_only=read_only))
+
+
+def test_upload_writes_file_and_wires_project(model_dir):
+    client = _client(model_dir)
+    resp = client.post(
+        "/api/ontology/upload",
+        files={"file": ("acme-core.ttl", _ACME_TTL, "text/turtle")},
+        data={"layer": "core", "prefix": "acme", "prefix_iri": "https://acme.com/ont/core/",
+              "name": "acme_core"},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["layer"] == "core" and body["term_count"] == 1
+    # file landed in the repo and project got wired
+    assert (model_dir / "ontologies" / "core" / "acme_core.ttl").exists()
+    proj = (model_dir / "mdl-project.yaml").read_text()
+    assert "acme_core" in proj and "ontologies/core/acme_core.ttl" in proj
+    # and it is immediately browsable via search
+    hits = client.get("/api/ontology/search", params={"q": "counterparty"}).json()["results"]
+    assert any(h["label"] == "Counterparty" for h in hits)
+
+
+def test_upload_blocked_when_read_only(model_dir):
+    client = _client(model_dir, read_only=True)
+    resp = client.post(
+        "/api/ontology/upload",
+        files={"file": ("acme.ttl", _ACME_TTL, "text/turtle")},
+        data={"layer": "core"},
+    )
+    assert resp.status_code in (404, 405)  # write endpoint not registered
+
+
+def test_upload_rejects_bad_layer(model_dir):
+    client = _client(model_dir)
+    resp = client.post(
+        "/api/ontology/upload",
+        files={"file": ("acme.ttl", _ACME_TTL, "text/turtle")},
+        data={"layer": "nonsense"},
+    )
+    assert resp.status_code >= 400
+
+
+def test_ontologies_endpoint_lists_sources(fclient):
+    doc = fclient.get("/api/ontology/ontologies").json()
+    names = {o["name"] for o in doc["ontologies"]}
+    assert "fibo" in names

@@ -8,6 +8,7 @@ dependencies = [
     "modelith-core",
     "rdflib>=7.0",
     "pyshacl>=0.25",
+    "httpx>=0.27",  # ontology fetch: artifact download + SPARQL endpoint export
 ]
 
 [build-system]

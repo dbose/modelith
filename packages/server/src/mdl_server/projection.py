@@ -39,6 +39,35 @@ def _term_map(tm) -> dict | None:
     return out if any(out.values()) else None
 
 
+def _ontology_ref(ref) -> dict:
+    """Project one OntologyRef to the canvas wire shape (spec §1)."""
+    return {
+        "predicate": ref.predicate,
+        "uri": ref.uri,
+        "layer": ref.layer,
+        "resolved_via": ref.resolved_via,
+        "resolved_by": ref.resolved_by,
+        "confidence": ref.confidence,
+        "resolved_at": ref.resolved_at,
+        "approved_at": ref.approved_at,
+        "status": ref.status,
+    }
+
+
+def _legacy_ontology(obj) -> dict | None:
+    """Back-compat single-alignment view for older canvas code, from the object's
+    primary ref + its own layer. New code should read `ontology_refs`."""
+    ref = obj.primary_ref
+    if ref is None and obj.ontology_layer is None:
+        return None
+    return {
+        "aligns_to": ref.uri if ref else None,
+        "alignment": ref.predicate if ref else None,
+        "layer": obj.ontology_layer,
+        "status": ref.status if ref else None,
+    }
+
+
 def where_used(model: Model, conceptual_id: str) -> list[dict]:
     """Forward-traverse a conceptual entity to the dbt models that realise it:
     conceptual.id -> logical entities (realises == id) -> physical tables
@@ -81,15 +110,13 @@ def project(model: Model) -> dict:
                 "definition": ce.definition,
                 "synonyms": list(ce.synonyms),
                 "subject_area": {"id": sa.id, "name": sa.name} if sa else None,
-                "ontology": (
-                    {
-                        "aligns_to": ce.ontology.aligns_to,
-                        "alignment": ce.ontology.alignment,
-                        "layer": ce.ontology.layer,
-                    }
-                    if ce.ontology
-                    else None
-                ),
+                # Object layer + the full ontology_refs list (spec §1). A legacy
+                # single `ontology` object is kept for back-compat with older canvas
+                # code, derived from the primary ref.
+                "ontology_layer": ce.ontology_layer,
+                "no_industry_equivalent": ce.no_industry_equivalent,
+                "ontology_refs": [_ontology_ref(r) for r in ce.ontology_refs],
+                "ontology": _legacy_ontology(ce),
                 "stewardship": (
                     {"owner": ce.stewardship.owner, "steward": ce.stewardship.steward}
                     if ce.stewardship
@@ -127,7 +154,8 @@ def project(model: Model) -> dict:
                         "domain": a.domain,
                         "role": a.role,
                         "nullable": a.nullable,
-                        "ontology_iri": a.ontology.aligns_to if a.ontology else None,
+                        "ontology_iri": a.aligned_uri,
+                        "ontology_refs": [_ontology_ref(r) for r in a.ontology_refs],
                         "enum_values": _enum_values(model, a.domain),
                         "term_map": _term_map(a.term_map),
                         "udp": a.udp or None,

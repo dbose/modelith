@@ -145,13 +145,16 @@ class ModelWorkspace:
         if ce:
             defn = f" — {ce.definition.strip()}" if ce.definition else ""
             lines.append(f"**{ce.name}**{defn}")
-            if ce.ontology and ce.ontology.aligns_to:
-                card = self.registry.describe(ce.ontology.aligns_to) if self.registry else None
+            for ref in ce.ontology_refs:
+                if not ref.uri:
+                    continue
+                card = self.registry.describe(ref.uri) if self.registry else None
                 label = f" ({card['label']})" if card else ""
+                layer = ref.layer or ce.ontology_layer
                 lines.append(
-                    f"- ontology: `{ce.ontology.aligns_to}`{label}"
-                    + (f" · {ce.ontology.alignment}" if ce.ontology.alignment else "")
-                    + (f" · layer **{ce.ontology.layer}**" if ce.ontology.layer else "")
+                    f"- ontology: `{ref.uri}`{label}"
+                    + (f" · {ref.predicate}" if ref.predicate else "")
+                    + (f" · layer **{layer}**" if layer else "")
                 )
                 if card and card.get("definition"):
                     lines.append(f"  > {card['definition']}")
@@ -159,8 +162,10 @@ class ModelWorkspace:
                 own = ce.stewardship.owner or "—"
                 stw = ce.stewardship.steward or "—"
                 lines.append(f"- owner: **{own}** · steward: **{stw}**")
-        if attr is not None and attr.ontology and attr.ontology.aligns_to:
-            lines.append(f"- column ontology: `{attr.ontology.aligns_to}`")
+        if attr is not None:
+            for ref in attr.ontology_refs:
+                if ref.uri:
+                    lines.append(f"- column ontology: `{ref.uri}`")
         if le.pattern:
             lines.append(f"- pattern: **{le.pattern}**")
         lines.append("")

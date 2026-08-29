@@ -18,7 +18,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from mdl_core.ids import ULID
 
@@ -75,6 +75,10 @@ class _Base(BaseModel):
 
 
 class OntologyAlignment(_Base):
+    """Legacy single-alignment shape (pre-ontology_refs). Still parsed on load and
+    migrated in-memory into an object-level layer + one `OntologyRef` (see
+    `_migrate_legacy_ontology`). Retained so existing models keep round-tripping."""
+
     aligns_to: str | None = None  # prefixed IRI, e.g. fibo-fnd-pty-pty:PartyInRole
     alignment: Alignment | None = None
     layer: OntologyLayer | None = None
@@ -83,6 +87,82 @@ class OntologyAlignment(_Base):
     # SME-proposed alignments await architect promotion (collab model §5.1);
     # None is treated as accepted for models predating the field.
     status: Literal["proposed", "accepted"] | None = None
+
+
+class OntologyRef(_Base):
+    """One ontology binding on an entity/attribute (spec §1).
+
+    A modelled object may carry several: `[{predicate: skos:exactMatch, uri:
+    fibo:MonetaryAmount, resolved_via: ols4, ...}]`. `layer` is the layer the matched
+    term resolves in (industry/core/...), set from which resolver found it (§4); the
+    object's own layer sits on the entity/term, not here. The remaining fields are the
+    provenance/audit trail the alignment pass (§2) and governance need.
+    """
+
+    predicate: Alignment | None = None  # SKOS mapping predicate
+    uri: str | None = None  # prefixed IRI or absolute IRI of the matched term
+    layer: OntologyLayer | None = None  # layer the matched term resolves in
+    resolved_via: str | None = None  # resolver name (ols4, collibra, local:<name>, ...)
+    resolved_by: str | None = None  # user/agent that accepted the match
+    confidence: float | None = None  # alignment-pass score (§2), 0..1
+    resolved_at: str | None = None  # ISO date the ref was written
+    approved_at: str | None = None  # ISO date an SME/architect approved it
+    # SME-proposed refs await architect promotion (collab §5.1); None == accepted for
+    # refs predating the field (and for authored-directly refs).
+    status: Literal["proposed", "accepted"] | None = None
+
+
+class _OntologyMixin:
+    """Shared object-level ontology fields + legacy-alignment migration.
+
+    `ontology_refs` is the source of truth (spec §1). `ontology_layer`,
+    `no_industry_equivalent` and `rationale` describe the *object's* position/coverage
+    in the four-layer stack and are read by the coverage + upward-alignment checks.
+    A legacy `ontology: OntologyAlignment` still parses and is folded in on load.
+    """
+
+    @model_validator(mode="after")
+    def _migrate_legacy_ontology(self):  # type: ignore[no-untyped-def]
+        legacy: OntologyAlignment | None = getattr(self, "ontology", None)
+        if legacy is None:
+            return self
+        # object-level facts (present on entity/term, absent on attribute)
+        if hasattr(self, "ontology_layer"):
+            if self.ontology_layer is None and legacy.layer is not None:
+                self.ontology_layer = legacy.layer
+            if legacy.no_industry_equivalent:
+                self.no_industry_equivalent = True
+            if self.rationale is None and legacy.rationale is not None:
+                self.rationale = legacy.rationale
+        # the match itself, only if one was declared and not already present
+        if legacy.aligns_to and not any(
+            r.uri == legacy.aligns_to for r in self.ontology_refs
+        ):
+            self.ontology_refs.append(
+                OntologyRef(
+                    predicate=legacy.alignment,
+                    uri=legacy.aligns_to,
+                    layer=legacy.layer,
+                    status=legacy.status,
+                )
+            )
+        return self
+
+    @property
+    def primary_ref(self) -> OntologyRef | None:
+        """The canonical alignment for readers that want a single term (emitters,
+        governance, projection). First accepted ref with a uri, else the first ref
+        with a uri. Reads `ontology_refs` — the source of truth post-migration."""
+        refs = [r for r in self.ontology_refs if r.uri]
+        if not refs:
+            return None
+        return next((r for r in refs if r.status != "proposed"), refs[0])
+
+    @property
+    def aligned_uri(self) -> str | None:
+        """Convenience: the primary ref's uri, or None."""
+        ref = self.primary_ref
+        return ref.uri if ref else None
 
 
 class Stewardship(_Base):
@@ -121,13 +201,17 @@ class SubjectArea(_Base):
     definition: str | None = None
 
 
-class ConceptualEntity(_Base):
+class ConceptualEntity(_OntologyMixin, _Base):
     id: ULID
     kind: Literal[ObjectKind.conceptual_entity] = ObjectKind.conceptual_entity
     name: str
     subject_area: ULID | None = None
     definition: str | None = None
-    ontology: OntologyAlignment | None = None
+    ontology_refs: list[OntologyRef] = Field(default_factory=list)
+    ontology_layer: OntologyLayer | None = None  # this concept's own layer
+    no_industry_equivalent: bool = False
+    rationale: str | None = None
+    ontology: OntologyAlignment | None = None  # legacy, migrated on load
     stewardship: Stewardship | None = None
     synonyms: list[str] = Field(default_factory=list)
     # Derived, not authored: logical entities that realise this concept.
@@ -135,12 +219,16 @@ class ConceptualEntity(_Base):
     udp: Udp | None = None  # user-defined properties (erwin UDPs)
 
 
-class Term(_Base):
+class Term(_OntologyMixin, _Base):
     id: ULID
     kind: Literal[ObjectKind.term] = ObjectKind.term
     name: str
     definition: str | None = None
-    ontology: OntologyAlignment | None = None
+    ontology_refs: list[OntologyRef] = Field(default_factory=list)
+    ontology_layer: OntologyLayer | None = None  # this term's own layer
+    no_industry_equivalent: bool = False
+    rationale: str | None = None
+    ontology: OntologyAlignment | None = None  # legacy, migrated on load
     synonyms: list[str] = Field(default_factory=list)
 
 
@@ -182,13 +270,14 @@ class CodeSet(_Base):
     values: list[CodeValue] = Field(default_factory=list)
 
 
-class Attribute(_Base):
+class Attribute(_OntologyMixin, _Base):
     id: ULID
     name: str
     domain: str | None = None  # name-ref to a Domain object
     role: Literal["business_key", "surrogate_key", "attribute", "measure"] = "attribute"
     nullable: bool = True
-    ontology: OntologyAlignment | None = None
+    ontology_refs: list[OntologyRef] = Field(default_factory=list)
+    ontology: OntologyAlignment | None = None  # legacy, migrated on load
     term_map: TermMap | None = None  # R2RML predicate/datatype override (KG mapping)
     udp: Udp | None = None  # user-defined properties (erwin UDPs)
 
