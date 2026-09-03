@@ -11,6 +11,8 @@ build/
 htmlcov/
 # generated dbt projects live under target/ by default
 target/
+# catalog demo scratch (scripts/catalog_demo_seed.py writes throwaway source repos here)
+.catalog-demo/
 # canvas toolchain (the production build IS committed, under packages/server/.../static)
 canvas/node_modules/
 # vscode extension toolchain (source is committed; artifacts are not)

@@ -11,14 +11,26 @@ import type {
   TermDetail,
 } from "./types";
 
+/** API base prefix. The same canvas bundle is served both at `/` (private `mdl serve`)
+ * and under `/view/<slug>/` (a catalog-materialised model). When mounted under `/view/`,
+ * every `/api/...` call must carry that prefix — derive it from the URL once at load. */
+export const API_BASE: string = (() => {
+  const m = window.location.pathname.match(/^(\/view\/[^/]+)(?:\/|$)/);
+  return m ? m[1] : "";
+})();
+
+function url(path: string): string {
+  return API_BASE + path;
+}
+
 async function get<T>(path: string): Promise<T> {
-  const r = await fetch(path);
+  const r = await fetch(url(path));
   if (!r.ok) throw new Error(`${path}: ${r.status} ${await r.text()}`);
   return (await r.json()) as T;
 }
 
 async function post<T>(path: string, body: unknown): Promise<T> {
-  const r = await fetch(path, {
+  const r = await fetch(url(path), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

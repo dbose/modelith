@@ -9,6 +9,7 @@ resolution-markers = [
 [manifest]
 members = [
     "modelith-adapter-collibra",
+    "modelith-catalog",
     "modelith-cli",
     "modelith-core",
     "modelith-dbt",
@@ -497,11 +498,23 @@ dependencies = [
 requires-dist = [{ name = "modelith-governance", editable = "packages/governance" }]
 
 [[package]]
+name = "modelith-catalog"
+version = "0.1.0"
+source = { editable = "packages/catalog" }
+dependencies = [
+    { name = "modelith-core" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "modelith-core", editable = "packages/core" }]
+
+[[package]]
 name = "modelith-cli"
 version = "0.1.0"
 source = { editable = "packages/cli" }
 dependencies = [
     { name = "modelith-adapter-collibra" },
+    { name = "modelith-catalog" },
     { name = "modelith-core" },
     { name = "modelith-emit-contract" },
     { name = "modelith-emit-dbt" },
@@ -519,6 +532,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "modelith-adapter-collibra", editable = "packages/adapters/collibra" },
+    { name = "modelith-catalog", editable = "packages/catalog" },
     { name = "modelith-core", editable = "packages/core" },
     { name = "modelith-emit-contract", editable = "packages/emit-contract" },
     { name = "modelith-emit-dbt", editable = "packages/emit-dbt" },

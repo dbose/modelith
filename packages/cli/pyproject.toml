@@ -14,6 +14,7 @@ dependencies = [
     "modelith-ontology",
     "modelith-emit-semantic",
     "modelith-governance",
+    "modelith-catalog",
     "modelith-adapter-collibra",
     "modelith-server",
     "modelith-lsp",
@@ -40,6 +41,7 @@ modelith-reverse = { workspace = true }
 modelith-ontology = { workspace = true }
 modelith-emit-semantic = { workspace = true }
 modelith-governance = { workspace = true }
+modelith-catalog = { workspace = true }
 modelith-adapter-collibra = { workspace = true }
 modelith-server = { workspace = true }
 modelith-lsp = { workspace = true }

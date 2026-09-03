@@ -524,6 +524,76 @@ to the right reviewers, a debt valve records engineer-owned SQL with an expiry, 
 git-native glossary app lets subject-matter experts propose definitions as pull requests
 without ever seeing git or a CLI.
 
+## Cross-repo model catalog
+
+By default a Modelith project is one repo, worked on privately alongside its dbt — you
+never need a catalog. When an org has *many* model repos, the catalog is the level above:
+a browsable index of every published model, discovered without checking any of them out.
+
+It is base-tier and decoupled from governance: it needs no Collibra, no profile, no
+adapter, and works with zero configuration. (A governance adapter may optionally read the
+same manifest, never the reverse.)
+
+**Publish** — run in CI on merge to main, next to `mdl gov publish` where that's
+configured, but with no governance config required:
+
+```bash
+mdl catalog publish            # writes one manifest entry: name, namespace, git
+                               # remote+commit, ontology layers, published-at
+```
+
+The default backend is a **git-native manifest repo** — one human-readable YAML entry per
+model, no database or server. Publishing is idempotent (same commit = no-op) and the
+catalog is **rebuildable, not authoritative**: if it's ever lost, replaying `mdl catalog
+publish` from every model repo's CI reconstructs it. Configure the catalog repo in
+`.modelith/catalog.yaml`:
+
+```yaml
+catalog:
+  backend: git
+  remote: git@github.com:acme/model-catalog.git
+```
+
+**Browse** — one level above any repo, a searchable/filterable list of every model with
+links out to each source repo@commit (pointers only; model detail is fetched from the
+source on demand):
+
+```bash
+mdl catalog serve              # http://127.0.0.1:4811/catalog
+mdl catalog list --search fibo # or from the terminal
+```
+
+The browse view lists each published model with its ontology-layer chips, short commit,
+publish date, and a link out to the source repo@commit — searchable by name, namespace, or
+layer, and filterable by layer chip.
+
+Click a model and the catalog opens its **LDM canvas** in-app: the backend materialises
+that entry's model (the git backend checks the source repo out at the pinned commit into a
+local cache) and mounts a read-only canvas at `/view/<slug>`. The catalog stays a pointer
+index — the checkout is a disposable cache, never a second source of truth, and the canvas
+is read-only because editing happens in each model's own private workspace. Materialisation
+is a backend concern: an S3 or DataHub backend fetches the model bundle its own way behind
+the same interface, and a backend that can't materialise degrades to the source-repo link.
+
+Additional backends (S3, DataHub, …) install as separate adapter packages behind the same
+`CatalogBackend` interface; the git backend is the reference implementation.
+
+**Try it with the bundled demos.** The repo ships three model demos (`demo/ibor`,
+`demo/legacy-warehouse`, `demo/retail-dwh`). A seed script turns each into a throwaway
+local git repo and publishes it, so the catalog lists all three and clicking any card
+opens its LDM canvas:
+
+```bash
+uv run python scripts/catalog_demo_seed.py   # publish the 3 demos into a local catalog
+uv run mdl catalog list                      # confirm: pension_ibor, legacy_reversed, retail_ldm
+uv run mdl catalog serve                      # http://127.0.0.1:4811/catalog
+```
+
+Open http://127.0.0.1:4811/catalog and click a model — it checks that demo out at its
+pinned commit and renders its read-only ER canvas at `/view/<slug>`. Everything the script
+writes lives under `.catalog-demo/` and `~/.modelith/`, so it never touches your working
+tree; remove it with `rm -rf .catalog-demo ~/.modelith/catalog-cache ~/.modelith/sources`.
+
 ## Surfaces
 
 | Surface | What it is |
@@ -556,7 +626,8 @@ mdl export contract|graph                         ODCS data contract, Neo4j Cyph
 mdl export r2rml [--allow-unmapped]               R2RML KG mapping (fails loud on unmapped)
 mdl export json-schema|rdf|shacl                  interchange out
 mdl import osi|erwin                              interchange in
-mdl gov plan|apply|pull|publish|import            catalog sync
+mdl gov plan|apply|pull|publish|import            governance catalog sync
+mdl catalog publish|list|serve                    cross-repo model catalog (one level above)
 mdl classify | unmanage | debt | decisions        collaboration and review
 ```
 
@@ -570,6 +641,7 @@ packages/
   ontology/       vocabulary registry, four-layer validation, RDF/OWL + SHACL export
   emit-semantic/  MetricFlow + OSI, joinability validation
   governance/     governance graph, Jinja mapping DSL, adapter SPI, conformance kit, OpenLineage
+  catalog/        cross-repo model catalog: entry, backend SPI, git manifest backend
   adapters/
     collibra/     Collibra governance adapter
   server/         read API (FastAPI) + hosts the canvas build

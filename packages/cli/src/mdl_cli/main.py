@@ -6,6 +6,7 @@ Exit codes (spec §10): 0 ok, 1 validation error, 2 drift breaking,
 
 from __future__ import annotations
 
+from datetime import UTC
 from pathlib import Path
 
 import typer
@@ -49,11 +50,15 @@ emit_app = typer.Typer(help="Emit semantic-layer artifacts.")
 export_app = typer.Typer(help="Export the model to interchange formats.")
 import_app = typer.Typer(help="Import external models into the IR.")
 gov_app = typer.Typer(help="Governance: plan/apply/pull/conformance against a catalog.")
+catalog_app = typer.Typer(
+    help="Cross-repo model catalog: publish/browse model repos (base-tier, no governance)."
+)
 app.add_typer(ontology_app, name="ontology")
 app.add_typer(emit_app, name="emit")
 app.add_typer(export_app, name="export")
 app.add_typer(import_app, name="import")
 app.add_typer(gov_app, name="gov")
+app.add_typer(catalog_app, name="catalog")
 
 
 def _load(model_dir: Path) -> ModelRepo:
@@ -1650,6 +1655,144 @@ def _apply_naming_fixes(repo: ModelRepo, fixes) -> None:
         for attr in node.get("attributes", []):
             if attr.get("id") == attr_ulid:
                 attr["name"] = new_name
+
+
+# --- catalog (cross-repo model discovery, base-tier) -----------------------------
+
+
+def _git_metadata(model_dir: Path) -> tuple[str | None, str | None]:
+    """(remote, commit) from the model repo's git, or (None, None) if not a git repo.
+    Used only by the git backend; overridable via --remote/--commit for odd CI."""
+    import subprocess
+
+    def _git(*args: str) -> str | None:
+        try:
+            out = subprocess.run(  # noqa: S603,S607 - trusted git argv
+                ["git", *args], cwd=str(model_dir), capture_output=True, text=True
+            )
+            return out.stdout.strip() if out.returncode == 0 and out.stdout.strip() else None
+        except Exception:  # noqa: BLE001
+            return None
+
+    return _git("remote", "get-url", "origin"), _git("rev-parse", "HEAD")
+
+
+def _catalog_cache_dir() -> Path:
+    """Local, disposable working clone of the catalog repo (gitignored / user cache).
+    The catalog repo is the rebuildable index; this clone is throwaway."""
+    return Path.home() / ".modelith" / "catalog-cache"
+
+
+@catalog_app.command("publish")
+def catalog_publish(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    backend: str = typer.Option(
+        None, "--backend", help="Override backend (default: config, else git)"
+    ),
+    remote: str = typer.Option(None, "--remote", help="Override the model repo git remote"),
+    commit: str = typer.Option(None, "--commit", help="Override the model repo commit SHA"),
+    published_at: str = typer.Option(None, "--published-at", help="ISO 8601 UTC timestamp"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show the entry; do not publish"),
+) -> None:
+    """Publish this model repo's summary to the cross-repo catalog (spec §1).
+
+    Independent of `mdl gov publish` and the governance adapter — needs NO governance
+    profile. Reads the model's config + git metadata, writes one manifest entry via the
+    configured backend (default: a git manifest repo). Idempotent: republishing the same
+    commit is a no-op. Run it in CI on merge to main.
+    """
+    from mdl_catalog import CatalogConfig, entry_from_repo, make_backend
+
+    cfg = CatalogConfig.resolve(model_dir)
+    if backend:
+        cfg.backend = backend
+
+    r, c = _git_metadata(model_dir)
+    entry = entry_from_repo(
+        model_dir,
+        remote=remote or r,
+        commit=commit or c,
+        published_at=published_at or _now_iso(),
+    )
+
+    if dry_run:
+        from mdl_core.yaml_io import dump_str
+
+        typer.secho(f"catalog entry ({cfg.backend} backend, dry-run):", fg=typer.colors.CYAN)
+        typer.echo(dump_str(entry.to_doc()))
+        return
+
+    if cfg.backend == "git" and not cfg.remote:
+        typer.secho(
+            "no catalog.remote configured in .modelith/catalog.yaml — writing to the "
+            "local catalog cache only (set catalog.remote to publish to a shared repo).",
+            fg=typer.colors.YELLOW,
+        )
+    try:
+        be = make_backend(cfg, _catalog_cache_dir())
+        be.publish(entry)
+    except ValueError as e:
+        typer.secho(str(e), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from e
+    typer.secho(
+        f"published {entry.model} @ {entry.commit or '?'} to the {cfg.backend} catalog",
+        fg=typer.colors.GREEN,
+    )
+
+
+@catalog_app.command("list")
+def catalog_list(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    query: str = typer.Option("", "--search", "-q", help="Filter by free-text query"),
+) -> None:
+    """List models in the catalog (optionally filtered)."""
+    from mdl_catalog import CatalogConfig, make_backend
+
+    cfg = CatalogConfig.resolve(model_dir)
+    be = make_backend(cfg, _catalog_cache_dir())
+    if cfg.backend == "git" and hasattr(be, "ensure_clone"):
+        be.ensure_clone()
+    entries = be.search(query) if query else be.list()
+    if not entries:
+        typer.secho("catalog is empty (publish a model with `mdl catalog publish`)",
+                    fg=typer.colors.YELLOW)
+        return
+    for e in entries:
+        layers = f"  [{', '.join(e.ontology_layers)}]" if e.ontology_layers else ""
+        typer.echo(f"  {e.model:28} {e.commit or '':10}{layers}")
+
+
+@catalog_app.command("serve")
+def catalog_serve(
+    config_dir: Path = typer.Option(
+        Path("."), "--config-dir", "-c",
+        help="Dir to resolve .modelith/catalog.yaml from (default: cwd)",
+    ),
+    host: str = typer.Option("127.0.0.1", "--host"),
+    port: int = typer.Option(4811, "--port", "-p"),
+) -> None:
+    """Browse the cross-repo catalog (spec §4). Runs ONE LEVEL ABOVE any model repo:
+    reads the configured backend (default: a git catalog repo, cloned into a local
+    cache), and serves a read-only, searchable list of published models. Each entry
+    links out to its source repo@commit — model content is never embedded."""
+    from mdl_catalog import CatalogConfig, make_backend
+    from mdl_server.catalog_app import serve_catalog
+
+    cfg = CatalogConfig.resolve(config_dir)
+    be = make_backend(cfg, _catalog_cache_dir())
+    if cfg.backend == "git" and hasattr(be, "ensure_clone"):
+        be.ensure_clone()  # freshen the local clone before serving
+    typer.secho(
+        f"Modelith catalog ({cfg.backend}): http://{host}:{port}/catalog",
+        fg=typer.colors.CYAN,
+    )
+    serve_catalog(be, host=host, port=port)
+
+
+def _now_iso() -> str:
+    from datetime import datetime
+
+    return datetime.now(UTC).replace(microsecond=0).isoformat()
 
 
 if __name__ == "__main__":
