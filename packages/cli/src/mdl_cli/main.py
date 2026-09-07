@@ -6,6 +6,7 @@ Exit codes (spec §10): 0 ok, 1 validation error, 2 drift breaking,
 
 from __future__ import annotations
 
+import json
 from datetime import UTC
 from pathlib import Path
 
@@ -930,6 +931,221 @@ def ontology_align(
         f"Review + accept in the SME app or `mdl ontology promote`.",
         fg=typer.colors.GREEN,
     )
+
+
+# --- subject areas: the erwin Available/Included picker, from the terminal --------
+
+sa_app = typer.Typer(help="Subject areas: scoped views of the model (erwin subject areas).")
+app.add_typer(sa_app, name="subject-area")
+
+
+def _resolve_sa(model_dir: Path, ref: str) -> tuple[str, str]:
+    """Accept a ULID or a name, so the terminal is usable without copying ULIDs."""
+    from mdl_core.repo import ModelRepo
+
+    model = ModelRepo.load(model_dir).model
+    if ref in model.subject_areas:
+        return ref, model.subject_areas[ref].name
+    matches = [sa for sa in model.subject_areas.values() if sa.name.lower() == ref.lower()]
+    if not matches:
+        near = [sa.name for sa in model.subject_areas.values() if ref.lower() in sa.name.lower()]
+        hint = f" Did you mean: {', '.join(near)}?" if near else ""
+        typer.secho(f"no subject area {ref!r}.{hint}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+    return matches[0].id, matches[0].name
+
+
+def _resolve_objects(model_dir: Path, refs: list[str]) -> list[str]:
+    """Accept ULIDs or entity/term names."""
+    from mdl_core.repo import ModelRepo
+
+    model = ModelRepo.load(model_dir).model
+    by_name: dict[str, str] = {}
+    for obj in list(model.conceptual_entities.values()) + list(model.terms.values()):
+        by_name[obj.name.lower()] = obj.id
+    for le in model.logical_entities.values():
+        if le.realises:
+            by_name.setdefault(le.name.lower(), le.realises)
+
+    out = []
+    for r in refs:
+        if r in model.conceptual_entities or r in model.terms or r in model.logical_entities:
+            out.append(r)
+        elif r.lower() in by_name:
+            out.append(by_name[r.lower()])
+        else:
+            typer.secho(f"no entity or term {r!r}", fg=typer.colors.RED)
+            raise typer.Exit(1)
+    return out
+
+
+@sa_app.command("list")
+def sa_list(model_dir: Path = typer.Option(Path("."), "--model-dir", "-m")) -> None:
+    """List subject areas with their membership counts."""
+    from mdl_core.repo import ModelRepo
+
+    model = ModelRepo.load(model_dir).model
+    if not model.subject_areas:
+        typer.echo("no subject areas yet — mdl new subject-area <name>")
+        return
+    homed: dict[str, int] = {}
+    for ce in model.conceptual_entities.values():
+        if ce.subject_area:
+            homed[ce.subject_area] = homed.get(ce.subject_area, 0) + 1
+    for sa in sorted(model.subject_areas.values(), key=lambda s: s.name):
+        typer.echo(
+            f"{sa.name:34} {len(sa.members):>3} member(s)  "
+            f"{homed.get(sa.id, 0):>3} homed   {sa.id}"
+        )
+
+
+@sa_app.command("show")
+def sa_show(
+    area: str = typer.Argument(..., help="Subject area name or ULID"),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+) -> None:
+    """Show what an area contains, and what is homed there but not a member."""
+    from mdl_core.repo import ModelRepo
+
+    sa_id, name = _resolve_sa(model_dir, area)
+    model = ModelRepo.load(model_dir).model
+    sa = model.subject_areas[sa_id]
+    named = list(model.conceptual_entities.values()) + list(model.terms.values())
+    label = {o.id: o.name for o in named}
+
+    typer.secho(f"{name}", fg=typer.colors.CYAN, bold=True)
+    if sa.definition:
+        typer.echo(f"  {sa.definition.strip()}")
+    typer.echo(f"\n  included ({len(sa.members)})")
+    for m in sa.members:
+        typer.echo(f"    - {label.get(m, m)}")
+    homed = [ce for ce in model.conceptual_entities.values() if ce.subject_area == sa_id]
+    inconsistent = [ce.name for ce in homed if ce.id not in set(sa.members)]
+    if inconsistent:
+        typer.secho(
+            f"\n  homed here but not members ({len(inconsistent)}): "
+            f"{', '.join(sorted(inconsistent))}",
+            fg=typer.colors.YELLOW,
+        )
+
+
+@sa_app.command("add")
+def sa_add(
+    area: str = typer.Argument(...),
+    objects: list[str] = typer.Argument(..., help="Entity or term names, or ULIDs"),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+) -> None:
+    """Add objects to a subject area (the Included pane)."""
+    from mdl_core.commands import apply_command
+
+    sa_id, name = _resolve_sa(model_dir, area)
+    members = _resolve_objects(model_dir, objects)
+    apply_command(model_dir, "add_subject_area_members", {"id": sa_id, "members": members})
+    typer.secho(f"added {len(members)} object(s) to {name!r}", fg=typer.colors.GREEN)
+
+
+@sa_app.command("remove")
+def sa_remove(
+    area: str = typer.Argument(...),
+    objects: list[str] = typer.Argument(...),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+) -> None:
+    """Remove objects from a subject area."""
+    from mdl_core.commands import apply_command
+
+    sa_id, name = _resolve_sa(model_dir, area)
+    members = _resolve_objects(model_dir, objects)
+    apply_command(model_dir, "remove_subject_area_members", {"id": sa_id, "members": members})
+    typer.secho(f"removed {len(members)} object(s) from {name!r}", fg=typer.colors.GREEN)
+
+
+@sa_app.command("expand")
+def sa_expand(
+    area: str = typer.Argument(...),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    direction: str = typer.Option("both", "--direction", help="ancestors|descendants|both"),
+    levels: int = typer.Option(1, "--levels", help="how many hops (1-10)"),
+    seeds: list[str] = typer.Option(None, "--seed", help="seed object; defaults to the members"),
+    apply: bool = typer.Option(False, "--apply", help="add the results (default: preview only)"),
+) -> None:
+    """Add related objects — erwin's ancestors/descendants expansion.
+
+    Previews by default and names the relationship each object came through, so a
+    deep expansion cannot silently swallow the model. Pass --apply to commit it."""
+    from mdl_core.closure import expand
+    from mdl_core.commands import apply_command
+    from mdl_core.repo import ModelRepo
+
+    sa_id, name = _resolve_sa(model_dir, area)
+    model = ModelRepo.load(model_dir).model
+    sa = model.subject_areas[sa_id]
+    seed_ids = _resolve_objects(model_dir, list(seeds)) if seeds else list(sa.members)
+    if not seed_ids:
+        typer.secho(
+            f"{name!r} has no members yet — add one first, or pass --seed <entity>",
+            fg=typer.colors.YELLOW,
+        )
+        raise typer.Exit(1)
+
+    if direction not in ("ancestors", "descendants", "both"):
+        typer.secho(f"bad --direction {direction!r}", fg=typer.colors.RED)
+        raise typer.Exit(1)
+
+    hops = expand(model, set(seed_ids), direction=direction, levels=levels)
+    current = set(sa.members)
+    new = [h for h in hops if h.id not in current]
+    if not new:
+        typer.echo(f"nothing new to add to {name!r} ({direction}, {levels} level(s))")
+        return
+
+    typer.secho(f"{len(new)} object(s) related to {name!r}:", bold=True)
+    for h in new:
+        typer.echo(f"  + {h.name:24} via {h.via_name}  ({h.direction[:-1]}, level {h.level})")
+    if not apply:
+        typer.echo("\npreview only — re-run with --apply to add them")
+        return
+    apply_command(
+        model_dir, "add_subject_area_members", {"id": sa_id, "members": [h.id for h in new]}
+    )
+    typer.secho(f"added {len(new)} object(s) to {name!r}", fg=typer.colors.GREEN)
+
+
+@app.command("diff")
+def diff_cmd(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    base: str = typer.Option("HEAD", "--base", help="git ref to compare against"),
+    head: str = typer.Option(None, "--head", help="git ref (default: the working tree)"),
+    fmt: str = typer.Option("text", "--format", help="text|json|markdown"),
+) -> None:
+    """Semantic diff of the model against a git ref.
+
+    Objects are keyed by ULID, so a rename is one cosmetic change rather than an
+    entity removed plus another added."""
+    from mdl_server.git_models import RefLoadError, model_at_ref, model_at_working_tree
+
+    from mdl_core.diff import diff_models
+    from mdl_core.diff_render import render_json, render_markdown, render_text
+
+    try:
+        base_model = model_at_ref(model_dir, base)
+        head_model = (
+            model_at_working_tree(model_dir) if head is None else model_at_ref(model_dir, head)
+        )
+    except RefLoadError as e:
+        typer.secho(str(e), fg=typer.colors.RED)
+        raise typer.Exit(1) from e
+
+    d = diff_models(
+        base_model, head_model, base_label=base, head_label=head or "working copy"
+    )
+    if fmt == "json":
+        typer.echo(json.dumps(render_json(d), indent=2))
+    elif fmt == "markdown":
+        typer.echo(render_markdown(d))
+    else:
+        typer.echo(render_text(d))
+    if d.has_breaking:
+        raise typer.Exit(2)  # breaking changes exit 2, as drift does
 
 
 new_app = typer.Typer(help="Scaffold model objects (mints ULIDs for you).")

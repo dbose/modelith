@@ -72,6 +72,8 @@ where it touches SQL, by a real `dbt build` against DuckDB.
 | Compiles one model to many targets | Yes | No | No (DDL only) | No |
 | Lives in git, no server to run | Yes | Yes | No (desktop app) | Yes |
 | Ontology / governance alignment | Yes | No | Partial | No |
+| Model diff survives a rename | Yes (ULID-keyed) | n/a | No (name-keyed) | No |
+| Subject areas / scoped views | Yes | No | Yes | No |
 
 ## Install
 
@@ -594,6 +596,229 @@ pinned commit and renders its read-only ER canvas at `/view/<slug>`. Everything 
 writes lives under `.catalog-demo/` and `~/.modelith/`, so it never touches your working
 tree; remove it with `rm -rf .catalog-demo ~/.modelith/catalog-cache ~/.modelith/sources`.
 
+## Subject areas, model diff, and the review flow
+
+Three things a modeller coming from erwin expects, and where they live in Modelith.
+
+| erwin | Modelith |
+|---|---|
+| Subject Area editor — Available/Included panes, "add related objects" | `mdl subject-area` + the workspace in `/sme` |
+| Complete Compare — a side-by-side tree, matched by NAME | `mdl diff` + the review screen, matched by **ULID** |
+| Mart lock, work on a copy, "complete merge" | a git branch and a pull request, made visible |
+
+Everything below runs against the bundled demo. Copy it somewhere throwaway first,
+so you can experiment freely:
+
+```bash
+cp -R demo/ibor/model /tmp/ibor-demo && cd /tmp/ibor-demo
+git init -q . && git add -A && git commit -qm "the model as it stands"
+```
+
+### 1. Carve out a subject area
+
+A subject area is a named sub-view of the model. Modelith keeps two ideas apart on
+purpose: an entity's **home** area (`subject_area:` on the conceptual entity, one
+per object, what colours the canvas) and an area's **member list** (`members:`,
+many per object). That second one is what lets a use-case view and a domain view
+both contain `Account`, exactly as erwin allows.
+
+```bash
+mdl subject-area list -m .
+mdl new subject-area "UseCase-ApraStressTesting" -m .
+mdl subject-area add UseCase-ApraStressTesting Position -m .
+```
+
+```text
+Counterparty Management              0 member(s)    1 homed   01KZ265963K1SX5TK770VJEYHD
+created subject area 'UseCase-ApraStressTesting' (01M1YX69Z70NQ1JSX2Z2AJXJ4W)
+added 1 object(s) to 'UseCase-ApraStressTesting'
+```
+
+Names work anywhere a ULID does, so you never have to copy identifiers around.
+
+### 2. Add the related objects
+
+This is erwin's "add ancestors/descendants, N levels", and it **previews by
+default** — naming the relationship each object arrived through, so a deep
+expansion can't silently swallow the model:
+
+```bash
+mdl subject-area expand UseCase-ApraStressTesting --direction ancestors --levels 1 -m .
+```
+
+```text
+2 object(s) related to 'UseCase-ApraStressTesting':
+  + Instrument               via position_to_instrument  (ancestor, level 1)
+  + Portfolio                via position_to_portfolio  (ancestor, level 1)
+
+preview only — re-run with --apply to add them
+```
+
+Go two levels and commit it:
+
+```bash
+mdl subject-area expand UseCase-ApraStressTesting --direction ancestors --levels 2 --apply -m .
+mdl subject-area show UseCase-ApraStressTesting -m .
+```
+
+```text
+  + Benchmark                via portfolio_to_benchmark  (ancestor, level 2)
+  + Counterparty             via instrument_to_counterparty  (ancestor, level 2)
+added 4 object(s) to 'UseCase-ApraStressTesting'
+
+UseCase-ApraStressTesting
+  included (5)
+    - Position
+    - Instrument
+    - Portfolio
+    - Benchmark
+    - Counterparty
+```
+
+*Direction follows the IR: `from` is the many side and `to` is the one side, so an
+**ancestor** is the parent — from `Position` you reach `Instrument` and `Portfolio`,
+the things its foreign keys already point at.*
+
+`mdl subject-area show` also lists anything homed in the area but missing from its
+member list (`MDL-W114`) — a nudge, not an error, since a repo may use the home tag
+for colour alone.
+
+### 3. See only that area on the canvas
+
+```bash
+mdl serve -m . --port 4800
+```
+
+Open `http://127.0.0.1:4800/?subject_area=<ULID>` (the ULID from step 1) and the
+ER canvas is scoped to that view. The scope is the union of the area's members and
+anything homed there; a relationship is kept only when **both** ends are in scope,
+so you never get an edge dangling into nothing. The subject-area list itself is
+never filtered — the picker still needs all of them.
+
+For the demo view that means 5 entities and 4 relationships, out of 7 and 7.
+
+### 4. Diff the model, not the YAML
+
+`mdl diff` compares two models **keyed by ULID**. Rename an entity:
+
+```bash
+sed -i '' 's/^name: Counterparty$/name: Legal Entity/' conceptual/entities/counterparty.yaml
+mdl diff -m .
+```
+
+```text
+HEAD → working copy: 1 modified
+
+⚪ ~ Counterparty → Legal Entity (conceptual entity)
+    Renamed — Counterparty → Legal Entity
+```
+
+One cosmetic change. Erwin's Complete Compare matches objects by **name**, so the
+same edit reads there as an entity removed plus a different entity added, with every
+attribute listed twice. Because Modelith's ULIDs are immutable and file-borne, the
+attributes underneath stay quiet.
+
+Now try something that actually breaks downstream:
+
+```bash
+git checkout -- . && mdl diff -m .    # back to clean
+# remove an attribute from logical/entities/position.yaml, then:
+mdl diff -m . ; echo "exit: $?"
+```
+
+```text
+HEAD → working copy: 1 modified · 1 breaking
+
+🔴 ~ position (logical entity)
+    Attribute removed: quantity — decimal · nullable
+
+exit: 2
+```
+
+Severity is the same vocabulary as drift — breaking / additive / cosmetic — so the
+word means one thing across `mdl diff`, `mdl drift --check` and CI. **Breaking
+changes exit 2**, so `mdl diff` drops straight into a pipeline.
+
+`--format markdown` renders the PR body; `--format json` is the same shape the web
+API returns, so there is one serialiser and no drift between surfaces.
+
+### 5. Review and propose, in the browser
+
+```bash
+mdl glossary -m . --port 4810     # then open /sme
+```
+
+The SME app has three views. **Terms** is the glossary. **My proposals** lists your
+open proposal branches. Stage an edit and the tray takes you to **Review**, which
+shows:
+
+- the diff, grouped by object, each change as a sentence rather than a YAML hunk —
+  definitions get a word-level intra-diff so only what changed is highlighted;
+- for a breaking change, **the dbt models it will break**, named inline, at the
+  moment you are about to do it;
+- the review route, who reviews it, and which CI gates run;
+- whether it still merges cleanly onto the base branch.
+
+A banner states the git reality plainly. There is no lock file and no "claim this
+area" button: the branch **is** the lock, so the banner says which branch you are
+on, and greys out Submit with the reason when the working tree is dirty — rather
+than letting the proposal fail after you've filled in the form.
+
+The same information is available from the terminal, which is how the screens are
+tested:
+
+```bash
+curl -s localhost:4810/api/git/classify | python3 -m json.tool
+curl -s "localhost:4810/api/git/conflicts?base=main" | python3 -m json.tool
+curl -s localhost:4810/api/git/proposals | python3 -m json.tool
+```
+
+```text
+route: A Meaning
+reviewers: ['@acme/glossary-council']      # from the repo's real .github/CODEOWNERS
+gates: mdl validate, mdl ontology check
+clean: True | behind: 0
+```
+
+Reviewers come from your **actual** `.github/CODEOWNERS` when the repo has one,
+falling back to the route defaults — naming a placeholder team would be worse than
+naming none.
+
+Two details worth knowing:
+
+- **Conflict preview runs the real merge driver.** It is not an approximation: the
+  endpoint feeds three file versions through the same `merge_model_files` git would
+  use, and keeps only the verdict. Two people adding *different* attributes to one
+  entity comes back clean, where a textual merge would conflict. Nothing is written.
+- **`gh` is optional.** Branch, title, date, merge state, ahead/behind and route
+  all come from plain git, so "My proposals" is fully populated without it — only
+  the PR review state is unavailable, and the cards say so and link to the compare
+  view instead.
+
+When you submit, Modelith branches to `sme/<you>/<slug>`, applies your changes
+through the one mutation engine, commits with a `Co-authored-by` trailer, pushes if
+there is a remote, and opens a PR if `gh` is available — degrading gracefully at
+each step. It then **returns you to the branch you started on**, so the next person
+to open the model sees the base branch rather than your unmerged proposal.
+
+### 6. Structural objects from the terminal
+
+Key groups, categories, domains and value sets used to be reachable only by hand-
+editing YAML. They now have commands, with the referential guards you'd expect —
+a rename rewrites everything that references the object by name, and a delete is
+refused while something still uses it:
+
+```bash
+mdl new subject-area "Domain-03-ExposureManagement" -m .
+# and via the API / canvas: create_key_group, create_category,
+# create_domain, create_code_set, set_object_definition
+```
+
+`set_object_definition` fills the other gap: `LogicalEntity`, `Attribute`,
+`Relationship`, `KeyGroup` and `Category` had nowhere to put documentation. Attribute
+definitions now flow into the generated dbt `description`, so they reach your data
+catalog.
+
 ## Surfaces
 
 | Surface | What it is |
@@ -602,7 +827,7 @@ tree; remove it with `rm -rf .catalog-demo ~/.modelith/catalog-cache ~/.modelith
 | Web canvas | `mdl serve` opens the ER editor; state stays in git |
 | VS Code extension | Canvas beside your YAML (follows the active editor), full canvas tab, diagnostics on save, generate / drift / lint commands, YAML completion, devcontainer-ready. See [In VS Code](#in-vs-code). |
 | Language server | `mdl lsp` (one server for VS Code, Cursor, Windsurf, JetBrains, and CI): drift and contract diagnostics on the dbt files, hover cards, code actions |
-| Glossary app | `mdl glossary` serves a narrow, git-native glossary surface for subject-matter experts |
+| Glossary app | `mdl glossary` serves a narrow, git-native glossary surface for subject-matter experts: browse terms, assemble subject areas, review a model diff, and propose changes as a pull request |
 
 ## CLI reference
 
@@ -615,7 +840,10 @@ mdl lint [--fix]                                  naming-standards lint
 mdl generate [--target] [--emit-contract] [...]   emit the dbt project (+ optional targets)
 mdl reverse --project <manifest|schema.yml> [--naming <f>]  lift a dbt project into a model
 mdl drift --manifest <m> [--check|--reconcile]    compare model to compiled warehouse
-mdl serve [--read-only]                           web canvas + read API
+mdl diff [--base <ref>] [--format json|markdown]  semantic model diff (exit 2 on breaking)
+mdl subject-area list|show|add|remove             scoped views of the model
+mdl subject-area expand [--direction] [--levels]  add related objects (preview by default)
+mdl serve [--read-only] [?subject_area=<ulid>]    web canvas + read API
 mdl glossary [--read-only]                        SME glossary app
 mdl ontology search|check                         browse; layer rules + coverage report
 mdl ontology lock|fetch|add                       pin a source, fetch+verify, vendor a file
