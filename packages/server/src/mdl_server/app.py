@@ -190,6 +190,7 @@ def create_app(model_dir: Path, *, read_only: bool = False) -> FastAPI:
     if STATIC_DIR.exists():
         app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
         sme_html = STATIC_DIR / "sme.html"
+        mocks_html = STATIC_DIR / "mocks.html"
 
         @app.get("/{path:path}")
         def spa(path: str) -> FileResponse:
@@ -199,6 +200,10 @@ def create_app(model_dir: Path, *, read_only: bool = False) -> FastAPI:
             # The SME glossary is a second SPA entry served under /sme.
             if (path == "sme" or path.startswith("sme/")) and sme_html.exists():
                 return FileResponse(sme_html)
+            # Static UI mocks for screens that aren't built yet (design review only;
+            # fixture-driven, no API calls).
+            if (path == "mocks" or path.startswith("mocks/")) and mocks_html.exists():
+                return FileResponse(mocks_html)
             return FileResponse(STATIC_DIR / "index.html")
 
     return app

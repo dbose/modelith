@@ -7,6 +7,7 @@ import react from "@vitejs/plugin-react";
 //   index.html   -> the architect/engineer ER canvas   (served at /)
 //   sme.html     -> the SME glossary app                (served at /sme)
 //   catalog.html -> the cross-repo catalog browse view  (served at /catalog)
+//   mocks.html   -> static UI mocks for unbuilt screens  (served at /mocks)
 export default defineConfig({
   plugins: [react()],
   build: {
@@ -17,6 +18,7 @@ export default defineConfig({
         main: resolve(__dirname, "index.html"),
         sme: resolve(__dirname, "sme.html"),
         catalog: resolve(__dirname, "catalog.html"),
+        mocks: resolve(__dirname, "mocks.html"),
       },
     },
   },
