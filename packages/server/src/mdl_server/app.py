@@ -61,7 +61,9 @@ def _dir_fingerprint(model_dir: Path) -> tuple:
     return (n, mtime, size)
 
 
-def create_app(model_dir: Path, *, read_only: bool = False) -> FastAPI:
+def create_app(
+    model_dir: Path, *, read_only: bool = False, sme_only: bool = False
+) -> FastAPI:
     model_dir = Path(model_dir)
     app = FastAPI(title="Modelith", docs_url="/api/docs", openapi_url="/api/openapi.json")
     cache: dict = {"fingerprint": None, "repo": None}
@@ -202,10 +204,19 @@ def create_app(model_dir: Path, *, read_only: bool = False) -> FastAPI:
 
         @app.get("/{path:path}")
         def spa(path: str) -> FileResponse:
+            # sme_only: this process IS the modeler app. The architect canvas and
+            # the design mocks are not part of what was handed out, so every route
+            # lands on /sme rather than quietly exposing a second application.
+            if sme_only:
+                if path.startswith("assets/"):
+                    candidate = STATIC_DIR / path
+                    if candidate.is_file():
+                        return FileResponse(candidate)
+                return FileResponse(sme_html)
             candidate = STATIC_DIR / path
             if path and candidate.is_file():
                 return FileResponse(candidate)
-            # The SME glossary is a second SPA entry served under /sme.
+            # The SME app is a second SPA entry served under /sme.
             if (path == "sme" or path.startswith("sme/")) and sme_html.exists():
                 return FileResponse(sme_html)
             # Static UI mocks for screens that aren't built yet (design review only;
@@ -263,7 +274,12 @@ def _spawn_demo_ols(model_dir: Path):
 
 
 def serve(
-    model_dir: Path, *, host: str = "127.0.0.1", port: int = 4800, read_only: bool = False
+    model_dir: Path,
+    *,
+    host: str = "127.0.0.1",
+    port: int = 4800,
+    read_only: bool = False,
+    sme_only: bool = False,
 ) -> None:
     import atexit
 
@@ -284,7 +300,7 @@ def serve(
 
     try:
         uvicorn.run(
-            create_app(model_dir, read_only=read_only),
+            create_app(model_dir, read_only=read_only, sme_only=sme_only),
             host=host,
             port=port,
             log_level="warning",

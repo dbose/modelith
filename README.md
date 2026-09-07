@@ -748,16 +748,25 @@ API returns, so there is one serialiser and no drift between surfaces.
 mdl glossary -m . --port 4810     # then open /sme
 ```
 
-The SME app has three views. **Terms** is the glossary. **My proposals** lists your
-open proposal branches. Stage an edit and the tray takes you to **Review**, which
-shows:
+This is a **standalone modeler app**, not a view of the canvas. It is its own Vite
+entry, so it never loads the architect canvas bundle, and `mdl glossary` does not
+serve that canvas at all — handing someone this URL hands them one application.
+(`--with-canvas` serves both from one process when you want that.)
+
+The app has four views. **Terms** is the glossary. **Model** is the ER diagram,
+with a subject-area picker down the side: pick a view and the diagram scopes to it.
+**My proposals** lists your open proposal branches. Stage an edit and the tray takes
+you to **Review**, which shows:
 
 - the diff, grouped by object, each change as a sentence rather than a YAML hunk —
   definitions get a word-level intra-diff so only what changed is highlighted;
 - for a breaking change, **the dbt models it will break**, named inline, at the
   moment you are about to do it;
 - the review route, who reviews it, and which CI gates run;
-- whether it still merges cleanly onto the base branch.
+- whether it still merges cleanly onto the base branch;
+- a **Diagram** tab drawing the same diff *on the model* — changed entities tinted
+  by severity, everything else dimmed to context. Erwin's Complete Compare is a
+  tree and structurally cannot do this.
 
 A banner states the git reality plainly. There is no lock file and no "claim this
 area" button: the branch **is** the lock, so the banner says which branch you are
@@ -783,6 +792,16 @@ clean: True | behind: 0
 Reviewers come from your **actual** `.github/CODEOWNERS` when the repo has one,
 falling back to the route defaults — naming a placeholder team would be worse than
 naming none.
+
+**Distributing it.** The app is a client over the API, so it can be hosted anywhere:
+
+```bash
+mdl glossary --export ./modeler-app     # ~6 files, ~190 KB
+```
+
+Serve that directory from any static host and proxy `/api/` to an `mdl glossary`
+process. The ER diagram is code-split, so the 190 KB is what loads up front and
+React Flow arrives only when someone opens the Model tab.
 
 Two details worth knowing:
 
@@ -827,7 +846,7 @@ catalog.
 | Web canvas | `mdl serve` opens the ER editor; state stays in git |
 | VS Code extension | Canvas beside your YAML (follows the active editor), full canvas tab, diagnostics on save, generate / drift / lint commands, YAML completion, devcontainer-ready. See [In VS Code](#in-vs-code). |
 | Language server | `mdl lsp` (one server for VS Code, Cursor, Windsurf, JetBrains, and CI): drift and contract diagnostics on the dbt files, hover cards, code actions |
-| Glossary app | `mdl glossary` serves a narrow, git-native glossary surface for subject-matter experts: browse terms, assemble subject areas, review a model diff, and propose changes as a pull request |
+| Modeler app | `mdl glossary` serves a standalone, git-native app for data modelers who would rather not live in an editor: browse terms, draw the ERD (scoped by subject area), assemble subject areas, review a model diff, and propose changes as a pull request. Distributable on its own with `--export`. |
 
 ## CLI reference
 
@@ -844,7 +863,8 @@ mdl diff [--base <ref>] [--format json|markdown]  semantic model diff (exit 2 on
 mdl subject-area list|show|add|remove             scoped views of the model
 mdl subject-area expand [--direction] [--levels]  add related objects (preview by default)
 mdl serve [--read-only] [?subject_area=<ulid>]    web canvas + read API
-mdl glossary [--read-only]                        SME glossary app
+mdl glossary [--read-only] [--with-canvas]        standalone modeler app (terms, ERD, review, propose)
+mdl glossary --export <dir>                       write its static files, to host anywhere
 mdl ontology search|check                         browse; layer rules + coverage report
 mdl ontology lock|fetch|add                       pin a source, fetch+verify, vendor a file
 mdl ontology align|promote                        propose alignments (§2), accept them

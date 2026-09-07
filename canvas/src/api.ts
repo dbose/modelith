@@ -53,7 +53,10 @@ export class ApiError extends Error {
   }
 }
 
-export const fetchModel = () => get<ModelDoc>("/api/model");
+export const fetchModel = (subjectArea?: string) =>
+  get<ModelDoc>(
+    subjectArea ? `/api/model?subject_area=${encodeURIComponent(subjectArea)}` : "/api/model",
+  );
 export const fetchDiagnostics = () => get<DiagnosticsDoc>("/api/diagnostics");
 
 // ontology (E1 + spec §4 two-phase browse)

@@ -1,12 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchGlossary, fetchGlossaryConfig, fetchModel } from "../api";
 import type { ClassificationDoc, GlossaryConfig, GlossaryDoc } from "../types";
+import { lazy, Suspense } from "react";
 import { GitBanner } from "./GitBanner";
 import { ProposalsList } from "./ProposalsList";
 import { ProposeDialog } from "./ProposeDialog";
 import { ReviewScreen } from "./ReviewScreen";
 import { TermCard } from "./TermCard";
 import { TermEditor } from "./TermEditor";
+
+// React Flow is heavy, so the diagram is code-split: the terms and review views
+// stay light for people who never open it.
+const ModelDiagram = lazy(() =>
+  import("./ModelDiagram").then((m) => ({ default: m.ModelDiagram })),
+);
 
 /** A pending change the SME has made in the UI but not yet proposed. Each is a
  * `set_definition` / `set_stewardship` / … command + a human-readable before/after
@@ -35,7 +42,7 @@ export function SmeApp() {
   const [proposeOpen, setProposeOpen] = useState(false);
   // browse | review | proposals. Written to location.hash so a view is linkable
   // (app.py serves sme.html for `sme` and any `sme/...`, so no server change).
-  const [view, setView] = useState<"browse" | "review" | "proposals">(
+  const [view, setView] = useState<"browse" | "model" | "review" | "proposals">(
     window.location.hash === "#proposals" ? "proposals" : "browse",
   );
   // objects the SME has unticked in the review screen (selective proposal)
@@ -48,7 +55,7 @@ export function SmeApp() {
   // the first would apply a broken subset. Cheap and honest to disable it.
   const selectable = !pending.some((c) => c.op.startsWith("create_"));
 
-  const goto = useCallback((v: "browse" | "review" | "proposals") => {
+  const goto = useCallback((v: "browse" | "model" | "review" | "proposals") => {
     setView(v);
     window.location.hash = v === "browse" ? "" : `#${v}`;
   }, []);
@@ -57,7 +64,15 @@ export function SmeApp() {
   useEffect(() => {
     const onHash = () => {
       const h = window.location.hash;
-      setView(h === "#proposals" ? "proposals" : h === "#review" ? "review" : "browse");
+      setView(
+        h === "#proposals"
+          ? "proposals"
+          : h === "#review"
+            ? "review"
+            : h === "#model"
+              ? "model"
+              : "browse",
+      );
     };
     onHash();
     window.addEventListener("hashchange", onHash);
@@ -153,6 +168,12 @@ export function SmeApp() {
             Terms
           </button>
           <button
+            className={"sme-tab" + (view === "model" ? " active" : "")}
+            onClick={() => goto("model")}
+          >
+            Model
+          </button>
+          <button
             className={"sme-tab" + (view === "proposals" ? " active" : "")}
             onClick={() => goto("proposals")}
           >
@@ -186,6 +207,41 @@ export function SmeApp() {
             setProposeOpen(true);
           }}
         />
+      ) : view === "model" ? (
+        <div className="sme-model-view">
+          <nav className="sme-nav">
+            <button
+              className={"sme-sa" + (subjectArea === "" ? " active" : "")}
+              onClick={() => setSubjectArea("")}
+            >
+              Whole model
+            </button>
+            {doc.subject_areas.map((sa) => (
+              <button
+                key={sa.id}
+                className={"sme-sa" + (subjectArea === sa.id ? " active" : "")}
+                onClick={() => setSubjectArea(sa.id)}
+                title={sa.definition ?? undefined}
+              >
+                {sa.name}
+                {typeof sa.member_count === "number" && sa.member_count > 0 && (
+                  <span className="sme-sa-count">{sa.member_count}</span>
+                )}
+              </button>
+            ))}
+          </nav>
+          <Suspense fallback={<div className="sme-splash">◮ loading the diagram…</div>}>
+            <ModelDiagram
+              subjectArea={subjectArea || undefined}
+              onSelect={(u) => {
+                if (u) {
+                  setSelectedId(u);
+                  goto("browse");
+                }
+              }}
+            />
+          </Suspense>
+        </div>
       ) : view === "proposals" ? (
         <ProposalsList user={user} onView={() => goto("review")} />
       ) : (

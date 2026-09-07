@@ -116,13 +116,21 @@ export interface PhysicalTable {
 }
 
 export interface ModelDoc {
+  /** the subject area this doc is scoped to, or null for the whole model */
+  scope?: string | null;
   project: {
     name: string;
     dbt_target: string | null;
     platform_targets: string[];
     kg_base_iri?: string | null;
   };
-  subject_areas: { id: string; name: string; definition: string | null }[];
+  subject_areas: {
+    id: string;
+    name: string;
+    definition: string | null;
+    members?: string[];
+    member_count?: number;
+  }[];
   entities: Entity[];
   relationships: Relationship[];
   physical: PhysicalTable[];
@@ -246,7 +254,13 @@ export interface GlossaryTerm {
 
 export interface GlossaryDoc {
   terms: GlossaryTerm[];
-  subject_areas: { id: string; name: string; definition: string | null }[];
+  subject_areas: {
+    id: string;
+    name: string;
+    definition: string | null;
+    members?: string[];
+    member_count?: number;
+  }[];
 }
 
 export interface GlossaryConfig {

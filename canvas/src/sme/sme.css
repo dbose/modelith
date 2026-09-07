@@ -368,3 +368,26 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
 .sub-dest .row { display: flex; gap: 10px; margin: 5px 0; }
 .sub-dest .k { color: var(--text-dim); min-width: 80px; }
 .sub-dest code { font-family: var(--mono); font-size: 12px; color: var(--accent); }
+
+/* --- the ER diagram inside the modeler app -------------------------------------- */
+.sme-model-view { flex: 1; display: grid; grid-template-columns: 220px 1fr; min-height: 0; }
+.sme-sa-count {
+  float: right; font-size: 10px; padding: 1px 6px; border-radius: 99px;
+  background: rgba(148,163,184,0.18); color: var(--text-dim);
+}
+/* flex:1 + min-height:0 so the canvas fills whatever the parent gives it — inside
+   the review screen that is the space between the header and the footer. */
+.erd-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.erd-bar {
+  display: flex; align-items: center; gap: 16px; padding: 8px 16px;
+  border-bottom: 1px solid var(--border); font-size: 12px; color: var(--text-dim);
+}
+.erd-count { font-variant-numeric: tabular-nums; }
+.erd-toggle { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.erd-toggle input { accent-color: var(--accent); }
+.erd-legend { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.erd-legend .sw {
+  display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-left: 8px;
+}
+.erd-canvas { flex: 1; min-height: 320px; }
+.erd-canvas .react-flow__attribution { display: none; }

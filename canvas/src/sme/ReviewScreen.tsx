@@ -1,7 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useState } from "react";
 import { fetchClassification, fetchConflicts, fetchGitContext, fetchModelDiff } from "../api";
 import type { ClassificationDoc, ConflictDoc, GitContext, ModelDiffDoc } from "../types";
 import { DiffView } from "./DiffView";
+
+const ModelDiagram = lazy(() =>
+  import("./ModelDiagram").then((m) => ({ default: m.ModelDiagram })),
+);
 
 /** The review step (plan §M1/M2/M6): what changed, who reviews it, does it still
  * merge, and only then submit. Replaces the old flow where the SME's only view of
@@ -27,6 +31,7 @@ export function ReviewScreen({
   const [conf, setConf] = useState<ConflictDoc | null>(null);
   const [ctx, setCtx] = useState<GitContext | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<"changes" | "diagram">("changes");
 
   const load = useCallback(() => {
     fetchGitContext(user)
@@ -60,13 +65,19 @@ export function ReviewScreen({
 
   return (
     <div className="rv-shell">
-      <Head onBack={onBack} diff={diff} />
-      <DiffView
-        diff={diff}
-        selectable={selectable}
-        selected={selected}
-        onToggle={onToggleObject}
-      />
+      <Head onBack={onBack} diff={diff} tab={tab} onTab={setTab} />
+      {tab === "changes" ? (
+        <DiffView
+          diff={diff}
+          selectable={selectable}
+          selected={selected}
+          onToggle={onToggleObject}
+        />
+      ) : (
+        <Suspense fallback={<div className="sme-splash">◮ drawing the model…</div>}>
+          <ModelDiagram severityByUlid={severityMap(diff)} />
+        </Suspense>
+      )}
       <div className="rv-foot">
         <RoutePanel cl={cl} />
         <ConflictBanner conf={conf} ctx={ctx} />
@@ -88,7 +99,27 @@ export function ReviewScreen({
   );
 }
 
-function Head({ onBack, diff }: { onBack: () => void; diff: ModelDiffDoc | null }) {
+/** ulid -> severity for every changed object, including attribute changes rolled
+ *  up onto their entity, so the diagram can tint the cards. */
+function severityMap(diff: ModelDiffDoc): Map<string, string> {
+  const m = new Map<string, string>();
+  for (const o of diff.objects) {
+    m.set(o.ulid, o.severity);
+  }
+  return m;
+}
+
+function Head({
+  onBack,
+  diff,
+  tab,
+  onTab,
+}: {
+  onBack: () => void;
+  diff: ModelDiffDoc | null;
+  tab?: "changes" | "diagram";
+  onTab?: (t: "changes" | "diagram") => void;
+}) {
   const c = diff?.counts;
   return (
     <div className="rv-head">
@@ -106,6 +137,22 @@ function Head({ onBack, diff }: { onBack: () => void; diff: ModelDiffDoc | null 
           </div>
         )}
       </div>
+      {onTab && (
+        <div className="rv-tabs">
+          <button
+            className={"rv-tab" + (tab === "changes" ? " active" : "")}
+            onClick={() => onTab("changes")}
+          >
+            Changes {diff?.objects.length ?? 0}
+          </button>
+          <button
+            className={"rv-tab" + (tab === "diagram" ? " active" : "")}
+            onClick={() => onTab("diagram")}
+          >
+            Diagram
+          </button>
+        </div>
+      )}
     </div>
   );
 }

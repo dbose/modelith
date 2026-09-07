@@ -50,3 +50,43 @@ def test_reload_on_each_request(client, model_dir):
 
 def test_health(client):
     assert client.get("/api/health").json()["status"] == "ok"
+
+
+# --- the modeler app as a standalone distribution --------------------------------
+
+
+def test_sme_only_serves_one_app(model_dir):
+    """`mdl glossary` hands someone the modeler app. Serving the architect canvas
+    at / from the same process would hand them a second application they were
+    never meant to have, so every route lands on /sme."""
+    from fastapi.testclient import TestClient
+    from mdl_server import create_app
+
+    c = TestClient(create_app(model_dir, sme_only=True))
+    for path in ("/", "/sme", "/mocks", "/anything"):
+        r = c.get(path)
+        assert r.status_code == 200
+        assert "/assets/sme-" in r.text, f"{path} did not serve the modeler app"
+        assert "/assets/main-" not in r.text, f"{path} leaked the architect canvas"
+
+
+def test_sme_only_still_serves_assets(model_dir):
+    """The SPA still needs its own JS and CSS."""
+    from fastapi.testclient import TestClient
+    from mdl_server import create_app
+
+    c = TestClient(create_app(model_dir, sme_only=True))
+    html = c.get("/sme").text
+    import re
+
+    for asset in re.findall(r'/assets/([A-Za-z0-9_.-]+\.(?:js|css))', html):
+        assert c.get(f"/assets/{asset}").status_code == 200
+
+
+def test_default_mode_still_serves_the_canvas(model_dir):
+    from fastapi.testclient import TestClient
+    from mdl_server import create_app
+
+    c = TestClient(create_app(model_dir))
+    assert "/assets/main-" in c.get("/").text
+    assert "/assets/sme-" in c.get("/sme").text

@@ -7,6 +7,7 @@ Exit codes (spec §10): 0 ok, 1 validation error, 2 drift breaking,
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC
 from pathlib import Path
 
@@ -1587,17 +1588,99 @@ def glossary(
     read_only: bool = typer.Option(
         False, "--read-only", help="Browse only — the onboarding week-3 gate"
     ),
+    with_canvas: bool = typer.Option(
+        False,
+        "--with-canvas",
+        help="Also serve the architect ER canvas at / (off by default)",
+    ),
+    export: Path = typer.Option(
+        None,
+        "--export",
+        help="Write the app's static files to a directory and exit (no server)",
+    ),
 ) -> None:
-    """Serve the SME glossary app (git-native; edits become a PR). The SME never
-    sees git or a CLI (collaboration model §5.1)."""
+    """Serve the modeler app: browse terms, assemble subject areas, review a model
+    diff, and propose changes as a pull request. The user never sees git or a CLI
+    (collaboration model §5.1).
+
+    This is a self-contained application, not a view of the canvas — by default the
+    architect ER canvas is NOT served, so handing someone this URL hands them one
+    app rather than two. Pass --with-canvas to serve both from one process."""
     from mdl_server.app import serve as run_server
 
+    if export is not None:
+        _export_sme_app(export)
+        return
+
     mode = "read-only" if read_only else "propose-as-PR"
+    extra = " + canvas at /" if with_canvas else ""
     typer.secho(
-        f"Modelith glossary ({mode}): http://{host}:{port}/sme  (model: {model_dir})",
+        f"Modelith modeler ({mode}{extra}): http://{host}:{port}/sme  (model: {model_dir})",
         fg=typer.colors.CYAN,
     )
-    run_server(model_dir, host=host, port=port, read_only=read_only)
+    run_server(
+        model_dir, host=host, port=port, read_only=read_only, sme_only=not with_canvas
+    )
+
+
+def _export_sme_app(dest: Path) -> None:
+    """Write just the modeler app's static files, for hosting it anywhere.
+
+    The app is a separate Vite entry, so its JS never pulls in the architect
+    canvas bundle: what lands here is the SPA, React, the shared API module and one
+    stylesheet. It still needs an `mdl glossary` (or `mdl serve`) somewhere to talk
+    to — the API is the model, and the model lives in git."""
+    import shutil
+
+    from mdl_server.app import STATIC_DIR
+
+    src_html = STATIC_DIR / "sme.html"
+    if not src_html.exists():
+        typer.secho(
+            "no built app found — this install has no canvas bundle", fg=typer.colors.RED
+        )
+        raise typer.Exit(1)
+
+    html = src_html.read_text(encoding="utf-8")
+    wanted = set(re.findall(r'/assets/([A-Za-z0-9_.-]+\.(?:js|css))', html))
+    # follow one level of chunk imports (the SPA imports React + the api module)
+    seen: set[str] = set()
+    queue = list(wanted)
+    while queue:
+        name = queue.pop()
+        if name in seen:
+            continue
+        seen.add(name)
+        f = STATIC_DIR / "assets" / name
+        if f.suffix == ".js" and f.is_file():
+            for dep in re.findall(r'"\./([A-Za-z0-9_.-]+\.js)"', f.read_text(encoding="utf-8")):
+                if dep not in seen:
+                    queue.append(dep)
+
+    dest = Path(dest)
+    (dest / "assets").mkdir(parents=True, exist_ok=True)
+    (dest / "index.html").write_text(html, encoding="utf-8")
+    total = len(html.encode())
+    for name in sorted(seen):
+        f = STATIC_DIR / "assets" / name
+        if f.is_file():
+            shutil.copy2(f, dest / "assets" / name)
+            total += f.stat().st_size
+
+    (dest / "README.md").write_text(
+        "# Modelith modeler app\n\n"
+        "Static build of the modeler app (`/sme`). Serve this directory from any\n"
+        "static host.\n\n"
+        "It talks to a Modelith API for the model itself, so point it at one:\n\n"
+        "    mdl glossary -m <model-dir> --port 4810\n\n"
+        "and serve this directory behind the same origin (or proxy `/api/` to it).\n"
+        "The model lives in git; this app is a client over it.\n",
+        encoding="utf-8",
+    )
+    typer.secho(
+        f"wrote {len(seen) + 2} files ({total // 1024} KB) to {dest}", fg=typer.colors.GREEN
+    )
+    typer.echo("serve that directory statically, and proxy /api/ to `mdl glossary`")
 
 
 def _gov_adapter(sandbox: bool, base_url: str | None, token: str | None):
