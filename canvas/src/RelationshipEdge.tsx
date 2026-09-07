@@ -14,6 +14,9 @@ export interface RelationshipEdgeData {
  *
  * many side -> crow's foot (3 prongs); one side -> single bar.
  * optional  -> ring; mandatory -> extra bar.
+ *
+ * identifying (IDEF1X): the parent's key is part of the child's identity, drawn
+ * as a SOLID line; non-identifying is DASHED. erwin draws the same distinction.
  */
 export const RelationshipEdge = memo(function RelationshipEdge({
   id,
@@ -41,6 +44,7 @@ export const RelationshipEdge = memo(function RelationshipEdge({
   // from = many side (source), to = one side (target) per spec §2.3
   const cardinality = rel?.cardinality ?? "many_to_one";
   const optional = rel?.optionality === "optional";
+  const identifying = rel?.identifying ?? false;
 
   const srcMany = cardinality === "many_to_one" || cardinality === "many_to_many";
   const tgtMany = cardinality === "one_to_many" || cardinality === "many_to_many";
@@ -49,7 +53,13 @@ export const RelationshipEdge = memo(function RelationshipEdge({
 
   return (
     <g className={cls}>
-      <path id={id} className="rel-path" d={path} fill="none" />
+      <path
+        id={id}
+        className="rel-path"
+        d={path}
+        fill="none"
+        strokeDasharray={identifying ? undefined : "6 4"}
+      />
       {/* wider invisible path for easier hover/click */}
       <path d={path} fill="none" strokeWidth={14} stroke="transparent" />
       <EndGlyph x={sourceX} y={sourceY} side={sourcePosition} many={srcMany} optional={optional} />

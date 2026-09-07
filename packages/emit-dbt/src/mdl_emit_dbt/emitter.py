@@ -344,6 +344,9 @@ class DbtEmitter:
                     "name": attr.name,
                     "data_type": sql_type,
                 }
+                # Attribute definition flows into dbt docs (and back through drift).
+                if attr.definition:
+                    col["description"] = attr.definition.strip()
                 if constraints:
                     col["constraints"] = constraints
                 col_meta = {"mdl_ulid": attr.id}
@@ -430,8 +433,11 @@ class DbtEmitter:
             if model_tests:
                 model_entry["tests"] = model_tests
             # Business definition flows into dbt docs (and back through drift).
-            if ce and ce.definition:
-                model_entry["description"] = ce.definition.strip()
+            # The conceptual entity is the business meaning and wins; a logical-only
+            # entity (no realises) can still carry its own definition.
+            definition = (ce.definition if ce else None) or le.definition
+            if definition:
+                model_entry["description"] = definition.strip()
             models_yaml.append(model_entry)
 
         doc = {"version": 2, "models": models_yaml}

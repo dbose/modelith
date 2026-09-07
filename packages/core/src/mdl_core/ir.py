@@ -273,6 +273,7 @@ class CodeSet(_Base):
 class Attribute(_OntologyMixin, _Base):
     id: ULID
     name: str
+    definition: str | None = None
     domain: str | None = None  # name-ref to a Domain object
     role: Literal["business_key", "surrogate_key", "attribute", "measure"] = "attribute"
     nullable: bool = True
@@ -287,6 +288,7 @@ class LogicalEntity(_Base):
     kind: Literal[ObjectKind.logical_entity] = ObjectKind.logical_entity
     name: str
     realises: ULID | None = None  # conceptual entity ULID
+    definition: str | None = None
     attributes: list[Attribute] = Field(default_factory=list)
     subtypes: list[ULID] = Field(default_factory=list)
     pattern: Pattern | None = None
@@ -311,6 +313,7 @@ class Relationship(_Base):
     id: ULID
     kind: Literal[ObjectKind.relationship] = ObjectKind.relationship
     name: str
+    definition: str | None = None
     from_: RelationshipEnd = Field(alias="from")  # many side
     to: RelationshipEnd  # one side
     cardinality: Cardinality = "many_to_one"
@@ -336,6 +339,7 @@ class KeyGroup(_Base):
     kind: Literal[ObjectKind.key_group] = ObjectKind.key_group
     entity: ULID  # logical entity this key belongs to
     name: str
+    definition: str | None = None
     type: KeyGroupType = "pk"
     members: list[ULID] = Field(default_factory=list)  # ordered attribute ULIDs
     udp: Udp | None = None  # user-defined properties (erwin UDPs)
@@ -354,6 +358,7 @@ class Category(_Base):
     id: ULID
     kind: Literal[ObjectKind.category] = ObjectKind.category
     name: str
+    definition: str | None = None
     supertype: ULID  # logical entity
     subtypes: list[ULID] = Field(default_factory=list)  # logical entities
     discriminator: ULID | None = None  # supertype attribute selecting the subtype

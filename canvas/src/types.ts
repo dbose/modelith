@@ -57,6 +57,7 @@ export interface AttributeRow {
   name: string;
   domain: string | null;
   role: "business_key" | "surrogate_key" | "attribute" | "measure";
+  definition?: string | null;
   nullable: boolean;
   ontology_iri: string | null;
   ontology_refs?: OntologyRef[];
@@ -68,6 +69,7 @@ export interface AttributeRow {
 export interface KeyGroupRow {
   id: string;
   name: string;
+  definition?: string | null;
   type: "pk" | "alternate" | "unique" | "index";
   members: string[]; // attribute ids
 }
@@ -75,6 +77,7 @@ export interface KeyGroupRow {
 export interface Entity {
   id: string;
   name: string;
+  definition?: string | null;
   pattern: string | null;
   conceptual: Conceptual | null;
   attributes: AttributeRow[];
@@ -96,6 +99,7 @@ export interface RelationshipEnd {
 export interface Relationship {
   id: string;
   name: string;
+  definition?: string | null;
   from: RelationshipEnd;
   to: RelationshipEnd;
   cardinality: "one_to_one" | "one_to_many" | "many_to_one" | "many_to_many";

@@ -451,6 +451,15 @@ def _update_relationship(repo: ModelRepo, p: dict) -> None:
         if p["optionality"] not in {"mandatory", "optional"}:
             raise CommandError(f"bad optionality {p['optionality']!r}")
         node["optionality"] = p["optionality"]
+    # Identifying (IDEF1X): the parent's key is part of the child's identity. It was
+    # declared in the IR but no command could set it, so it was unreachable.
+    if "identifying" in p:
+        node["identifying"] = bool(p["identifying"])
+    if "definition" in p:
+        if p["definition"]:
+            node["definition"] = p["definition"]
+        else:
+            node.pop("definition", None)
 
 
 # --- ontology alignment -----------------------------------------------------------
@@ -616,6 +625,362 @@ def _promote_alignment(repo: ModelRepo, p: dict) -> None:
         raise CommandError("no matching ontology ref to promote")
 
 
+# --- structural objects: key groups, categories, domains, code sets -------------
+# These kinds existed in the IR and validated, but had no mutation command, so they
+# were reachable only by hand-editing YAML (erwin parity gap). One create/update
+# pair each, following the same node-mutation pattern as the entity handlers.
+
+
+def _entity_of(repo: ModelRepo, ulid: str):
+    le = repo.model.logical_entities.get(ulid)
+    if le is None:
+        raise CommandError(f"no logical entity {ulid}")
+    return le
+
+
+def _attrs_of(le) -> set:
+    return {a.id for a in le.attributes}
+
+
+def _create_key_group(repo: ModelRepo, p: dict) -> str:
+    """A named (possibly composite) key on a logical entity. `members` is ORDERED —
+    key column order is semantic, so it is stored exactly as given."""
+    _require(p, "entity", "name")
+    le = _entity_of(repo, p["entity"])
+    kg_type = p.get("type", "pk")
+    if kg_type not in {"pk", "alternate", "unique", "index"}:
+        raise CommandError(f"bad key group type {kg_type!r}")
+    members = list(p.get("members") or [])
+    owned = _attrs_of(le)
+    for m in members:
+        if m not in owned:
+            raise CommandError(f"attribute {m} does not belong to entity {le.name!r}")
+    if kg_type == "pk":
+        existing = [
+            k for k in repo.model.key_groups.values() if k.entity == le.id and k.type == "pk"
+        ]
+        if existing:
+            raise CommandError(f"entity {le.name!r} already has a primary key group")
+    kg_id = new_ulid()
+    name = _slug(p["name"])
+    kg: dict = {
+        "id": kg_id,
+        "kind": "key_group",
+        "entity": le.id,
+        "name": name,
+        "type": kg_type,
+    }
+    if p.get("definition"):
+        kg["definition"] = p["definition"]
+    kg["members"] = members
+    repo.add_file(f"logical/key-groups/{name}.yaml", kg, kg_id)
+    return kg_id
+
+
+def _update_key_group(repo: ModelRepo, p: dict) -> None:
+    _require(p, "id")
+    kg = repo.model.key_groups.get(p["id"])
+    if kg is None:
+        raise CommandError(f"no key group {p['id']}")
+    rel, node = _node_for(repo, kg.id)
+    if p.get("name"):
+        new_name = _slug(p["name"])
+        node["name"] = new_name
+        repo.rename_file(rel, f"logical/key-groups/{new_name}.yaml")
+    if p.get("type"):
+        if p["type"] not in {"pk", "alternate", "unique", "index"}:
+            raise CommandError(f"bad key group type {p['type']!r}")
+        node["type"] = p["type"]
+    if "members" in p:
+        le = _entity_of(repo, kg.entity)
+        owned = _attrs_of(le)
+        for m in p["members"] or []:
+            if m not in owned:
+                raise CommandError(f"attribute {m} does not belong to entity {le.name!r}")
+        node["members"] = list(p["members"] or [])
+    if "definition" in p:
+        if p["definition"]:
+            node["definition"] = p["definition"]
+        else:
+            node.pop("definition", None)
+
+
+def _delete_key_group(repo: ModelRepo, p: dict) -> None:
+    _require(p, "id")
+    kg = repo.model.key_groups.get(p["id"])
+    if kg is None:
+        raise CommandError(f"no key group {p['id']}")
+    rel, _ = _node_for(repo, kg.id)
+    repo.remove_file(rel)
+
+
+def _create_category(repo: ModelRepo, p: dict) -> str:
+    """A subtype/supertype cluster (erwin category). The discriminator, when given,
+    must be an attribute of the supertype — the same rule the validator enforces."""
+    _require(p, "name", "supertype")
+    sup = _entity_of(repo, p["supertype"])
+    subtypes = list(p.get("subtypes") or [])
+    for s in subtypes:
+        _entity_of(repo, s)
+    if sup.id in subtypes:
+        raise CommandError("a supertype cannot also be one of its subtypes")
+    disc = p.get("discriminator")
+    if disc and disc not in _attrs_of(sup):
+        raise CommandError(f"discriminator {disc} is not an attribute of {sup.name!r}")
+    mat = p.get("materialization", "single_table")
+    if mat not in {"single_table", "table_per_subtype"}:
+        raise CommandError(f"bad materialization {mat!r}")
+    cat_id = new_ulid()
+    name = _slug(p["name"])
+    cat: dict = {
+        "id": cat_id,
+        "kind": "category",
+        "name": name,
+        "supertype": sup.id,
+        "subtypes": subtypes,
+    }
+    if p.get("definition"):
+        cat["definition"] = p["definition"]
+    if disc:
+        cat["discriminator"] = disc
+    if "complete" in p:
+        cat["complete"] = bool(p["complete"])
+    if "exclusive" in p:
+        cat["exclusive"] = bool(p["exclusive"])
+    cat["materialization"] = mat
+    repo.add_file(f"logical/categories/{name}.yaml", cat, cat_id)
+    return cat_id
+
+
+def _update_category(repo: ModelRepo, p: dict) -> None:
+    _require(p, "id")
+    cat = repo.model.categories.get(p["id"])
+    if cat is None:
+        raise CommandError(f"no category {p['id']}")
+    rel, node = _node_for(repo, cat.id)
+    if p.get("name"):
+        new_name = _slug(p["name"])
+        node["name"] = new_name
+        repo.rename_file(rel, f"logical/categories/{new_name}.yaml")
+    if "subtypes" in p:
+        subtypes = list(p["subtypes"] or [])
+        for s in subtypes:
+            _entity_of(repo, s)
+        if cat.supertype in subtypes:
+            raise CommandError("a supertype cannot also be one of its subtypes")
+        node["subtypes"] = subtypes
+    if "discriminator" in p:
+        if p["discriminator"]:
+            sup = _entity_of(repo, cat.supertype)
+            if p["discriminator"] not in _attrs_of(sup):
+                raise CommandError(
+                    f"discriminator {p['discriminator']} is not an attribute of {sup.name!r}"
+                )
+            node["discriminator"] = p["discriminator"]
+        else:
+            node.pop("discriminator", None)
+    if "complete" in p:
+        node["complete"] = bool(p["complete"])
+    if "exclusive" in p:
+        node["exclusive"] = bool(p["exclusive"])
+    if p.get("materialization"):
+        if p["materialization"] not in {"single_table", "table_per_subtype"}:
+            raise CommandError(f"bad materialization {p['materialization']!r}")
+        node["materialization"] = p["materialization"]
+    if "definition" in p:
+        if p["definition"]:
+            node["definition"] = p["definition"]
+        else:
+            node.pop("definition", None)
+
+
+def _delete_category(repo: ModelRepo, p: dict) -> None:
+    _require(p, "id")
+    cat = repo.model.categories.get(p["id"])
+    if cat is None:
+        raise CommandError(f"no category {p['id']}")
+    rel, _ = _node_for(repo, cat.id)
+    repo.remove_file(rel)
+
+
+def _create_domain(repo: ModelRepo, p: dict) -> str:
+    """A reusable attribute domain. Attributes reference a domain by NAME, so the
+    name must be unique across the model."""
+    _require(p, "name", "base_type")
+    name = _slug(p["name"])
+    if repo.model.domain_by_name(name) is not None:
+        raise CommandError(f"domain {name!r} already exists")
+    dom_id = new_ulid()
+    dom: dict = {
+        "id": dom_id,
+        "kind": "domain",
+        "name": name,
+        "base_type": p["base_type"],
+    }
+    if p.get("definition"):
+        dom["definition"] = p["definition"]
+    if p.get("allowed_values"):
+        dom["allowed_values"] = list(p["allowed_values"])
+    if p.get("value_set"):
+        dom["value_set"] = p["value_set"]
+    repo.add_file(f"logical/domains/{name}.yaml", dom, dom_id)
+    return dom_id
+
+
+def _update_domain(repo: ModelRepo, p: dict) -> None:
+    """Renaming a domain rewrites every attribute that references it by name —
+    otherwise the rename would silently orphan them (attributes are name-refs)."""
+    _require(p, "id")
+    dom = repo.model.domains.get(p["id"])
+    if dom is None:
+        raise CommandError(f"no domain {p['id']}")
+    rel, node = _node_for(repo, dom.id)
+    if p.get("name"):
+        new_name = _slug(p["name"])
+        if new_name != dom.name:
+            other = repo.model.domain_by_name(new_name)
+            if other is not None and other.id != dom.id:
+                raise CommandError(f"domain {new_name!r} already exists")
+            for le in repo.model.logical_entities.values():
+                if not any(a.domain == dom.name for a in le.attributes):
+                    continue
+                _, le_node = _node_for(repo, le.id)
+                for a_node in le_node.get("attributes") or []:
+                    if a_node.get("domain") == dom.name:
+                        a_node["domain"] = new_name
+            node["name"] = new_name
+            repo.rename_file(rel, f"logical/domains/{new_name}.yaml")
+    if p.get("base_type"):
+        node["base_type"] = p["base_type"]
+    if "allowed_values" in p:
+        if p["allowed_values"]:
+            node["allowed_values"] = list(p["allowed_values"])
+        else:
+            node.pop("allowed_values", None)
+    if "value_set" in p:
+        if p["value_set"]:
+            node["value_set"] = p["value_set"]
+        else:
+            node.pop("value_set", None)
+    if "definition" in p:
+        if p["definition"]:
+            node["definition"] = p["definition"]
+        else:
+            node.pop("definition", None)
+
+
+def _delete_domain(repo: ModelRepo, p: dict) -> None:
+    _require(p, "id")
+    dom = repo.model.domains.get(p["id"])
+    if dom is None:
+        raise CommandError(f"no domain {p['id']}")
+    users = [
+        le.name
+        for le in repo.model.logical_entities.values()
+        if any(a.domain == dom.name for a in le.attributes)
+    ]
+    if users:
+        raise CommandError(
+            f"domain {dom.name!r} is used by {len(users)} entity/entities: "
+            f"{', '.join(sorted(users)[:5])}"
+        )
+    rel, _ = _node_for(repo, dom.id)
+    repo.remove_file(rel)
+
+
+def _create_code_set(repo: ModelRepo, p: dict) -> str:
+    """A shared value list (reference data). Domains reference it by name."""
+    _require(p, "name")
+    name = _slug(p["name"])
+    if any(cs.name == name for cs in repo.model.code_sets.values()):
+        raise CommandError(f"value set {name!r} already exists")
+    cs_id = new_ulid()
+    cs: dict = {"id": cs_id, "kind": "code_set", "name": name}
+    if p.get("definition"):
+        cs["definition"] = p["definition"]
+    cs["values"] = [_code_value(v) for v in (p.get("values") or [])]
+    repo.add_file(f"logical/value-sets/{name}.yaml", cs, cs_id)
+    return cs_id
+
+
+def _code_value(v) -> dict:
+    if isinstance(v, dict):
+        if "code" not in v:
+            raise CommandError("each value needs a 'code'")
+        out = {"code": v["code"]}
+        if v.get("label"):
+            out["label"] = v["label"]
+        return out
+    return {"code": v}
+
+
+def _update_code_set(repo: ModelRepo, p: dict) -> None:
+    _require(p, "id")
+    cs = repo.model.code_sets.get(p["id"])
+    if cs is None:
+        raise CommandError(f"no value set {p['id']}")
+    rel, node = _node_for(repo, cs.id)
+    if p.get("name"):
+        new_name = _slug(p["name"])
+        if new_name != cs.name:
+            if any(o.name == new_name and o.id != cs.id for o in repo.model.code_sets.values()):
+                raise CommandError(f"value set {new_name!r} already exists")
+            # domains reference a code set by name -> keep them in step
+            for dom in repo.model.domains.values():
+                if dom.value_set != cs.name:
+                    continue
+                _, d_node = _node_for(repo, dom.id)
+                d_node["value_set"] = new_name
+            node["name"] = new_name
+            repo.rename_file(rel, f"logical/value-sets/{new_name}.yaml")
+    if "values" in p:
+        node["values"] = [_code_value(v) for v in (p["values"] or [])]
+    if "definition" in p:
+        if p["definition"]:
+            node["definition"] = p["definition"]
+        else:
+            node.pop("definition", None)
+
+
+def _delete_code_set(repo: ModelRepo, p: dict) -> None:
+    _require(p, "id")
+    cs = repo.model.code_sets.get(p["id"])
+    if cs is None:
+        raise CommandError(f"no value set {p['id']}")
+    users = [d.name for d in repo.model.domains.values() if d.value_set == cs.name]
+    if users:
+        raise CommandError(
+            f"value set {cs.name!r} is used by domain(s): {', '.join(sorted(users))}"
+        )
+    rel, _ = _node_for(repo, cs.id)
+    repo.remove_file(rel)
+
+
+def _set_object_definition(repo: ModelRepo, p: dict) -> None:
+    """Set the definition on any object that carries one — including the kinds that
+    previously had nowhere to put documentation (logical entity, attribute,
+    relationship, key group, category). For an attribute pass `attribute_id` too."""
+    _require(p, "id")
+    if p.get("attribute_id"):
+        le = _entity_of(repo, p["id"])
+        if p["attribute_id"] not in _attrs_of(le):
+            raise CommandError(f"no attribute {p['attribute_id']} on entity {le.name!r}")
+        _, node = _node_for(repo, le.id)
+        for a_node in node.get("attributes") or []:
+            if a_node.get("id") == p["attribute_id"]:
+                if p.get("definition"):
+                    a_node["definition"] = p["definition"]
+                else:
+                    a_node.pop("definition", None)
+                return
+        raise CommandError(f"attribute {p['attribute_id']} not found in the file")
+    _, node = _node_for(repo, p["id"])
+    if p.get("definition"):
+        node["definition"] = p["definition"]
+    else:
+        node.pop("definition", None)
+
+
 _HANDLERS = {
     "create_entity": _create_entity,
     "rename_entity": _rename_entity,
@@ -641,6 +1006,20 @@ _HANDLERS = {
     "set_term_map": _set_term_map,
     "clear_term_map": _clear_term_map,
     "set_kg_base_iri": _set_kg_base_iri,
+    # structural objects (previously YAML-only — no authoring surface)
+    "create_key_group": _create_key_group,
+    "update_key_group": _update_key_group,
+    "delete_key_group": _delete_key_group,
+    "create_category": _create_category,
+    "update_category": _update_category,
+    "delete_category": _delete_category,
+    "create_domain": _create_domain,
+    "update_domain": _update_domain,
+    "delete_domain": _delete_domain,
+    "create_code_set": _create_code_set,
+    "update_code_set": _update_code_set,
+    "delete_code_set": _delete_code_set,
+    "set_object_definition": _set_object_definition,
 }
 
 COMMANDS = sorted(_HANDLERS)

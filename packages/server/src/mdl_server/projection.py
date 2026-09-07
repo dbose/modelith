@@ -142,6 +142,7 @@ def project(model: Model) -> dict:
             {
                 "id": le.id,
                 "name": le.name,
+                "definition": le.definition,
                 "pattern": le.pattern,
                 "conceptual": conceptual,
                 "udp": entity_udp,
@@ -151,6 +152,7 @@ def project(model: Model) -> dict:
                     {
                         "id": a.id,
                         "name": a.name,
+                        "definition": a.definition,
                         "domain": a.domain,
                         "role": a.role,
                         "nullable": a.nullable,
@@ -166,6 +168,7 @@ def project(model: Model) -> dict:
                     {
                         "id": kg.id,
                         "name": kg.name,
+                        "definition": kg.definition,
                         "type": kg.type,
                         "members": list(kg.members),
                     }
@@ -186,6 +189,7 @@ def project(model: Model) -> dict:
             {
                 "id": rel.id,
                 "name": rel.name,
+                "definition": rel.definition,
                 "from": {
                     "entity": rel.from_.entity,
                     "attributes": list(rel.from_.attributes),
@@ -225,6 +229,7 @@ def project(model: Model) -> dict:
             {
                 "id": cat.id,
                 "name": cat.name,
+                "definition": cat.definition,
                 "supertype": cat.supertype,
                 "subtypes": list(cat.subtypes),
                 "discriminator": cat.discriminator,

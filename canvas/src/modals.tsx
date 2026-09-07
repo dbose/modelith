@@ -486,14 +486,24 @@ export function RelEditModal({
   const [name, setName] = useState(rel.name);
   const [cardinality, setCardinality] = useState(rel.cardinality);
   const [optionality, setOptionality] = useState(rel.optionality);
+  const [identifying, setIdentifying] = useState(rel.identifying);
   const [confirmDel, setConfirmDel] = useState(false);
 
   const save = async () => {
     if (name.trim() && name.trim() !== rel.name) {
       await exec("rename_relationship", { id: rel.id, name: name.trim() });
     }
-    if (cardinality !== rel.cardinality || optionality !== rel.optionality) {
-      await exec("update_relationship", { id: rel.id, cardinality, optionality });
+    if (
+      cardinality !== rel.cardinality ||
+      optionality !== rel.optionality ||
+      identifying !== rel.identifying
+    ) {
+      await exec("update_relationship", {
+        id: rel.id,
+        cardinality,
+        optionality,
+        identifying,
+      });
     }
     onClose();
   };
@@ -518,6 +528,18 @@ export function RelEditModal({
         <select value={optionality} onChange={(e) => setOptionality(e.target.value as typeof optionality)}>
           <option value="mandatory">mandatory</option>
           <option value="optional">optional</option>
+        </select>
+      </label>
+      {/* IDEF1X: identifying => the parent's key is part of the child's identity.
+          Drawn solid on the canvas; non-identifying is dashed. */}
+      <label className="form-row">
+        identifying
+        <select
+          value={identifying ? "yes" : "no"}
+          onChange={(e) => setIdentifying(e.target.value === "yes")}
+        >
+          <option value="no">no — parent key is a plain reference</option>
+          <option value="yes">yes — parent key is part of the child's identity</option>
         </select>
       </label>
       <div className="modal-footer" style={{ justifyContent: "space-between" }}>
