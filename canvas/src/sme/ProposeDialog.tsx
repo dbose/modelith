@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ApiError, proposeChanges } from "../api";
-import type { ProposeResult } from "../types";
+import type { ClassificationDoc, ProposeResult } from "../types";
 import type { PendingChange } from "./SmeApp";
 
 /** The entire git/PR complexity, behind one button. Shows a plain-language
@@ -9,16 +9,23 @@ import type { PendingChange } from "./SmeApp";
  * never sees git. */
 export function ProposeDialog({
   changes,
+  routeAdvice,
+  user: initialUser,
+  onUser,
   onDrop,
   onClose,
   onProposed,
 }: {
   changes: PendingChange[];
+  /** route/reviewers/gates for the staged change, for the split advice (§M6) */
+  routeAdvice?: ClassificationDoc | null;
+  user?: string;
+  onUser?: (u: string) => void;
   onDrop: (idx: number) => void;
   onClose: () => void;
-  onProposed: () => void;
+  onProposed: (result?: ProposeResult) => void;
 }) {
-  const [user, setUser] = useState(localStorage.getItem("mdl.sme.user") ?? "");
+  const [user, setUser] = useState(initialUser || (localStorage.getItem("mdl.sme.user") ?? ""));
   const [title, setTitle] = useState(
     changes.length === 1 ? `Update ${changes[0].label.toLowerCase()}` : "Glossary updates",
   );
@@ -30,16 +37,16 @@ export function ProposeDialog({
   const submit = () => {
     if (!user.trim()) return;
     localStorage.setItem("mdl.sme.user", user.trim());
+    onUser?.(user.trim());
     setBusy(true);
     setError(null);
-    const bodyText =
-      (body.trim() ? body.trim() + "\n\n" : "") +
-      changes.map((c) => `- ${c.label}: "${c.before}" → "${c.after}"`).join("\n");
+    // The PR body is generated server-side from the real model diff, so the
+    // reviewer sees a grouped, severity-tagged summary rather than this list.
     proposeChanges({
       user: user.trim(),
       slug: title,
       title,
-      body: bodyText,
+      body: body.trim(),
       changes: changes.map((c) => ({ op: c.op, payload: c.payload })),
     })
       .then(setResult)
@@ -49,7 +56,7 @@ export function ProposeDialog({
 
   if (result?.ok) {
     return (
-      <div className="sme-modal-backdrop" onClick={onProposed}>
+      <div className="sme-modal-backdrop" onClick={() => onProposed(result)}>
         <div className="sme-modal" onClick={(e) => e.stopPropagation()}>
           <h2>✓ Sent for review</h2>
           <p>{result.message}</p>
@@ -71,7 +78,7 @@ export function ProposeDialog({
             Your suggestion is on branch <code>{result.branch}</code>. A steward will review it.
           </p>
           <div className="sme-modal-foot">
-            <button className="sme-primary" onClick={onProposed}>
+            <button className="sme-primary" onClick={() => onProposed(result)}>
               Done
             </button>
           </div>
@@ -119,6 +126,8 @@ export function ProposeDialog({
           <textarea rows={2} value={body} onChange={(e) => setBody(e.target.value)} />
         </label>
 
+        <RouteAdvice cl={routeAdvice} user={user} />
+
         {error && <p className="sme-error-line">{error}</p>}
 
         <div className="sme-modal-foot">
@@ -131,5 +140,39 @@ export function ProposeDialog({
         </div>
       </div>
     </div>
+  );
+}
+
+/** §M6 — a proposal spanning routes inherits the STRICTEST gate (_PRECEDENCE is
+ *  B > E > C > A), so a definition fix bundled with a structural change waits on
+ *  architects instead of a steward. Saying so, and naming where it goes, is advice
+ *  erwin has no route model to give. */
+function RouteAdvice({ cl, user }: { cl?: ClassificationDoc | null; user: string }) {
+  if (!cl?.primary) return null;
+  const reviewers = cl.reviewers_actual ?? cl.reviewers;
+  const slug = (user || "you").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const mixed = cl.routes.length > 1;
+  return (
+    <>
+      {mixed && (
+        <div className="sub-advice">
+          <span className="i">ⓘ</span> These changes span routes{" "}
+          <strong>{cl.routes.join(" and ")}</strong>. The whole proposal will be reviewed as
+          route {cl.primary} ({cl.primary_name}) — the strictest gate wins, so it needs{" "}
+          {reviewers.join(", ")} plus <code>{cl.gates[cl.gates.length - 1]}</code>. Proposing
+          the meaning-only changes separately would get them reviewed faster.
+        </div>
+      )}
+      <div className="sub-dest">
+        <div className="row">
+          <span className="k">Goes to</span>
+          <code>sme/{slug}/…</code>
+        </div>
+        <div className="row">
+          <span className="k">Reviewers</span>
+          <span>{reviewers.join(", ")}</span>
+        </div>
+      </div>
+    </>
   );
 }

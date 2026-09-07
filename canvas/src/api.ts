@@ -1,4 +1,9 @@
 import type {
+  ClassificationDoc,
+  ConflictDoc,
+  GitContext,
+  ModelDiffDoc,
+  ProposalsDoc,
   CommandResponse,
   CoverageDoc,
   Decision,
@@ -104,3 +109,27 @@ export const proposeChanges = (payload: {
   body: string;
   changes: { op: string; payload: Record<string, unknown> }[];
 }) => post<ProposeResult>("/api/git/propose", payload);
+
+// --- model git-ops (plan §L) ------------------------------------------------------
+// The diff/classify/conflicts/context/proposals endpoints are all READS, so they
+// work in read-only mode too (git_router gates only its writes).
+
+export const fetchModelDiff = (base = "HEAD") =>
+  get<ModelDiffDoc>(`/api/git/diff/model?base=${encodeURIComponent(base)}`);
+
+export const fetchRefDiff = (base: string, head: string) =>
+  get<ModelDiffDoc>(
+    `/api/git/diff/refs?base=${encodeURIComponent(base)}&head=${encodeURIComponent(head)}`,
+  );
+
+export const fetchClassification = (base = "HEAD") =>
+  get<ClassificationDoc>(`/api/git/classify?base=${encodeURIComponent(base)}`);
+
+export const fetchConflicts = (base: string) =>
+  get<ConflictDoc>(`/api/git/conflicts?base=${encodeURIComponent(base)}`);
+
+export const fetchGitContext = (user = "") =>
+  get<GitContext>(`/api/git/context?user=${encodeURIComponent(user)}`);
+
+export const fetchProposals = (user = "") =>
+  get<ProposalsDoc>(`/api/git/proposals?user=${encodeURIComponent(user)}`);

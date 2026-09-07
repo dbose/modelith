@@ -278,3 +278,114 @@ export interface DiagnosticsDoc {
   items: Diagnostic[];
   has_errors: boolean;
 }
+
+// --- model git-ops (plan §L) ------------------------------------------------------
+// These mirror the server's wire shapes exactly: ModelDiffDoc is
+// mdl_core.diff_render.render_json, ClassificationDoc is Classification.to_dict.
+
+export type Severity = "breaking" | "additive" | "cosmetic" | "unmanaged";
+export type ChangeType = "added" | "removed" | "modified";
+
+/** A dbt model a breaking change would break, from projection.where_used. */
+export interface BreakRef {
+  name: string;
+  target: string;
+  materialization: string;
+}
+
+export interface FieldChangeDoc {
+  field: string;
+  kind: string;
+  severity: Severity;
+  label: string;
+  detail: string;
+  before: unknown;
+  after: unknown;
+  breaks?: BreakRef[];
+}
+
+export interface ObjectChangeDoc {
+  ulid: string;
+  object_kind: string;
+  object_kind_label: string;
+  change: ChangeType;
+  name_before: string | null;
+  name_after: string | null;
+  renamed: boolean;
+  severity: Severity;
+  path: string | null;
+  fields: FieldChangeDoc[];
+  children: ObjectChangeDoc[];
+}
+
+export interface ModelDiffDoc {
+  ok: boolean;
+  error?: string;
+  base: { ref: string; sha: string; label: string };
+  head: { ref: string | null; label: string };
+  counts: Record<string, number>;
+  max_severity: Severity | null;
+  has_breaking: boolean;
+  objects: ObjectChangeDoc[];
+  config: FieldChangeDoc[];
+}
+
+export interface ClassificationDoc {
+  ok: boolean;
+  routes: string[];
+  primary: string | null;
+  primary_name: string | null;
+  reviewers: string[];
+  /** parsed from the repo's real .github/CODEOWNERS, when it has one */
+  reviewers_actual: string[] | null;
+  gates: string[];
+  paths: string[];
+  unmatched: string[];
+}
+
+export interface ConflictDoc {
+  ok: boolean;
+  base: string;
+  head: string;
+  stale: boolean;
+  ahead: number;
+  behind: number;
+  clean: boolean;
+  files: { path: string; clean: boolean; conflicts: string[] }[];
+}
+
+export interface GitContext {
+  ok: boolean;
+  git: boolean;
+  branch?: string;
+  base_branch?: string;
+  on_base?: boolean;
+  dirty?: boolean;
+  ahead?: number;
+  behind?: number;
+  remote?: string | null;
+  sme_branch_prefix?: string;
+  read_only?: boolean;
+  can_propose: boolean;
+}
+
+export interface ProposalDoc {
+  branch: string;
+  title: string;
+  created: string;
+  pushed: boolean;
+  merged: boolean;
+  ahead: number;
+  behind: number;
+  compare_url: string | null;
+  pr: { number: number; url: string; state: string; reviews: string | null } | null;
+}
+
+export interface ProposalsDoc {
+  ok: boolean;
+  git: boolean;
+  base?: string;
+  /** false when `gh` is absent, unauthed or timed out — the list is still full */
+  gh: boolean;
+  proposals: ProposalDoc[];
+}

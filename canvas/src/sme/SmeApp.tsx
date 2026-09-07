@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchGlossary, fetchGlossaryConfig, fetchModel } from "../api";
-import type { GlossaryConfig, GlossaryDoc } from "../types";
+import type { ClassificationDoc, GlossaryConfig, GlossaryDoc } from "../types";
+import { GitBanner } from "./GitBanner";
+import { ProposalsList } from "./ProposalsList";
 import { ProposeDialog } from "./ProposeDialog";
+import { ReviewScreen } from "./ReviewScreen";
 import { TermCard } from "./TermCard";
 import { TermEditor } from "./TermEditor";
 
@@ -30,6 +33,36 @@ export function SmeApp() {
   const [editing, setEditing] = useState(false);
   const [pending, setPending] = useState<PendingChange[]>([]);
   const [proposeOpen, setProposeOpen] = useState(false);
+  // browse | review | proposals. Written to location.hash so a view is linkable
+  // (app.py serves sme.html for `sme` and any `sme/...`, so no server change).
+  const [view, setView] = useState<"browse" | "review" | "proposals">(
+    window.location.hash === "#proposals" ? "proposals" : "browse",
+  );
+  // objects the SME has unticked in the review screen (selective proposal)
+  const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  const [user, setUser] = useState(() => localStorage.getItem("mdl.sme.user") ?? "");
+  const [routeAdvice, setRouteAdvice] = useState<ClassificationDoc | null>(null);
+
+  // Selective proposal is only safe when no staged op CREATES something: a
+  // create_term followed by a set_definition on it are dependent, and unticking
+  // the first would apply a broken subset. Cheap and honest to disable it.
+  const selectable = !pending.some((c) => c.op.startsWith("create_"));
+
+  const goto = useCallback((v: "browse" | "review" | "proposals") => {
+    setView(v);
+    window.location.hash = v === "browse" ? "" : `#${v}`;
+  }, []);
+
+  // keep the view in step with the hash, so a deep link and the back button work
+  useEffect(() => {
+    const onHash = () => {
+      const h = window.location.hash;
+      setView(h === "#proposals" ? "proposals" : h === "#review" ? "review" : "browse");
+    };
+    onHash();
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
 
   const load = useCallback(() => {
     fetchGlossary({ subject_area: subjectArea, q: query })
@@ -112,13 +145,50 @@ export function SmeApp() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
+        <nav className="sme-tabs">
+          <button
+            className={"sme-tab" + (view === "browse" ? " active" : "")}
+            onClick={() => goto("browse")}
+          >
+            Terms
+          </button>
+          <button
+            className={"sme-tab" + (view === "proposals" ? " active" : "")}
+            onClick={() => goto("proposals")}
+          >
+            My proposals
+          </button>
+        </nav>
         {pending.length > 0 && (
-          <button className="sme-tray" onClick={() => setProposeOpen(true)}>
-            {pending.length} change{pending.length > 1 ? "s" : ""} · Submit for review →
+          <button className="sme-tray" onClick={() => goto("review")}>
+            {pending.length} change{pending.length > 1 ? "s" : ""} · Review →
           </button>
         )}
       </header>
+      {view === "browse" && <GitBanner user={user} />}
 
+      {view === "review" ? (
+        <ReviewScreen
+          user={user}
+          selectable={selectable}
+          excluded={excluded}
+          onToggleObject={(u) =>
+            setExcluded((prev) => {
+              const next = new Set(prev);
+              if (next.has(u)) next.delete(u);
+              else next.add(u);
+              return next;
+            })
+          }
+          onBack={() => goto("browse")}
+          onSubmit={(cl) => {
+            setRouteAdvice(cl);
+            setProposeOpen(true);
+          }}
+        />
+      ) : view === "proposals" ? (
+        <ProposalsList user={user} onView={() => goto("review")} />
+      ) : (
       <div className="sme-body">
         <nav className="sme-nav">
           <button
@@ -186,13 +256,24 @@ export function SmeApp() {
           )}
         </section>
       </div>
+      )}
 
       {proposeOpen && (
         <ProposeDialog
           changes={pending}
+          routeAdvice={routeAdvice}
+          user={user}
+          onUser={(u) => {
+            setUser(u);
+            localStorage.setItem("mdl.sme.user", u);
+          }}
           onDrop={dropChange}
           onClose={() => setProposeOpen(false)}
-          onProposed={onProposed}
+          onProposed={() => {
+            onProposed();
+            setExcluded(new Set());
+            goto("proposals");
+          }}
         />
       )}
     </div>
