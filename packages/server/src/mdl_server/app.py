@@ -18,7 +18,7 @@ from mdl_core.repo import ModelRepo
 from mdl_core.validate import validate
 from mdl_server import commands
 from mdl_server.git_api import git_router
-from mdl_server.glossary_api import glossary_router
+from mdl_server.glossary_api import glossary_router, subject_area_router
 from mdl_server.ontology_api import ontology_router
 from mdl_server.projection import project
 
@@ -77,9 +77,11 @@ def create_app(model_dir: Path, *, read_only: bool = False) -> FastAPI:
             raise HTTPException(status_code=404, detail=str(e)) from e
 
     @app.get("/api/model")
-    def get_model() -> JSONResponse:
+    def get_model(subject_area: str = "") -> JSONResponse:
+        """`?subject_area=<ulid>` scopes the model to that area — which also gives
+        the main canvas a subject-area filter, not just the SME workspace."""
         repo = _load()
-        doc = project(repo.model)
+        doc = project(repo.model, subject_area=subject_area or None)
         doc["fingerprint"] = commands.dir_fingerprint(model_dir)
         doc["read_only"] = read_only
         doc["domains"] = sorted(d.name for d in repo.model.domains.values())
@@ -120,6 +122,7 @@ def create_app(model_dir: Path, *, read_only: bool = False) -> FastAPI:
     # Ontology + glossary read APIs — always available (read-only + edit modes).
     app.include_router(ontology_router(model_dir, lambda: _load().model, read_only=read_only))
     app.include_router(glossary_router(lambda: _load().model))
+    app.include_router(subject_area_router(lambda: _load().model))
 
     @app.get("/api/decisions")
     def decisions() -> JSONResponse:

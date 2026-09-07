@@ -18,8 +18,15 @@ def write_model(model: Model, root: Path) -> list[str]:
     root = Path(root)
     written: list[str] = []
 
+    # Collection fields that default to []: `exclude_none` does not drop an empty
+    # list, so a reversed model would carry a noise `members: []` on every object.
+    _EMPTY_OK = ("members", "synonyms", "subtypes", "ontology_refs", "values")
+
     def dump(rel: str, obj) -> None:
         data = obj.model_dump(by_alias=True, exclude_none=True, mode="json")
+        for key in _EMPTY_OK:
+            if data.get(key) == []:
+                data.pop(key)
         # `kind` is an enum -> its value; pydantic mode="json" already handles it.
         path = root / rel
         path.parent.mkdir(parents=True, exist_ok=True)

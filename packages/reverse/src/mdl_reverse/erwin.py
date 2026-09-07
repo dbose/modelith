@@ -104,6 +104,11 @@ def import_erwin(text: str, *, project_name: str | None = None) -> Model:
     model = Model(ProjectConfig(name=model_name))
 
     subject_areas: dict[str, str] = {}  # name -> ULID
+    sa_objs: dict[str, SubjectArea] = {}  # name -> object, so members can be filled
+    # erwin's <SubjectArea> is a CONTAINER of objects; the flat subject_area="..."
+    # attribute is only its home tag. Nested <Entity>/<EntityRef> children carry the
+    # real many-to-many, so collect both shapes.
+    nested_members: dict[str, list[str]] = {}  # SA name -> entity names
     entities_by_name: dict[str, LogicalEntity] = {}
     ce_by_name: dict[str, ConceptualEntity] = {}
 
@@ -115,7 +120,18 @@ def import_erwin(text: str, *, project_name: str | None = None) -> Model:
             if name and name not in subject_areas:
                 sa_id = new_ulid()
                 subject_areas[name] = sa_id
-                model.add(SubjectArea(id=sa_id, name=name))
+                sa = SubjectArea(id=sa_id, name=name)
+                sa_objs[name] = sa
+                model.add(sa)
+            if name:
+                for child in el.iter():
+                    if child is el:
+                        continue
+                    if _lc(child.tag) not in ("entity", "entityref", "entity_ref", "table"):
+                        continue
+                    child_name = _attr(child, "name")
+                    if child_name:
+                        nested_members.setdefault(name, []).append(child_name)
 
     for el in root.iter():
         if _lc(el.tag) not in ("entity", "table"):
@@ -155,6 +171,20 @@ def import_erwin(text: str, *, project_name: str | None = None) -> Model:
         le = LogicalEntity(id=new_ulid(), name=name.lower(), realises=ce_id, attributes=attrs)
         entities_by_name[name] = le
         model.add(le)
+        # seed members from the home tag, so a flat export round-trips cleanly and
+        # imports free of MDL-W114
+        if sa_name and sa_name in sa_objs and ce_id not in sa_objs[sa_name].members:
+            sa_objs[sa_name].members.append(ce_id)
+
+    # nested membership: an entity may appear under several subject areas
+    for sa_name, names in nested_members.items():
+        sa = sa_objs.get(sa_name)
+        if sa is None:
+            continue
+        for n in names:
+            ce = ce_by_name.get(n)
+            if ce is not None and ce.id not in sa.members:
+                sa.members.append(ce.id)
 
     for el in root.iter():
         if _lc(el.tag) not in ("relationship", "fk", "foreignkey"):

@@ -26,6 +26,7 @@ def validate(model: Model) -> DiagnosticSet:
     diags = DiagnosticSet()
     _check_referential_integrity(model, diags)
     _check_key_groups(model, diags)
+    _check_subject_areas(model, diags)
     _check_categories(model, diags)
     _check_ontology_layers(model, diags)
     _check_proposed_alignments(model, diags)
@@ -135,6 +136,10 @@ def _check_referential_integrity(model: Model, diags: DiagnosticSet) -> None:
                 )
             )
 
+    for sa in model.subject_areas.values():
+        for m in sa.members:
+            ref(m, "MDL-E107", f"subject area {sa.name!r} member", sa.id)
+
     for ce in model.conceptual_entities.values():
         ref(ce.subject_area, "MDL-E101", f"conceptual entity {ce.name!r} subject_area", ce.id)
         for rb in ce.realised_by:
@@ -182,6 +187,69 @@ def _check_referential_integrity(model: Model, diags: DiagnosticSet) -> None:
         ref(pt.realises, "MDL-E104", f"physical table {pt.name!r} realises", pt.id)
         for col in pt.columns:
             ref(col.realises, "MDL-E104", f"physical table {pt.name!r} column {col.name!r}", pt.id)
+
+
+def _check_subject_areas(model: Model, diags: DiagnosticSet) -> None:
+    """Subject-area membership. Dangling member ULIDs are caught by MDL-E107 in the
+    referential pass; here we check KIND and the home/member relationship.
+
+    The home tag (`ConceptualEntity.subject_area`) and the member list are two
+    different questions — "where does this live?" vs "what is in this view?" — so
+    drift between them is a warning, not an error: a repo may legitimately use the
+    home tag for colour alone and never touch members. The converse (a member not
+    homed here) is the normal borrowed-object case and is NOT flagged."""
+    for sa in model.subject_areas.values():
+        for m in sa.members:
+            if m in model.conceptual_entities or m in model.terms:
+                continue
+            if m not in model.all_ulids():
+                continue  # already reported as MDL-E107
+            obj = (
+                model.logical_entities.get(m)
+                or model.relationships.get(m)
+                or model.key_groups.get(m)
+            )
+            kind = getattr(getattr(obj, "kind", None), "value", "object")
+            diags.add(
+                Diagnostic(
+                    code="MDL-E113",
+                    severity=Severity.error,
+                    message=(
+                        f"subject area {sa.name!r} member {m!r} is a {kind}; "
+                        "members must be a conceptual entity or a term"
+                    ),
+                    path=sa.id,
+                )
+            )
+
+    by_home: dict[str, list[str]] = {}
+    for ce in model.conceptual_entities.values():
+        if ce.subject_area:
+            by_home.setdefault(ce.subject_area, []).append(ce.name)
+    for sa_id, names in by_home.items():
+        sa = model.subject_areas.get(sa_id)
+        if sa is None or not sa.members:
+            continue  # no member list authored -> nothing to be inconsistent with
+        members = set(sa.members)
+        missing = sorted(
+            n
+            for n in names
+            if not any(
+                ce.name == n and ce.id in members for ce in model.conceptual_entities.values()
+            )
+        )
+        for name in missing:
+            diags.add(
+                Diagnostic(
+                    code="MDL-W114",
+                    severity=Severity.warning,
+                    message=(
+                        f"{name!r} has subject area {sa.name!r} as its home but is not in "
+                        "its member list"
+                    ),
+                    path=sa.id,
+                )
+            )
 
 
 def _check_key_groups(model: Model, diags: DiagnosticSet) -> None:

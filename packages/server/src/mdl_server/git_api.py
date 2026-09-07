@@ -575,6 +575,11 @@ def git_router(model_dir: Path, *, read_only: bool = False) -> APIRouter:
 
             slug = _slugify(body.slug or body.title)
             branch_name = f"sme/{_slugify(body.user)}/{slug}"
+            # Remember where we started. Without this the server is left sitting on
+            # the SME branch: the next SME browses an un-merged proposal as if it
+            # were truth, and a second propose branches off the first, stacking
+            # unrelated changes into one PR.
+            starting_branch = _current_branch(model_dir) or "main"
             code, out = _git(model_dir, "checkout", "-B", branch_name)
             if code != 0:
                 return JSONResponse({"ok": False, "error": out}, status_code=500)
@@ -590,6 +595,9 @@ def git_router(model_dir: Path, *, read_only: bool = False) -> APIRouter:
                 except CommandError as e:
                     _git(model_dir, "checkout", "--", ".")
                     _git(model_dir, "clean", "-fd", "--", ".")
+                    # a failed propose must be a complete no-op
+                    _git(model_dir, "checkout", starting_branch)
+                    _git(model_dir, "branch", "-D", branch_name)
                     return JSONResponse(
                         {"ok": False, "error": f"change {ch.op!r}: {e}"}, status_code=422
                     )
@@ -602,6 +610,14 @@ def git_router(model_dir: Path, *, read_only: bool = False) -> APIRouter:
             if code != 0:
                 return JSONResponse({"ok": False, "error": out}, status_code=409)
 
+            def _finish(payload: dict) -> JSONResponse:
+                """Return to the branch we started on. The proposal branch and its
+                commit survive (locally and on the remote); only the working tree
+                goes back, so the next reader sees the base branch."""
+                _git(model_dir, "checkout", starting_branch)
+                payload["returned_to"] = starting_branch
+                return JSONResponse(payload)
+
             result: dict = {"ok": True, "branch": branch_name, "applied": applied}
 
             # push (if a remote exists) + open a PR (if gh is available and authed).
@@ -609,13 +625,13 @@ def git_router(model_dir: Path, *, read_only: bool = False) -> APIRouter:
             if has_remote != 0:
                 result["pushed"] = False
                 result["message"] = "committed to branch; no `origin` remote to push"
-                return JSONResponse(result)
+                return _finish(result)
 
             code, out = _git(model_dir, "push", "-u", "origin", branch_name, timeout=60)
             result["pushed"] = code == 0
             if code != 0:
                 result["message"] = f"branch committed; push failed: {out}"
-                return JSONResponse(result)
+                return _finish(result)
 
             if shutil.which("gh"):
                 proc = subprocess.run(
@@ -633,6 +649,6 @@ def git_router(model_dir: Path, *, read_only: bool = False) -> APIRouter:
             else:
                 result["compare_url"] = _compare_url(model_dir, branch_name)
                 result["message"] = "pushed; `gh` not installed — open the PR from the compare link"
-            return JSONResponse(result)
+            return _finish(result)
 
     return router

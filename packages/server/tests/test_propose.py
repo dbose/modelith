@@ -64,14 +64,20 @@ def test_propose_creates_branch_and_coauthored_commit(client, git_model_dir):
     assert data["pushed"] is False
     assert "no `origin` remote" in data["message"]
 
-    # the branch exists, is checked out, and the commit carries the trailer
-    assert _git(git_model_dir, "rev-parse", "--abbrev-ref", "HEAD") == "sme/a-hough/clarify-counterparty"
-    log = _git(git_model_dir, "log", "-1", "--pretty=%B")
+    # the branch exists and carries the commit, but the working tree is back on the
+    # base branch: leaving it on the proposal branch meant the next reader saw an
+    # un-merged proposal as truth, and a second propose stacked onto the first.
+    assert data["returned_to"] == "main"
+    assert _git(git_model_dir, "rev-parse", "--abbrev-ref", "HEAD") == "main"
+    assert "sme/a-hough/clarify-counterparty" in _git(git_model_dir, "branch", "--list", "sme/*")
+    # the commit lives on the branch, so read the log from there
+    log = _git(git_model_dir, "log", "-1", "--pretty=%B", "sme/a-hough/clarify-counterparty")
     assert "Co-authored-by: a.hough" in log
     assert "prospective parties" in log
     # the edit actually landed
     from mdl_core.repo import ModelRepo
 
+    _git(git_model_dir, "checkout", "sme/a-hough/clarify-counterparty")
     repo = ModelRepo.load(git_model_dir)
     ce = repo.model.conceptual_entities[cpty["id"]]
     assert "may have" in (ce.definition or "")

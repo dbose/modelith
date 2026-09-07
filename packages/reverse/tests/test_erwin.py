@@ -71,3 +71,33 @@ def test_import_erwin_tolerates_unknown_elements():
 """
     m = import_erwin(xml)
     assert len(m.logical_entities) == 1
+
+
+def test_import_populates_subject_area_members():
+    """erwin's <SubjectArea> is a container of objects, not just a tag. The flat
+    form seeds members from the home tag; the nested form carries the real
+    many-to-many, where one entity sits in several areas."""
+    xml = """
+    <Model name="risk">
+      <SubjectArea name="Trading"/>
+      <SubjectArea name="UseCase-StressTesting">
+        <EntityRef name="Counterparty"/>
+        <EntityRef name="Trade"/>
+      </SubjectArea>
+      <Entity name="Counterparty" subject_area="Trading">
+        <Attribute name="cpty_id" datatype="BIGINT" key="true"/>
+      </Entity>
+      <Entity name="Trade" subject_area="Trading">
+        <Attribute name="trade_id" datatype="BIGINT" key="true"/>
+      </Entity>
+    </Model>
+    """
+    model = import_erwin(xml)
+    by_name = {sa.name: sa for sa in model.subject_areas.values()}
+    ce = {c.name: c.id for c in model.conceptual_entities.values()}
+
+    # flat form: seeded from the home tag
+    assert set(by_name["Trading"].members) == {ce["Counterparty"], ce["Trade"]}
+    # nested form: the same objects also belong to the use-case view
+    assert set(by_name["UseCase-StressTesting"].members) == {ce["Counterparty"], ce["Trade"]}
+    assert validate(model).by_min_severity(Severity.error) == []

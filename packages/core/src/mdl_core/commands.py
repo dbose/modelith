@@ -981,6 +981,101 @@ def _set_object_definition(repo: ModelRepo, p: dict) -> None:
         node.pop("definition", None)
 
 
+# --- subject-area membership (erwin's Available/Included picker) ------------------
+
+
+def _subject_area_node(repo: ModelRepo, sa_id: str):
+    sa = repo.model.subject_areas.get(sa_id)
+    if sa is None:
+        raise CommandError(f"no subject area {sa_id}")
+    return sa, _node_for(repo, sa_id)
+
+
+def _valid_member(repo: ModelRepo, ulid: str) -> str:
+    """Members are conceptual objects. A LOGICAL entity ULID is coerced to the
+    conceptual entity it realises, so the caller may pass either — closure
+    expansion traverses the logical graph, so this saves every caller a
+    translation step."""
+    if ulid in repo.model.conceptual_entities or ulid in repo.model.terms:
+        return ulid
+    le = repo.model.logical_entities.get(ulid)
+    if le is not None and le.realises:
+        return le.realises
+    raise CommandError(f"{ulid} is not a conceptual entity or term")
+
+
+def _update_subject_area(repo: ModelRepo, p: dict) -> None:
+    _require(p, "id")
+    sa, (rel, node) = _subject_area_node(repo, p["id"])
+    if p.get("name"):
+        new_name = p["name"].strip()
+        if any(x.name == new_name and x.id != sa.id for x in repo.model.subject_areas.values()):
+            raise CommandError(f"subject area {new_name!r} already exists")
+        node["name"] = new_name
+        repo.rename_file(rel, f"conceptual/subject-areas/{_slug(new_name)}.yaml")
+    if "definition" in p:
+        if p["definition"]:
+            node["definition"] = p["definition"]
+        else:
+            node.pop("definition", None)
+
+
+def _delete_subject_area(repo: ModelRepo, p: dict) -> None:
+    """Deleting a view must never delete the objects in it. Entities homed here
+    lose their home tag (with --cascade); nothing else is touched."""
+    _require(p, "id")
+    sa, (rel, _node) = _subject_area_node(repo, p["id"])
+    homed = [ce for ce in repo.model.conceptual_entities.values() if ce.subject_area == sa.id]
+    if homed and not p.get("cascade"):
+        names = ", ".join(sorted(c.name for c in homed)[:5])
+        raise CommandError(
+            f"subject area {sa.name!r} is the home area of {len(homed)} entity/entities "
+            f"({names}); pass cascade=true to clear their home tag"
+        )
+    for ce in homed:
+        _, ce_node = _node_for(repo, ce.id)
+        ce_node.pop("subject_area", None)
+    repo.remove_file(rel)
+
+
+def _write_members(node, members: list[str]) -> None:
+    if members:
+        node["members"] = members
+    else:
+        node.pop("members", None)  # empty -> back to the pre-feature byte shape
+
+
+def _add_subject_area_members(repo: ModelRepo, p: dict) -> None:
+    _require(p, "id", "members")
+    _sa, (_rel, node) = _subject_area_node(repo, p["id"])
+    resolved = [_valid_member(repo, m) for m in p["members"]]
+    cur = list(node.get("members") or [])
+    for m in resolved:
+        if m not in cur:  # re-adding is a no-op: expansion routinely re-adds
+            cur.append(m)
+    _write_members(node, cur)
+
+
+def _remove_subject_area_members(repo: ModelRepo, p: dict) -> None:
+    _require(p, "id", "members")
+    _sa, (_rel, node) = _subject_area_node(repo, p["id"])
+    drop = {_valid_member(repo, m) for m in p["members"]}
+    _write_members(node, [m for m in (node.get("members") or []) if m not in drop])
+
+
+def _set_subject_area_members(repo: ModelRepo, p: dict) -> None:
+    """Whole-list replace — the natural unit of work for the two-pane picker, and
+    it collapses to ONE staged change instead of N add/remove ops."""
+    _require(p, "id")
+    _sa, (_rel, node) = _subject_area_node(repo, p["id"])
+    seen: list[str] = []
+    for m in p.get("members") or []:
+        r = _valid_member(repo, m)
+        if r not in seen:
+            seen.append(r)
+    _write_members(node, seen)
+
+
 _HANDLERS = {
     "create_entity": _create_entity,
     "rename_entity": _rename_entity,
@@ -993,6 +1088,11 @@ _HANDLERS = {
     "set_unmanaged": _set_unmanaged,
     "promote_alignment": _promote_alignment,
     "create_subject_area": _create_subject_area,
+    "update_subject_area": _update_subject_area,
+    "delete_subject_area": _delete_subject_area,
+    "add_subject_area_members": _add_subject_area_members,
+    "remove_subject_area_members": _remove_subject_area_members,
+    "set_subject_area_members": _set_subject_area_members,
     "create_term": _create_term,
     "add_attribute": _add_attribute,
     "update_attribute": _update_attribute,

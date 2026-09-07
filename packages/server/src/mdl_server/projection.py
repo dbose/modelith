@@ -94,12 +94,32 @@ def where_used(model: Model, conceptual_id: str) -> list[dict]:
     return used
 
 
-def project(model: Model) -> dict:
+def scoped_ulids(model: Model, subject_area: str) -> set[str]:
+    """The LOGICAL entities in a subject area: those realising one of its members,
+    plus those whose conceptual entity is homed there. Both, because the two answer
+    different questions (see SubjectArea's docstring) and a scoped view wants the
+    union."""
+    sa = model.subject_areas.get(subject_area)
+    if sa is None:
+        return set()
+    ce_ids = set(sa.members)
+    ce_ids |= {ce.id for ce in model.conceptual_entities.values() if ce.subject_area == sa.id}
+    return {le.id for le in model.logical_entities.values() if le.realises in ce_ids}
+
+
+def project(model: Model, *, subject_area: str | None = None) -> dict:
+    """Serialise the model for the canvas. With `subject_area`, scope it to that
+    area: entities in scope, relationships with BOTH ends in scope (a half-edge
+    breaks the React Flow render), and the counts recomputed. The subject_areas
+    list itself is never filtered — the picker needs all of them."""
     sa_by_id = {sa.id: sa for sa in model.subject_areas.values()}
+    in_scope = scoped_ulids(model, subject_area) if subject_area else None
     ce_by_id = model.conceptual_entities
 
     entities = []
     for le in sorted(model.logical_entities.values(), key=lambda e: e.name):
+        if in_scope is not None and le.id not in in_scope:
+            continue
         ce = ce_by_id.get(le.realises) if le.realises else None
         sa = sa_by_id.get(ce.subject_area) if ce and ce.subject_area else None
         conceptual = None
@@ -185,6 +205,10 @@ def project(model: Model) -> dict:
 
     relationships = []
     for rel in sorted(model.relationships.values(), key=lambda r: r.name):
+        if in_scope is not None and not (
+            rel.from_.entity in in_scope and rel.to.entity in in_scope
+        ):
+            continue
         relationships.append(
             {
                 "id": rel.id,
@@ -210,6 +234,7 @@ def project(model: Model) -> dict:
             "materialization": pt.materialization,
         }
         for pt in sorted(model.physical_tables.values(), key=lambda p: p.name)
+        if in_scope is None or pt.realises in in_scope
     ]
 
     return {
@@ -219,8 +244,15 @@ def project(model: Model) -> dict:
             "platform_targets": list(model.config.platform_targets),
             "kg_base_iri": model.config.kg_base_iri,
         },
+        "scope": subject_area,
         "subject_areas": [
-            {"id": sa.id, "name": sa.name, "definition": sa.definition}
+            {
+                "id": sa.id,
+                "name": sa.name,
+                "definition": sa.definition,
+                "members": list(sa.members),
+                "member_count": len(sa.members),
+            }
             for sa in sorted(model.subject_areas.values(), key=lambda s: s.name)
         ],
         "entities": entities,
@@ -238,6 +270,7 @@ def project(model: Model) -> dict:
                 "materialization": cat.materialization,
             }
             for cat in sorted(model.categories.values(), key=lambda c: c.name)
+            if in_scope is None or cat.supertype in in_scope
         ],
         "physical": physical,
         "counts": {

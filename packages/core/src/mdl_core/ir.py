@@ -195,10 +195,27 @@ class TermMap(_Base):
 
 
 class SubjectArea(_Base):
+    """A named sub-view of the model (erwin Subject Area).
+
+    Two things are deliberately kept apart. `ConceptualEntity.subject_area` is the
+    object's single HOME area — its place in the taxonomy, and what drives colour
+    on the canvas. `members` is this area's INCLUSION list, and an object may be a
+    member of many areas: a use-case view (UseCase-ApraStressTesting) and a domain
+    (Domain-03-ExposureManagement) can both contain Account.
+
+    Both are authored; neither is derived. Deriving members from the home tag makes
+    them un-authorable, which defeats the picker; deriving the home tag from members
+    is ambiguous the moment an object is in two areas, which is the whole point.
+    MDL-W114 flags the two drifting apart, as a warning rather than an error.
+
+    Members are conceptual objects (ConceptualEntity or Term). Terms have no home
+    field at all, so this is the only way a glossary term can be scoped."""
+
     id: ULID
     kind: Literal[ObjectKind.subject_area] = ObjectKind.subject_area
     name: str
     definition: str | None = None
+    members: list[ULID] = Field(default_factory=list)
 
 
 class ConceptualEntity(_OntologyMixin, _Base):
