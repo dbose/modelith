@@ -144,7 +144,8 @@ def create_app(model_dir: Path, *, read_only: bool = False) -> FastAPI:
             }
         )
 
-    # Mutation + git APIs (E2) — omitted entirely in read-only mode.
+    # Mutation APIs (E2) — omitted entirely in read-only mode. (The git router
+    # below is mounted either way; it gates its own writes.)
     if not read_only:
 
         @app.post("/api/decisions/{signal_key}/verdict")
@@ -184,7 +185,11 @@ def create_app(model_dir: Path, *, read_only: bool = False) -> FastAPI:
                 }
             )
 
-        app.include_router(git_router(model_dir))
+    # git_router is mounted unconditionally: its READS (status, branch, diff,
+    # classify, conflicts, context, proposals) must work under --read-only, which
+    # is exactly the catalog-browse and "SME just looking" case. Writes are gated
+    # inside the router.
+    app.include_router(git_router(model_dir, read_only=read_only))
 
     # Static canvas build. Mounted last so /api/* wins.
     if STATIC_DIR.exists():

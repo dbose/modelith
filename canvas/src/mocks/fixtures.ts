@@ -19,8 +19,8 @@ export interface FieldChangeDoc {
   detail: string;
   before: string | null;
   after: string | null;
-  /** where_used, populated only when the change is breaking */
-  breaks?: { model: string; target: string; materialization: string }[];
+  /** where_used, populated server-side only when the change is breaking */
+  breaks?: { name: string; target: string; materialization: string }[];
 }
 
 export interface ObjectChangeDoc {
@@ -124,8 +124,8 @@ export const DIFF: ModelDiffDoc = {
           before: "settle_dt",
           after: null,
           breaks: [
-            { model: "dim_trade", target: "warehouse", materialization: "table" },
-            { model: "fct_settlement", target: "warehouse", materialization: "incremental" },
+            { name: "dim_trade", target: "warehouse", materialization: "table" },
+            { name: "fct_settlement", target: "warehouse", materialization: "incremental" },
           ],
         },
       ],

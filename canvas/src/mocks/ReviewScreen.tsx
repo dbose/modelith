@@ -164,8 +164,8 @@ function FieldDiff({ f }: { f: FieldChangeDoc }) {
           </div>
           <ul className="rv-usage">
             {f.breaks.map((b) => (
-              <li key={b.model}>
-                <span className="m">→ {b.model}</span>
+              <li key={b.name}>
+                <span className="m">→ {b.name}</span>
                 <span className="p">
                   {b.target} · {b.materialization}
                 </span>
