@@ -25,20 +25,15 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from mdl_core.ir import Model
+from mdl_core.severity import ChangeSeverity, _family_and_width, _is_narrowing  # noqa: F401
 from mdl_reverse import lifting
 from mdl_reverse.manifest import ManifestProjection
 from mdl_reverse.projection import ExpectedModel, project_model
 
-
-class DriftSeverity(str, Enum):
-    breaking = "breaking"
-    additive = "additive"
-    cosmetic = "cosmetic"
-    unmanaged = "unmanaged"
-
-    @property
-    def rank(self) -> int:
-        return {"breaking": 4, "unmanaged": 3, "additive": 2, "cosmetic": 1}[self.value]
+# The severity vocabulary now lives in core so the model-to-model diff shares it.
+# Aliased so `DriftSeverity.breaking`, isinstance checks and render.py's
+# _SEV_EMOJI keys all keep working unchanged.
+DriftSeverity = ChangeSeverity
 
 
 class DriftKind(str, Enum):
@@ -124,32 +119,6 @@ class DriftReport:
         ]
 
 
-# Narrowing is only meaningful *within* a comparable type family. A change across
-# families (BIGINT -> DATE) is a plain type change, not a narrowing. Both are
-# breaking today, but the distinction drives the message and future auto-cast logic.
-_FAMILIES: dict[str, list[str]] = {
-    # ordered widest-last; index = width within the family
-    "numeric": ["BOOLEAN", "INTEGER", "BIGINT", "DECIMAL(38,0)", "DECIMAL(38,2)", "DOUBLE"],
-    "string": ["VARCHAR(20)", "VARCHAR"],
-    "temporal": ["DATE", "TIMESTAMP"],
-}
-
-
-def _family_and_width(t: str) -> tuple[str, int] | None:
-    for fam, order in _FAMILIES.items():
-        if t in order:
-            return fam, order.index(t)
-    return None
-
-
-def _is_narrowing(old: str | None, new: str | None) -> bool:
-    if not old or not new:
-        return False
-    o = _family_and_width(old)
-    n = _family_and_width(new)
-    if o is None or n is None or o[0] != n[0]:
-        return False  # unknown type or cross-family -> not "narrowing"
-    return n[1] < o[1]
 
 
 def compute_drift(
