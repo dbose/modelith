@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from mdl_core.diagnostics import Severity
-from mdl_core.ids import new_ulid
+from mdl_core.ids import is_ulid, new_ulid
 from mdl_core.repo import PROJECT_FILE, ModelRepo
 from mdl_core.validate import validate
 
@@ -94,6 +94,24 @@ def _slug(name: str) -> str:
     return name.strip().lower().replace(" ", "_")
 
 
+def _id_from(p: dict, key: str = "id") -> str:
+    """Honour a caller-supplied ULID, minting one only when absent.
+
+    Without this, a PREVIEWED creation and the same change replayed at propose time
+    get different identities: the entity the user saw is not the entity that lands in
+    the PR, and a create-then-edit batch fails at submit because the second op
+    references an id the propose run never produced.
+
+    A supplied value is validated rather than trusted — this is an identity field,
+    not a free-text name, and a malformed one would corrupt every reference to it."""
+    v = p.get(key)
+    if v is None:
+        return new_ulid()
+    if not isinstance(v, str) or not is_ulid(v):
+        raise CommandError(f"{key}: not a valid ULID: {v!r}")
+    return v
+
+
 def _require(payload: dict, *keys: str) -> None:
     missing = [k for k in keys if payload.get(k) in (None, "")]
     if missing:
@@ -129,7 +147,7 @@ def _create_entity(repo: ModelRepo, p: dict) -> str:
     if any(le.name == name for le in repo.model.logical_entities.values()):
         raise CommandError(f"entity {name!r} already exists")
 
-    ce_id, le_id = new_ulid(), new_ulid()
+    ce_id, le_id = _id_from(p, "conceptual_id"), _id_from(p, "id")
     ce: dict = {
         "id": ce_id,
         "kind": "conceptual_entity",
@@ -270,7 +288,7 @@ def _set_pattern(repo: ModelRepo, p: dict) -> None:
 
 def _create_subject_area(repo: ModelRepo, p: dict) -> str:
     _require(p, "name")
-    sa_id = new_ulid()
+    sa_id = _id_from(p)
     sa: dict = {"id": sa_id, "kind": "subject_area", "name": p["name"]}
     if p.get("definition"):
         sa["definition"] = p["definition"]
@@ -280,7 +298,7 @@ def _create_subject_area(repo: ModelRepo, p: dict) -> str:
 
 def _create_term(repo: ModelRepo, p: dict) -> str:
     _require(p, "name", "layer")
-    t_id = new_ulid()
+    t_id = _id_from(p)
     t: dict = {"id": t_id, "kind": "term", "name": p["name"]}
     if p.get("definition"):
         t["definition"] = p["definition"]
@@ -317,7 +335,7 @@ def _add_attribute(repo: ModelRepo, p: dict) -> str:
     name = _slug(p["name"])
     if any(a.name == name for a in le.attributes):
         raise CommandError(f"attribute {name!r} already exists on {le.name!r}")
-    attr_id = new_ulid()
+    attr_id = _id_from(p)
     attr: dict = {
         "id": attr_id,
         "name": name,
@@ -384,14 +402,14 @@ def _create_relationship(repo: ModelRepo, p: dict) -> str:
             from_attr = existing.id
         else:
             _, frm_node = _entity_node(repo, frm.id)
-            fk_id = new_ulid()
+            fk_id = _id_from(p, "from_fk_id")
             frm_node.setdefault("attributes", []).append(
                 {"id": fk_id, "name": fk_name, "domain": fk_domain,
                  "role": "attribute", "nullable": True}
             )
             from_attr = fk_id
 
-    rel_id = new_ulid()
+    rel_id = _id_from(p)
     rel: dict = {
         "id": rel_id,
         "kind": "relationship",
@@ -661,7 +679,7 @@ def _create_key_group(repo: ModelRepo, p: dict) -> str:
         ]
         if existing:
             raise CommandError(f"entity {le.name!r} already has a primary key group")
-    kg_id = new_ulid()
+    kg_id = _id_from(p)
     name = _slug(p["name"])
     kg: dict = {
         "id": kg_id,
@@ -730,7 +748,7 @@ def _create_category(repo: ModelRepo, p: dict) -> str:
     mat = p.get("materialization", "single_table")
     if mat not in {"single_table", "table_per_subtype"}:
         raise CommandError(f"bad materialization {mat!r}")
-    cat_id = new_ulid()
+    cat_id = _id_from(p)
     name = _slug(p["name"])
     cat: dict = {
         "id": cat_id,
@@ -810,7 +828,7 @@ def _create_domain(repo: ModelRepo, p: dict) -> str:
     name = _slug(p["name"])
     if repo.model.domain_by_name(name) is not None:
         raise CommandError(f"domain {name!r} already exists")
-    dom_id = new_ulid()
+    dom_id = _id_from(p)
     dom: dict = {
         "id": dom_id,
         "kind": "domain",
@@ -894,7 +912,7 @@ def _create_code_set(repo: ModelRepo, p: dict) -> str:
     name = _slug(p["name"])
     if any(cs.name == name for cs in repo.model.code_sets.values()):
         raise CommandError(f"value set {name!r} already exists")
-    cs_id = new_ulid()
+    cs_id = _id_from(p)
     cs: dict = {"id": cs_id, "kind": "code_set", "name": name}
     if p.get("definition"):
         cs["definition"] = p["definition"]

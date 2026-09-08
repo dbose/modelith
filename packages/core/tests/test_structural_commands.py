@@ -318,3 +318,89 @@ def test_relationship_definition_is_settable(tmp_path: Path):
     )
     assert _load(tmp_path).relationships[ids["rel"]].definition.startswith("A trade faces")
     _clean(tmp_path)
+
+
+# --- client-supplied ULIDs (preview/propose identity) ----------------------------
+
+
+def test_creation_honours_a_supplied_ulid(tmp_path: Path):
+    """A previewed creation must keep its identity when the same change list is
+    replayed at propose time — otherwise the entity the user saw is not the entity
+    that lands in the PR, and a create-then-edit batch fails at submit."""
+    from mdl_core.ids import new_ulid
+
+    write_model(tmp_path)
+    le_id, ce_id = new_ulid(), new_ulid()
+    r = apply_command(
+        tmp_path,
+        "create_entity",
+        {"name": "custody_account", "id": le_id, "conceptual_id": ce_id},
+    )
+    assert r.created_id == le_id
+    m = _load(tmp_path)
+    assert le_id in m.logical_entities
+    assert m.logical_entities[le_id].realises == ce_id
+    _clean(tmp_path)
+
+
+def test_replaying_the_same_change_list_is_identical(tmp_path: Path, tmp_path_factory):
+    """The property that matters: preview and propose run the same ops and must
+    produce the same ULIDs."""
+    from mdl_core.ids import new_ulid
+
+    ids = {"id": new_ulid(), "conceptual_id": new_ulid()}
+    first = tmp_path
+    write_model(first)
+    apply_command(first, "create_entity", {"name": "custody_account", **ids})
+
+    second = tmp_path_factory.mktemp("replay")
+    write_model(second)
+    apply_command(second, "create_entity", {"name": "custody_account", **ids})
+
+    # the fixture mints its own ULIDs per call, so compare the CREATED object only
+    assert ids["id"] in _load(first).logical_entities
+    assert ids["id"] in _load(second).logical_entities
+    assert (
+        _load(first).logical_entities[ids["id"]].realises
+        == _load(second).logical_entities[ids["id"]].realises
+        == ids["conceptual_id"]
+    )
+
+
+def test_a_malformed_ulid_is_rejected(tmp_path: Path):
+    """Identity field, not free text — a bad value would corrupt every reference."""
+    write_model(tmp_path)
+    with pytest.raises(CommandError, match="not a valid ULID"):
+        apply_command(tmp_path, "create_entity", {"name": "bad", "id": "not-a-ulid"})
+
+
+def test_omitting_the_id_still_mints_one(tmp_path: Path):
+    write_model(tmp_path)
+    r = apply_command(tmp_path, "create_entity", {"name": "minted"})
+    assert r.created_id and r.created_id in _load(tmp_path).logical_entities
+
+
+def test_supplied_ulids_work_for_every_creator(tmp_path: Path):
+    from mdl_core.ids import new_ulid
+
+    ids = write_model(tmp_path)
+    sa = new_ulid()
+    apply_command(tmp_path, "create_subject_area", {"name": "Risk", "id": sa})
+    assert sa in _load(tmp_path).subject_areas
+
+    dom = new_ulid()
+    apply_command(tmp_path, "create_domain", {"name": "money", "base_type": "decimal", "id": dom})
+    assert dom in _load(tmp_path).domains
+
+    cs = new_ulid()
+    apply_command(tmp_path, "create_code_set", {"name": "ccy", "values": ["GBP"], "id": cs})
+    assert cs in _load(tmp_path).code_sets
+
+    kg = new_ulid()
+    apply_command(
+        tmp_path,
+        "create_key_group",
+        {"entity": ids["le"], "name": "ak_x", "type": "alternate", "members": [ids["a2"]], "id": kg},
+    )
+    assert kg in _load(tmp_path).key_groups
+    _clean(tmp_path)

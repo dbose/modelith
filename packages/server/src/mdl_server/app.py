@@ -89,6 +89,24 @@ def create_app(
         doc["domains"] = sorted(d.name for d in repo.model.domains.values())
         return JSONResponse(doc)
 
+    @app.post("/api/preview")
+    def preview(body: dict) -> JSONResponse:
+        """Project a set of staged changes without writing anything.
+
+        Registered OUTSIDE the read_only guard: it writes nothing, and the modeler
+        app needs it in exactly the modes where /api/command is unavailable."""
+        from mdl_server.preview import preview_model
+
+        changes = body.get("changes") or []
+        if not isinstance(changes, list):
+            return JSONResponse({"ok": False, "error": "changes must be a list"}, status_code=422)
+        doc = preview_model(
+            _load(), changes, subject_area=body.get("subject_area") or None
+        )
+        doc["fingerprint"] = commands.dir_fingerprint(model_dir)
+        doc["read_only"] = read_only
+        return JSONResponse(doc)
+
     @app.get("/api/entities/{ulid}")
     def get_entity(ulid: str) -> JSONResponse:
         repo = _load()
