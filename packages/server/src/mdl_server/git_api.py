@@ -56,6 +56,80 @@ def _slugify(s: str) -> str:
 # server is the real boundary (a scripted client can't smuggle a definition edit in).
 _MEANING_OPS = {"set_definition", "update_synonyms", "set_stewardship"}
 
+# Ops a proposal may contain. This is an ALLOW-list, unlike _MEANING_OPS above,
+# which is a deny-list that only activates when a catalog masters meaning.
+#
+# The propose endpoint applies whatever it is handed through the one mutation
+# engine, so the UI hiding a control is not a boundary — a scripted client can post
+# anything. That was tolerable while the modeler app could emit four ops; it is not
+# now that it can emit the whole editing surface.
+_PROPOSABLE_OPS = frozenset(
+    {
+        # meaning
+        "set_definition",
+        "set_object_definition",
+        "update_synonyms",
+        "set_stewardship",
+        "set_alignment",
+        "clear_alignment",
+        "create_term",
+        # structure
+        "create_entity",
+        "rename_entity",
+        "delete_entity",
+        "add_attribute",
+        "update_attribute",
+        "delete_attribute",
+        "create_relationship",
+        "rename_relationship",
+        "update_relationship",
+        "delete_relationship",
+        "set_pattern",
+        "set_unmanaged",
+        "set_term_map",
+        "clear_term_map",
+        "create_key_group",
+        "update_key_group",
+        "delete_key_group",
+        "create_category",
+        "update_category",
+        "delete_category",
+        # subject areas
+        "create_subject_area",
+        "update_subject_area",
+        "set_subject_area",
+        "set_subject_area_members",
+        "add_subject_area_members",
+        "remove_subject_area_members",
+        # reference data: create and update, but see the exclusions below
+        "create_domain",
+        "update_domain",
+        "create_code_set",
+        "update_code_set",
+    }
+)
+
+# Deliberately NOT proposable, each for its own reason:
+#
+#   promote_alignment   an architect's verdict. Accepting an alignment in the same
+#                       PR that proposes it defeats the proposed/accepted state
+#                       machine the whole ontology workflow rests on.
+#   set_kg_base_iri     project-wide config, not a model edit — it rewrites the IRI
+#                       every downstream consumer resolves against.
+#   delete_domain       blast radius beyond the proposer's subject area: a domain or
+#   delete_code_set     value set is referenced by name from anywhere in the model,
+#   delete_subject_area and an area may be someone else's working view. Create and
+#                       update are proposable; deletion needs a wider conversation.
+_NOT_PROPOSABLE_REASON = {
+    "promote_alignment": (
+        "accepting an alignment is an architect's decision, not part of a proposal"
+    ),
+    "set_kg_base_iri": "the knowledge-graph base IRI is project-wide configuration",
+    "delete_domain": "deleting shared reference data affects the whole model",
+    "delete_code_set": "deleting shared reference data affects the whole model",
+    "delete_subject_area": "deleting a subject area may remove someone else's working view",
+}
+
 
 def _catalog_owns_meaning(model_dir: Path) -> tuple[bool, str]:
     """(catalog_masters?, catalog_name) from mdl-project.yaml, loaded fresh."""
@@ -543,6 +617,24 @@ def git_router(model_dir: Path, *, read_only: bool = False) -> APIRouter:
             """The SME PR flow (§5.1), atomic: branch -> apply commands through the
             shared mutation engine -> commit with Co-authored-by -> push -> open a PR.
             Degrades gracefully with no remote / no gh so the SME always gets a result."""
+            # The server is the real boundary, not the UI: reject anything outside
+            # the allow-list BEFORE branching, so a refused proposal leaves no stray
+            # branch behind.
+            rejected = sorted({c.op for c in body.changes if c.op not in _PROPOSABLE_OPS})
+            if rejected:
+                reasons = [
+                    f"{op}: {_NOT_PROPOSABLE_REASON.get(op, 'not allowed in a proposal')}"
+                    for op in rejected
+                ]
+                return JSONResponse(
+                    {
+                        "ok": False,
+                        "error": "these changes cannot be proposed — " + "; ".join(reasons),
+                        "rejected_ops": rejected,
+                    },
+                    status_code=422,
+                )
+
             # Enforce the source-of-truth boundary. When the catalog masters meaning,
             # refuse definition/synonym/stewardship edits here (they belong in Collibra);
             # alignment proposals still pass. This is the server-side guard behind the UI.
