@@ -403,3 +403,18 @@ export interface ProposalsDoc {
   gh: boolean;
   proposals: ProposalDoc[];
 }
+
+/** POST /api/preview — the staged world, its diff against disk, and diagnostics. */
+export interface PreviewDoc {
+  ok: boolean;
+  model: ModelDoc;
+  diff: ModelDiffDoc;
+  diagnostics: Diagnostic[];
+  /** change index -> the ULID it created */
+  created_ids: Record<string, string>;
+  /** index of the first change that failed, or null */
+  failed_index: number | null;
+  error: string | null;
+  fingerprint: string;
+  read_only: boolean;
+}

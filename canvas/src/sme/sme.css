@@ -391,3 +391,10 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
 }
 .erd-canvas { flex: 1; min-height: 320px; }
 .erd-canvas .react-flow__attribution { display: none; }
+
+/* --- the editable model workspace ------------------------------------------------ */
+.erd-busy { color: var(--pk); font-size: 11px; }
+.erd-error { color: var(--err); font-size: 11.5px; margin-left: auto; }
+/* The canvas mounts the inspector as an absolutely-positioned panel, so the wrap
+   must be a containing block for it (canvas-wrap already does this). */
+.sme-model-view .erd-canvas { position: relative; min-height: 0; }

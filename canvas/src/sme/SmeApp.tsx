@@ -1,19 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchGlossary, fetchGlossaryConfig, fetchModel } from "../api";
-import type { ClassificationDoc, GlossaryConfig, GlossaryDoc } from "../types";
-import { lazy, Suspense } from "react";
+import { useStaging } from "../staging/useStaging";
+import type { ClassificationDoc, GlossaryConfig, GlossaryDoc, ModelDoc } from "../types";
 import { GitBanner } from "./GitBanner";
+import { ModelWorkspace } from "./ModelWorkspace";
 import { ProposalsList } from "./ProposalsList";
 import { ProposeDialog } from "./ProposeDialog";
 import { ReviewScreen } from "./ReviewScreen";
 import { TermCard } from "./TermCard";
 import { TermEditor } from "./TermEditor";
-
-// React Flow is heavy, so the diagram is code-split: the terms and review views
-// stay light for people who never open it.
-const ModelDiagram = lazy(() =>
-  import("./ModelDiagram").then((m) => ({ default: m.ModelDiagram })),
-);
 
 /** A pending change the SME has made in the UI but not yet proposed. Each is a
  * `set_definition` / `set_stewardship` / … command + a human-readable before/after
@@ -48,12 +43,60 @@ export function SmeApp() {
   // objects the SME has unticked in the review screen (selective proposal)
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [user, setUser] = useState(() => localStorage.getItem("mdl.sme.user") ?? "");
+  const [modelDoc, setModelDoc] = useState<ModelDoc | null>(null);
   const [routeAdvice, setRouteAdvice] = useState<ClassificationDoc | null>(null);
 
   // Selective proposal is only safe when no staged op CREATES something: a
   // create_term followed by a set_definition on it are dependent, and unticking
   // the first would apply a broken subset. Cheap and honest to disable it.
-  const selectable = !pending.some((c) => c.op.startsWith("create_"));
+  // Turn a staged op into the sentence the review list shows. The staging hook is
+  // deliberately model-agnostic, so this lives here where `modelDoc` is in scope.
+  const describe = useCallback(
+    (op: string, payload: Record<string, unknown>) => {
+      const named = (id: unknown) => {
+        const e = modelDoc?.entities.find(
+          (x) => x.id === id || x.conceptual?.id === id,
+        );
+        return e?.conceptual?.name ?? e?.name ?? "object";
+      };
+      const target = named(payload.id ?? payload.entity_id);
+      switch (op) {
+        case "set_definition":
+          return { label: `Definition: ${target}`, before: "", after: String(payload.definition ?? "") };
+        case "add_attribute":
+          return { label: `Attribute added to ${target}`, before: "—", after: String(payload.name ?? "") };
+        case "delete_attribute":
+          return { label: `Attribute removed from ${target}`, before: "", after: "—" };
+        case "update_attribute":
+          return { label: `Attribute changed on ${target}`, before: "", after: JSON.stringify(payload) };
+        case "rename_entity":
+          return { label: `Renamed ${target}`, before: target, after: String(payload.name ?? "") };
+        case "set_subject_area":
+          return { label: `Subject area: ${target}`, before: "", after: String(payload.subject_area ?? "none") };
+        case "set_stewardship":
+          return { label: `Stewardship: ${target}`, before: "", after: String(payload.steward ?? "") };
+        case "set_alignment":
+          return { label: `Alignment: ${target}`, before: "", after: String(payload.aligns_to ?? "") };
+        default:
+          return { label: `${op.replace(/_/g, " ")}: ${target}`, before: "", after: "" };
+      }
+    },
+    [modelDoc],
+  );
+
+  const staging = useStaging({ subjectArea, describe });
+
+  // The glossary tray and the model tray are one proposal: a definition edited on
+  // the Terms tab and an attribute added on the Model tab belong in the same PR.
+  const allPending = useMemo(
+    () => [...pending, ...staging.pending],
+    [pending, staging.pending],
+  );
+
+  // Selective proposal is only safe when no staged op CREATES something: a
+  // create followed by an edit of the created object are dependent, and unticking
+  // the first would apply a broken subset.
+  const selectable = !allPending.some((c) => c.op.startsWith("create_"));
 
   const goto = useCallback((v: "browse" | "model" | "review" | "proposals") => {
     setView(v);
@@ -89,16 +132,17 @@ export function SmeApp() {
   useEffect(() => {
     // read_only + project name come from /api/model; the source-of-truth switch
     // (which meaning-fields the catalog masters) comes from /api/glossary/config.
-    fetchModel()
+    fetchModel(subjectArea || undefined)
       .then((m) => {
         setReadOnly(m.read_only);
         setProjectName(m.project.name);
+        setModelDoc(m);
       })
       .catch(() => undefined);
     fetchGlossaryConfig()
       .then(setGcfg)
       .catch(() => undefined);
-  }, []);
+  }, [subjectArea]);
 
   const selected = useMemo(
     () => doc?.terms.find((t) => t.id === selectedId) ?? null,
@@ -180,9 +224,9 @@ export function SmeApp() {
             My proposals
           </button>
         </nav>
-        {pending.length > 0 && (
+        {allPending.length > 0 && (
           <button className="sme-tray" onClick={() => goto("review")}>
-            {pending.length} change{pending.length > 1 ? "s" : ""} · Review →
+            {allPending.length} change{allPending.length > 1 ? "s" : ""} · Review →
           </button>
         )}
       </header>
@@ -190,6 +234,7 @@ export function SmeApp() {
 
       {view === "review" ? (
         <ReviewScreen
+          stagedDiff={staging.previewDiff}
           user={user}
           selectable={selectable}
           excluded={excluded}
@@ -208,40 +253,20 @@ export function SmeApp() {
           }}
         />
       ) : view === "model" ? (
-        <div className="sme-model-view">
-          <nav className="sme-nav">
-            <button
-              className={"sme-sa" + (subjectArea === "" ? " active" : "")}
-              onClick={() => setSubjectArea("")}
-            >
-              Whole model
-            </button>
-            {doc.subject_areas.map((sa) => (
-              <button
-                key={sa.id}
-                className={"sme-sa" + (subjectArea === sa.id ? " active" : "")}
-                onClick={() => setSubjectArea(sa.id)}
-                title={sa.definition ?? undefined}
-              >
-                {sa.name}
-                {typeof sa.member_count === "number" && sa.member_count > 0 && (
-                  <span className="sme-sa-count">{sa.member_count}</span>
-                )}
-              </button>
-            ))}
-          </nav>
-          <Suspense fallback={<div className="sme-splash">◮ loading the diagram…</div>}>
-            <ModelDiagram
-              subjectArea={subjectArea || undefined}
-              onSelect={(u) => {
-                if (u) {
-                  setSelectedId(u);
-                  goto("browse");
-                }
-              }}
-            />
-          </Suspense>
-        </div>
+        // The previewed model when anything is staged, so an edit is visible
+        // immediately; the model on disk otherwise.
+        (staging.previewDoc ?? modelDoc) ? (
+          <ModelWorkspace
+            doc={(staging.previewDoc ?? modelDoc)!}
+            subjectArea={subjectArea}
+            onSubjectArea={setSubjectArea}
+            exec={staging.exec}
+            canEdit={canEdit}
+            busy={staging.busy}
+          />
+        ) : (
+          <div className="sme-splash">◮ loading the model…</div>
+        )
       ) : view === "proposals" ? (
         <ProposalsList user={user} onView={() => goto("review")} />
       ) : (
@@ -316,7 +341,7 @@ export function SmeApp() {
 
       {proposeOpen && (
         <ProposeDialog
-          changes={pending}
+          changes={allPending}
           routeAdvice={routeAdvice}
           user={user}
           onUser={(u) => {
@@ -327,6 +352,7 @@ export function SmeApp() {
           onClose={() => setProposeOpen(false)}
           onProposed={() => {
             onProposed();
+            staging.clear();
             setExcluded(new Set());
             goto("proposals");
           }}

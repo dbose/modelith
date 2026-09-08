@@ -11,6 +11,10 @@ import ReactFlow, {
   type Node,
   type NodeTypes,
 } from "reactflow";
+// This component owns React Flow, so it owns React Flow's stylesheet — relying on
+// whichever shell mounts it to import this is how the modeler app ended up with an
+// unpositioned minimap sprawled across the canvas.
+import "reactflow/dist/style.css";
 import { EntityNode, type EntityNodeData } from "./EntityNode";
 import type { Capabilities, Exec } from "./exec";
 import { Inspector } from "./Inspector";

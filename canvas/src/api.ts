@@ -1,5 +1,6 @@
 import type {
   ClassificationDoc,
+  PreviewDoc,
   ConflictDoc,
   GitContext,
   ModelDiffDoc,
@@ -136,3 +137,20 @@ export const fetchGitContext = (user = "") =>
 
 export const fetchProposals = (user = "") =>
   get<ProposalsDoc>(`/api/git/proposals?user=${encodeURIComponent(user)}`);
+
+/** Project a set of staged changes without writing anything (plan §A). Returns the
+ *  previewed model, the diff against disk, and diagnostics in one round trip. */
+export const previewChanges = (
+  changes: { op: string; payload: Record<string, unknown> }[],
+  subjectArea?: string,
+  signal?: AbortSignal,
+) =>
+  fetch(`${API_BASE}/api/preview`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ changes, subject_area: subjectArea ?? "" }),
+    signal,
+  }).then(async (r) => {
+    if (!r.ok) throw new ApiError(await r.text(), r.status);
+    return (await r.json()) as PreviewDoc;
+  });

@@ -11,6 +11,10 @@ const ModelDiagram = lazy(() =>
  * merge, and only then submit. Replaces the old flow where the SME's only view of
  * their work was a flat before/after list in the submit dialog. */
 export function ReviewScreen({
+  /** The diff of the STAGED changes, from /api/preview. Without this the screen
+   *  diffs the working tree — which staging never touches, so a staged edit showed
+   *  as an empty diff. */
+  stagedDiff,
   user,
   onBack,
   onSubmit,
@@ -19,6 +23,7 @@ export function ReviewScreen({
   onToggleObject,
   selectable,
 }: {
+  stagedDiff?: ModelDiffDoc | null;
   user: string;
   onBack: () => void;
   onSubmit: (cl: ClassificationDoc | null) => void;
@@ -38,14 +43,20 @@ export function ReviewScreen({
       .then((c) => {
         setCtx(c);
         const base = c.base_branch ?? "main";
-        fetchModelDiff("HEAD")
-          .then((d) => (d.ok ? setDiff(d) : setError(d.error ?? "could not read the model")))
-          .catch((e) => setError(String(e)));
+        // A staged proposal is not on disk yet, so only fall back to the working-tree
+        // diff when nothing is staged (an SME reviewing an already-committed branch).
+        if (stagedDiff) {
+          setDiff(stagedDiff);
+        } else {
+          fetchModelDiff("HEAD")
+            .then((d) => (d.ok ? setDiff(d) : setError(d.error ?? "could not read the model")))
+            .catch((e) => setError(String(e)));
+        }
         fetchClassification("HEAD").then(setCl).catch(() => undefined);
         fetchConflicts(base).then(setConf).catch(() => undefined);
       })
       .catch((e) => setError(String(e)));
-  }, [user]);
+  }, [user, stagedDiff]);
 
   useEffect(load, [load]);
 
