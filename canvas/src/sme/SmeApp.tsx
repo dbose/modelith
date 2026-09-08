@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchGlossary, fetchGlossaryConfig, fetchModel } from "../api";
-import { useStaging } from "../staging/useStaging";
+import {
+  collapseKey,
+  dependentKeys,
+  useStaging,
+  type PendingChange,
+} from "../staging/useStaging";
 import type { ClassificationDoc, GlossaryConfig, GlossaryDoc, ModelDoc } from "../types";
 import { GitBanner } from "./GitBanner";
 import { ModelWorkspace } from "./ModelWorkspace";
@@ -13,13 +18,9 @@ import { TermEditor } from "./TermEditor";
 /** A pending change the SME has made in the UI but not yet proposed. Each is a
  * `set_definition` / `set_stewardship` / … command + a human-readable before/after
  * for the review dialog. Nothing is written to git until "Submit for review". */
-export interface PendingChange {
-  op: string;
-  payload: Record<string, unknown>;
-  label: string; // e.g. "Definition"
-  before: string;
-  after: string;
-}
+// One definition, shared by the glossary tray and the model tray — they are one
+// proposal, so they must be one type.
+export type { PendingChange } from "../staging/useStaging";
 
 /** The SME glossary app: git-native, narrow surface, propose-as-PR.
  * No ERD, no cardinality, no keys — meaning only (collaboration model §5.1). */
@@ -61,6 +62,28 @@ export function SmeApp() {
       };
       const target = named(payload.id ?? payload.entity_id);
       switch (op) {
+        // Creations name themselves: the object is not on disk yet, so `named`
+        // cannot find it and would fall back to "object".
+        case "create_entity":
+          return { label: `New entity: ${payload.name}`, before: "—", after: String(payload.name ?? "") };
+        case "create_relationship":
+          return {
+            label: `New relationship: ${named(payload.from_entity)} → ${named(payload.to_entity)}`,
+            before: "—",
+            after: String(payload.cardinality ?? "many_to_one"),
+          };
+        case "delete_entity":
+          return { label: `Deleted ${target}`, before: target, after: "—" };
+        case "delete_relationship":
+          return { label: "Relationship removed", before: "", after: "—" };
+        case "update_relationship":
+          return {
+            label: `Relationship changed`,
+            before: "",
+            after: [payload.cardinality, payload.optionality, payload.identifying ? "identifying" : ""]
+              .filter(Boolean)
+              .join(", "),
+          };
         case "set_definition":
           return { label: `Definition: ${target}`, before: "", after: String(payload.definition ?? "") };
         case "add_attribute":
@@ -93,10 +116,10 @@ export function SmeApp() {
     [pending, staging.pending],
   );
 
-  // Selective proposal is only safe when no staged op CREATES something: a
-  // create followed by an edit of the created object are dependent, and unticking
-  // the first would apply a broken subset.
-  const selectable = !allPending.some((c) => c.op.startsWith("create_"));
+  // Only the changes that actually depend on a staged creation are locked
+  // together; everything else can still be proposed selectively.
+  const locked = useMemo(() => dependentKeys(allPending), [allPending]);
+  const selectable = locked.size < allPending.length;
 
   const goto = useCallback((v: "browse" | "model" | "review" | "proposals") => {
     setView(v);
@@ -149,12 +172,12 @@ export function SmeApp() {
     [doc, selectedId],
   );
 
-  const stageChange = useCallback((c: PendingChange) => {
-    setPending((prev) => {
-      // collapse repeated edits to the same field into one
-      const rest = prev.filter((p) => !(p.op === c.op && p.label === c.label));
-      return [...rest, c];
-    });
+  const stageChange = useCallback((c: Omit<PendingChange, "key"> & { key?: string }) => {
+    // Collapse on the target's ULID, not on op+label. The old rule silently DROPPED
+    // an edit: staging a definition change on Trade and then on Counterparty
+    // collapsed into one, because both are labelled "Definition".
+    const key = c.key ?? collapseKey(c.op, c.payload);
+    setPending((prev) => [...prev.filter((p) => p.key !== key), { ...c, key }]);
   }, []);
 
   const dropChange = (idx: number) => setPending((prev) => prev.filter((_, i) => i !== idx));

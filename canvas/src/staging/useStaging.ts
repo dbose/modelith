@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { previewChanges } from "../api";
 import type { Exec } from "../exec";
+import { newUlid } from "../ulid";
 import type { Diagnostic, ModelDiffDoc, ModelDoc, PreviewDoc } from "../types";
 
 /** One edit the user has made but not yet proposed. */
@@ -30,6 +31,36 @@ export interface Staging {
   clear: () => void;
 }
 
+/** Ops that create something, and the payload keys their new ULIDs go in.
+ *
+ * `create_entity` mints two: a logical entity and the conceptual entity it
+ * realises. `create_relationship` may also mint the foreign-key attribute it adds
+ * to the child, so that gets an id too. */
+const MINTS: Record<string, string[]> = {
+  create_entity: ["id", "conceptual_id"],
+  create_relationship: ["id", "from_fk_id"],
+  create_subject_area: ["id"],
+  create_term: ["id"],
+  create_domain: ["id"],
+  create_code_set: ["id"],
+  create_key_group: ["id"],
+  create_category: ["id"],
+  add_attribute: ["id"],
+};
+
+export function withMintedIds(
+  op: string,
+  payload: Record<string, unknown>,
+): Record<string, unknown> {
+  const keys = MINTS[op];
+  if (!keys) return payload;
+  const next = { ...payload };
+  for (const k of keys) {
+    if (!next[k]) next[k] = newUlid();
+  }
+  return next;
+}
+
 /** Collapse identity for a change.
  *
  * The old rule was `op + label`, which silently DROPPED an edit: staging a
@@ -42,9 +73,8 @@ export interface Staging {
  */
 export function collapseKey(op: string, payload: Record<string, unknown>): string {
   if (op.startsWith("create_") || op === "add_attribute") {
-    // the client mints the id, so it is already a stable per-creation identity
-    const minted = (payload.id ?? payload.attribute_id ?? Math.random()) as string;
-    return `${op}:${minted}`;
+    // the client minted the id, so it is already a stable per-creation identity
+    return `${op}:${payload.id ?? payload.attribute_id}`;
   }
   const target = (payload.id ?? payload.entity_id ?? "") as string;
   const attr = (payload.attribute_id ?? "") as string;
@@ -70,6 +100,12 @@ export function useStaging({
 
   const exec: Exec = useCallback(
     async (op, payload) => {
+      // Mint identities client-side for anything being created. Preview and propose
+      // are two separate runs of the same change list, so a server-minted id would
+      // differ between them: the entity the user sees would not be the entity in the
+      // PR, and a create-then-edit batch would fail at submit. The server validates
+      // whatever we send.
+      payload = withMintedIds(op, payload);
       const key = collapseKey(op, payload);
       const { label, before, after } = describe(op, payload);
       setPending((prev) => {
@@ -139,4 +175,37 @@ export function useStaging({
     }),
     [pending, preview, busy, exec, drop, clear],
   );
+}
+
+/** Which staged changes cannot be unticked on their own.
+ *
+ * A change is *dependent* when it references a ULID that another staged change
+ * created: unticking the create while keeping the edit would apply a subset that
+ * fails at submit, after appearing fine in the app. The old rule disabled selective
+ * proposal entirely whenever ANY create was staged, which was safe but blunt —
+ * creating one entity blocked splitting a dozen unrelated definition edits.
+ *
+ * Returns the set of keys that must travel together with something else.
+ */
+export function dependentKeys(pending: PendingChange[]): Set<string> {
+  const createdBy = new Map<string, string>(); // ulid -> key of the change that made it
+  for (const c of pending) {
+    for (const k of ["id", "conceptual_id", "from_fk_id"]) {
+      const v = c.payload[k];
+      if (c.op.startsWith("create_") && typeof v === "string") createdBy.set(v, c.key);
+    }
+  }
+  if (!createdBy.size) return new Set();
+
+  const locked = new Set<string>();
+  for (const c of pending) {
+    if (c.op.startsWith("create_")) continue;
+    for (const v of Object.values(c.payload)) {
+      if (typeof v === "string" && createdBy.has(v)) {
+        locked.add(c.key); // the edit needs its creation
+        locked.add(createdBy.get(v)!); // and the creation cannot leave without it
+      }
+    }
+  }
+  return locked;
 }

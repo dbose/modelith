@@ -6,9 +6,11 @@ import type { ModelDoc } from "../types";
 import { newUlid } from "../ulid";
 import "../styles.css";
 
-/** Ops the modeler app may emit in Phase 2. Structural creation and deletion are
- * deliberately absent for now; the ULID work that makes them safe has landed, but
- * the UI for them is Phase 3. */
+/** Ops the modeler app may emit.
+ *
+ * Mirrors the server's _PROPOSABLE_OPS minus the architect-only verdicts — the
+ * server is the real boundary, this just avoids offering a control whose change
+ * would be refused at submit. */
 export const MODELER_OPS: ReadonlySet<string> = new Set([
   "set_definition",
   "set_stewardship",
@@ -25,6 +27,13 @@ export const MODELER_OPS: ReadonlySet<string> = new Set([
   "update_synonyms",
   "set_object_definition",
   "set_subject_area_members",
+  // structure
+  "create_entity",
+  "delete_entity",
+  "create_relationship",
+  "rename_relationship",
+  "update_relationship",
+  "delete_relationship",
 ]);
 
 /** The editable model view: the same canvas the architect uses, driven by a staging
@@ -106,6 +115,16 @@ export function ModelWorkspace({
             {doc.entities.length} entities · {doc.relationships.length} relationships
             {doc.scope && " · scoped"}
           </span>
+          {canEdit && (
+            <button
+              className="erd-action"
+              onClick={() => canvasRef.current?.newEntity()}
+              title="Add an entity (n)"
+            >
+              + Entity
+            </button>
+          )}
+          <span className="erd-hint">drag between entities to relate them</span>
           {busy && <span className="erd-busy">updating…</span>}
           {!canEdit && <span className="sme-chip">read-only</span>}
           {error && <span className="erd-error">{error}</span>}

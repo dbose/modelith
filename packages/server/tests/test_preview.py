@@ -247,3 +247,82 @@ def test_previewed_model_equals_proposed_model(tmp_path_factory):
     previewed_names = sorted(e["name"] for e in previewed["model"]["entities"])
     proposed_names = sorted(e.name for e in proposed.logical_entities.values())
     assert previewed_names == proposed_names
+
+
+# --- structural editing (phase 3) -------------------------------------------------
+
+
+def test_create_relationship_previews_and_proposes_identically(tmp_path_factory):
+    """The hardest dependent case: create an entity, then relate it to an existing
+    one. create_relationship may mint an FK attribute on the child, so both the
+    relationship and that attribute need stable ids across preview and propose."""
+    import subprocess
+
+    from fastapi.testclient import TestClient
+    from mdl_server import create_app
+
+    from mdl_core.repo import ModelRepo
+
+    from model_builders import write_model
+
+    root = tmp_path_factory.mktemp("structural")
+    write_model(root)
+    for cmd in (
+        ["init", "-q", "."],
+        ["config", "user.email", "t@t.co"],
+        ["config", "user.name", "t"],
+        ["add", "-A"],
+        ["commit", "-qm", "base"],
+        ["branch", "-M", "main"],
+    ):
+        subprocess.run(["git", "-C", str(root), *cmd], check=True)
+
+    client = TestClient(create_app(root))
+    counterparty = _le(client, "counterparty")
+    le_id, ce_id, rel_id, fk_id = (new_ulid() for _ in range(4))
+    changes = [
+        {"op": "create_entity", "payload": {"name": "custody_account", "id": le_id, "conceptual_id": ce_id}},
+        {
+            "op": "create_relationship",
+            "payload": {
+                "from_entity": le_id,
+                "to_entity": counterparty,
+                "id": rel_id,
+                "from_fk_id": fk_id,
+                "create_from_fk": True,
+                "cardinality": "many_to_one",
+            },
+        },
+    ]
+
+    previewed = client.post("/api/preview", json={"changes": changes}).json()
+    assert previewed["ok"], previewed.get("error")
+    assert rel_id in [r["id"] for r in previewed["model"]["relationships"]]
+
+    r = client.post(
+        "/api/git/propose",
+        json={"user": "a.hough", "title": "Add custody account", "body": "", "changes": changes},
+    ).json()
+    assert r["ok"], r
+
+    subprocess.run(["git", "-C", str(root), "checkout", "-q", r["branch"]], check=True)
+    proposed = ModelRepo.load(root).model
+    # the identities the user saw are the identities in the PR
+    assert le_id in proposed.logical_entities
+    assert rel_id in proposed.relationships
+    assert proposed.relationships[rel_id].to.entity == counterparty
+
+
+def test_delete_entity_previews_without_touching_disk(client, model_dir):
+    """Already covered for safety; this pins that the DELETE is actually reflected
+    in the projection, not merely harmless."""
+    before = _snapshot(model_dir)
+    live = client.get("/api/model").json()
+    r = client.post(
+        "/api/preview",
+        json={"changes": [{"op": "delete_entity", "payload": {"id": _le(client, "trade"), "cascade": True}}]},
+    ).json()
+    assert r["ok"]
+    assert len(r["model"]["entities"]) == len(live["entities"]) - 1
+    assert "trade" not in [e["name"] for e in r["model"]["entities"]]
+    assert _snapshot(model_dir) == before

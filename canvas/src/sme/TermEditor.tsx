@@ -19,7 +19,8 @@ export function TermEditor({
 }: {
   term: GlossaryTerm;
   pending: PendingChange[];
-  onStage: (c: PendingChange) => void;
+  /** `key` is optional: SmeApp derives it from the op and target ULID. */
+  onStage: (c: Omit<PendingChange, "key"> & { key?: string }) => void;
   onDone: () => void;
   // when the catalog masters the glossary, these fields render read-only
   catalogOwned?: string[];
@@ -197,7 +198,7 @@ function AlignmentProposer({
   onStage,
 }: {
   term: GlossaryTerm;
-  onStage: (c: PendingChange) => void;
+  onStage: (c: Omit<PendingChange, "key"> & { key?: string }) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState(term.name);
