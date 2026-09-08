@@ -362,7 +362,9 @@ def _fmt(v: Any) -> str:
     return str(v)
 
 
-def _diff_object(base, head, obj_kind: str) -> list[FieldChange]:
+def _diff_object(
+    base, head, obj_kind: str, names: dict[str, str] | None = None
+) -> list[FieldChange]:
     out: list[FieldChange] = []
     bf, hf = _fields_of(base), _fields_of(head)
 
@@ -415,13 +417,26 @@ def _diff_object(base, head, obj_kind: str) -> list[FieldChange]:
         if key == "nullable":
             kind = ChangeKind.attribute_nullability_changed
             sev = ChangeSeverity.breaking if (b and not h) else ChangeSeverity.additive
+        # A list of ULIDs is unreadable in a review. Where we can resolve them to
+        # names, say "+ Portfolio" rather than "+ 01KZ2B1RV0PN06WKGDR8CA4SD4".
+        detail = f"{_fmt(b)} → {_fmt(h)}"
+        if names and isinstance(b, list) and isinstance(h, list):
+            added = [names.get(x, x) for x in h if x not in b]
+            removed = [names.get(x, x) for x in b if x not in h]
+            parts = []
+            if added:
+                parts.append("+ " + ", ".join(added))
+            if removed:
+                parts.append("− " + ", ".join(removed))
+            if parts:
+                detail = "; ".join(parts)
         out.append(
             FieldChange(
                 field=key,
                 kind=kind,
                 severity=sev,
                 label=_LABELS.get(kind, _LABELS[ChangeKind.other_field_changed]),
-                detail=f"{_fmt(b)} → {_fmt(h)}",
+                detail=detail,
                 before=b,
                 after=h,
             )
@@ -545,6 +560,20 @@ def diff_models(
     on the other side is added or removed, rather than an exception."""
     diff = ModelDiff(base_label=base_label, head_label=head_label)
 
+    # ULID -> name across both sides, so list-valued fields (subject-area members,
+    # key-group columns, category subtypes) render as names rather than identifiers.
+    names: dict[str, str] = {}
+    for model in (base, head):
+        if model is None:
+            continue
+        for table in _TABLES:
+            for ulid, obj in getattr(model, table, {}).items():
+                if _name_of(obj):
+                    names[ulid] = _name_of(obj)
+        for le in getattr(model, "logical_entities", {}).values():
+            for a in le.attributes:
+                names[a.id] = a.name
+
     for table in _TABLES:
         b = getattr(base, table, {}) if base else {}
         h = getattr(head, table, {}) if head else {}
@@ -578,7 +607,7 @@ def diff_models(
             )
         for ulid in sorted(set(b) & set(h), key=lambda u: (_name_of(h[u]) or "", u)):
             ob, oh = b[ulid], h[ulid]
-            fields = _diff_object(ob, oh, _kind_of(oh))
+            fields = _diff_object(ob, oh, _kind_of(oh), names)
             children = (
                 _diff_attributes(ob, oh) if table == "logical_entities" else []
             )

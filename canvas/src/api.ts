@@ -1,5 +1,8 @@
 import type {
   ClassificationDoc,
+  ExpandDoc,
+  SubjectAreaDetail,
+  SubjectAreaRow,
   PreviewDoc,
   ConflictDoc,
   GitContext,
@@ -154,3 +157,17 @@ export const previewChanges = (
     if (!r.ok) throw new ApiError(await r.text(), r.status);
     return (await r.json()) as PreviewDoc;
   });
+
+// --- subject-area workspace (erwin's Available/Included picker) --------------------
+
+export const fetchSubjectAreas = () =>
+  get<{ subject_areas: SubjectAreaRow[] }>("/api/glossary/subject-areas");
+
+export const fetchSubjectArea = (id: string) =>
+  get<SubjectAreaDetail>(`/api/glossary/subject-area/${id}`);
+
+/** Preview "add related objects". Writes nothing — the user confirms first. */
+export const expandSubjectArea = (
+  id: string,
+  body: { seeds: string[]; direction: string; levels: number },
+) => post<ExpandDoc>(`/api/glossary/subject-area/${id}/expand`, body);

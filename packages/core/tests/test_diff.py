@@ -226,3 +226,16 @@ def test_markdown_of_an_empty_diff_says_so(tmp_path: Path):
 
     _, a, b = _twice(tmp_path)
     assert "No model changes" in render_markdown(diff_models(a, b))
+
+
+def test_ulid_lists_render_as_names(tmp_path: Path):
+    """A reviewer reading '+ 01KZ2B1RV0PN06WKGDR8CA4SD4' learns nothing. Subject-area
+    members, key-group columns and category subtypes are all ULID lists."""
+    ids, base, head = _twice(tmp_path)
+    sa = head.subject_areas[ids["sa"]]
+    sa.members = [ids["ce"], ids["ce2"]]
+
+    f = diff_models(base, head).objects[0].fields[0]
+    assert "Counterparty" in f.detail and "Trade" in f.detail
+    assert ids["ce"] not in f.detail  # the raw identifier is gone
+    assert f.detail.startswith("+ ")

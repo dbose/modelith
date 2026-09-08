@@ -418,3 +418,48 @@ export interface PreviewDoc {
   fingerprint: string;
   read_only: boolean;
 }
+
+// --- subject-area workspace --------------------------------------------------------
+
+export interface SubjectAreaRow {
+  id: string;
+  name: string;
+  definition: string | null;
+  members: string[];
+  member_count: number;
+}
+
+export interface SubjectAreaDetail {
+  ok: boolean;
+  id: string;
+  name: string;
+  definition: string | null;
+  members: string[];
+  /** the two panes of the picker */
+  included: GlossaryTerm[];
+  available: GlossaryTerm[];
+  /** objects whose home area is this one */
+  homed_here: string[];
+  /** homed here but NOT members — the MDL-W114 warning, surfaced as an affordance */
+  inconsistent: string[];
+}
+
+/** One step of "add related objects", carrying WHY it was reached. */
+export interface ClosureHop {
+  id: string;
+  name: string;
+  via: string;
+  via_name: string;
+  from_id: string;
+  from_name: string;
+  direction: string;
+  level: number;
+}
+
+export interface ExpandDoc {
+  ok: boolean;
+  hops: ClosureHop[];
+  /** hops not already members */
+  added: string[];
+  error?: string;
+}

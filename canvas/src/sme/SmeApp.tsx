@@ -9,6 +9,7 @@ import {
 import type { ClassificationDoc, GlossaryConfig, GlossaryDoc, ModelDoc } from "../types";
 import { GitBanner } from "./GitBanner";
 import { ModelWorkspace } from "./ModelWorkspace";
+import { SubjectAreaEditor } from "./SubjectAreaEditor";
 import { ProposalsList } from "./ProposalsList";
 import { ProposeDialog } from "./ProposeDialog";
 import { ReviewScreen } from "./ReviewScreen";
@@ -38,7 +39,7 @@ export function SmeApp() {
   const [proposeOpen, setProposeOpen] = useState(false);
   // browse | review | proposals. Written to location.hash so a view is linkable
   // (app.py serves sme.html for `sme` and any `sme/...`, so no server change).
-  const [view, setView] = useState<"browse" | "model" | "review" | "proposals">(
+  const [view, setView] = useState<"browse" | "model" | "areas" | "review" | "proposals">(
     window.location.hash === "#proposals" ? "proposals" : "browse",
   );
   // objects the SME has unticked in the review screen (selective proposal)
@@ -98,6 +99,16 @@ export function SmeApp() {
           return { label: `Subject area: ${target}`, before: "", after: String(payload.subject_area ?? "none") };
         case "set_stewardship":
           return { label: `Stewardship: ${target}`, before: "", after: String(payload.steward ?? "") };
+        case "set_subject_area_members": {
+          // the editor passes a ready-made summary; it knows the counts
+          const custom = payload.__label as string | undefined;
+          const n = (payload.members as string[] | undefined)?.length ?? 0;
+          return {
+            label: custom ?? `Subject area members`,
+            before: "",
+            after: `${n} object${n === 1 ? "" : "s"}`,
+          };
+        }
         case "set_alignment":
           return { label: `Alignment: ${target}`, before: "", after: String(payload.aligns_to ?? "") };
         default:
@@ -111,6 +122,18 @@ export function SmeApp() {
 
   // The glossary tray and the model tray are one proposal: a definition edited on
   // the Terms tab and an attribute added on the Model tab belong in the same PR.
+  // Members staged but not yet on disk, so the picker reflects the tray rather
+  // than snapping back to the committed state on every click.
+  const stagedMembers = useMemo(() => {
+    const out: Record<string, string[]> = {};
+    for (const c of staging.pending) {
+      if (c.op === "set_subject_area_members") {
+        out[c.payload.id as string] = (c.payload.members as string[]) ?? [];
+      }
+    }
+    return out;
+  }, [staging.pending]);
+
   const allPending = useMemo(
     () => [...pending, ...staging.pending],
     [pending, staging.pending],
@@ -121,7 +144,7 @@ export function SmeApp() {
   const locked = useMemo(() => dependentKeys(allPending), [allPending]);
   const selectable = locked.size < allPending.length;
 
-  const goto = useCallback((v: "browse" | "model" | "review" | "proposals") => {
+  const goto = useCallback((v: "browse" | "model" | "areas" | "review" | "proposals") => {
     setView(v);
     window.location.hash = v === "browse" ? "" : `#${v}`;
   }, []);
@@ -137,7 +160,9 @@ export function SmeApp() {
             ? "review"
             : h === "#model"
               ? "model"
-              : "browse",
+              : h === "#areas"
+                ? "areas"
+                : "browse",
       );
     };
     onHash();
@@ -241,6 +266,12 @@ export function SmeApp() {
             Model
           </button>
           <button
+            className={"sme-tab" + (view === "areas" ? " active" : "")}
+            onClick={() => goto("areas")}
+          >
+            Subject areas
+          </button>
+          <button
             className={"sme-tab" + (view === "proposals" ? " active" : "")}
             onClick={() => goto("proposals")}
           >
@@ -290,6 +321,12 @@ export function SmeApp() {
         ) : (
           <div className="sme-splash">◮ loading the model…</div>
         )
+      ) : view === "areas" ? (
+        <SubjectAreaEditor
+          exec={staging.exec}
+          canEdit={canEdit}
+          stagedMembers={stagedMembers}
+        />
       ) : view === "proposals" ? (
         <ProposalsList user={user} onView={() => goto("review")} />
       ) : (
