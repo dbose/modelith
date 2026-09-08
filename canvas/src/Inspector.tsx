@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { AttributeRow, Entity, ModelDoc, OntologyRef, Relationship } from "./types";
 
-type Exec = (op: string, payload: Record<string, unknown>) => Promise<unknown>;
+import type { Capabilities, Exec } from "./exec";
 
 // Standard primitive base types the emitter understands (mdl_emit_dbt platforms),
 // always offered in the attribute-type dropdown so a fresh model isn't limited to
@@ -21,7 +21,7 @@ const BASE_TYPES = [
 export function Inspector({
   entity,
   doc,
-  readOnly,
+  caps,
   exec,
   onClose,
   onFocusEntity,
@@ -30,13 +30,16 @@ export function Inspector({
 }: {
   entity: Entity;
   doc: ModelDoc;
-  readOnly: boolean;
+  caps: Capabilities;
   exec: Exec;
   onClose: () => void;
   onFocusEntity: (id: string) => void;
   onAlign: (entity: Entity) => void;
   onEditMapping: (entity: Entity) => void;
 }) {
+  // Sub-components still take a plain `readOnly`; derive it once here so the
+  // capability object stays the single source of truth at the boundary.
+  const readOnly = !caps.canEdit;
   const c = entity.conceptual;
   const rels = doc.relationships.filter(
     (r) => r.from.entity === entity.id || r.to.entity === entity.id,
@@ -121,7 +124,7 @@ export function Inspector({
         <OntologyRefs
           entityId={entity.id}
           refs={c?.ontology_refs ?? []}
-          readOnly={readOnly}
+          caps={caps}
           exec={exec}
         />
       </section>
@@ -312,14 +315,15 @@ export function Inspector({
 function OntologyRefs({
   entityId,
   refs,
-  readOnly,
+  caps,
   exec,
 }: {
   entityId: string;
   refs: OntologyRef[];
-  readOnly: boolean;
+  caps: Capabilities;
   exec: Exec;
 }) {
+  const readOnly = !caps.canEdit;
   const withUri = refs.filter((r) => r.uri);
   if (withUri.length === 0) {
     return <p className="empty-hint">not aligned to any ontology term</p>;
@@ -352,7 +356,7 @@ function OntologyRefs({
             </div>
             {!readOnly && (
               <div className="ref-actions">
-                {proposed && (
+                {proposed && caps.canArbitrate && (
                   <button
                     className="mini-btn"
                     onClick={() => exec("promote_alignment", { id: entityId, uri: r.uri })}

@@ -8,7 +8,7 @@ import type {
   TermCard,
 } from "./types";
 
-type Exec = (op: string, payload: Record<string, unknown>) => Promise<unknown>;
+import type { Exec } from "./exec";
 
 function Modal({
   title,
