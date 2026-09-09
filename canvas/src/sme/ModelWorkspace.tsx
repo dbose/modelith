@@ -28,6 +28,8 @@ export const MODELER_OPS: ReadonlySet<string> = new Set([
   "update_synonyms",
   "set_object_definition",
   "set_subject_area_members",
+  "create_subject_area",
+  "update_subject_area",
   // structure
   "create_entity",
   "delete_entity",
@@ -63,6 +65,8 @@ export function ModelWorkspace({
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [panel, setPanel] = useState<ReadOnlyPanelTab | null>(null);
+  // null = not creating; a string = the name being typed
+  const [newArea, setNewArea] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query] = useState("");
   const canvasRef = useRef<ModelCanvasHandle | null>(null);
@@ -95,11 +99,24 @@ export function ModelWorkspace({
   return (
     <div className="sme-model-view">
       <nav className="sme-nav">
+        <div className="sme-nav-head">
+          <span>Subject areas</span>
+          {canEdit && (
+            <button
+              className="sme-nav-add"
+              title="New subject area"
+              onClick={() => setNewArea("")}
+            >
+              +
+            </button>
+          )}
+        </div>
         <button
           className={"sme-sa" + (subjectArea === "" ? " active" : "")}
           onClick={() => onSubjectArea("")}
         >
           Whole model
+          <span className="sme-sa-count">{doc.entities.length}</span>
         </button>
         {doc.subject_areas.map((sa) => (
           <button
@@ -109,11 +126,37 @@ export function ModelWorkspace({
             title={sa.definition ?? undefined}
           >
             {sa.name}
-            {typeof sa.member_count === "number" && sa.member_count > 0 && (
-              <span className="sme-sa-count">{sa.member_count}</span>
-            )}
+            <span className="sme-sa-count">{sa.member_count ?? 0}</span>
           </button>
         ))}
+        {newArea !== null && (
+          // A subject area is a filtered view of the model, so creating one belongs
+          // where you are looking at the model — not only in a separate editor.
+          <form
+            className="sme-nav-new"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const name = newArea.trim();
+              if (!name) return setNewArea(null);
+              exec("create_subject_area", { name });
+              setNewArea(null);
+            }}
+          >
+            <input
+              autoFocus
+              value={newArea}
+              placeholder="Area name…"
+              onChange={(e) => setNewArea(e.target.value)}
+              onBlur={() => !newArea.trim() && setNewArea(null)}
+              onKeyDown={(e) => e.key === "Escape" && setNewArea(null)}
+            />
+            {/* A form with no submit control does not submit on Enter in every
+                browser; an offscreen one restores the behaviour people expect. */}
+            <button type="submit" className="visually-hidden" tabIndex={-1}>
+              Create
+            </button>
+          </form>
+        )}
       </nav>
 
       <div className="erd-wrap">
