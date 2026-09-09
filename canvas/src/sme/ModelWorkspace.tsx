@@ -3,6 +3,7 @@ import { ReactFlowProvider } from "reactflow";
 import type { Capabilities, Exec } from "../exec";
 import { ModelCanvas, type ModelCanvasHandle } from "../ModelCanvas";
 import { LayersView, OntologyBrowser, type ReadOnlyPanelTab } from "../SidePanel";
+import { NewSubjectAreaModal } from "./NewSubjectAreaModal";
 import type { ModelDoc } from "../types";
 import { newUlid } from "../ulid";
 import "../styles.css";
@@ -65,8 +66,7 @@ export function ModelWorkspace({
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [panel, setPanel] = useState<ReadOnlyPanelTab | null>(null);
-  // null = not creating; a string = the name being typed
-  const [newArea, setNewArea] = useState<string | null>(null);
+  const [creatingArea, setCreatingArea] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [query] = useState("");
   const canvasRef = useRef<ModelCanvasHandle | null>(null);
@@ -105,7 +105,7 @@ export function ModelWorkspace({
             <button
               className="sme-nav-add"
               title="New subject area"
-              onClick={() => setNewArea("")}
+              onClick={() => setCreatingArea(true)}
             >
               +
             </button>
@@ -116,7 +116,10 @@ export function ModelWorkspace({
           onClick={() => onSubjectArea("")}
         >
           Whole model
-          <span className="sme-sa-count">{doc.entities.length}</span>
+          {/* the real total, not however many survived the current filter */}
+          <span className="sme-sa-count">
+            {doc.counts?.entities_total ?? doc.entities.length}
+          </span>
         </button>
         {doc.subject_areas.map((sa) => (
           <button
@@ -129,35 +132,28 @@ export function ModelWorkspace({
             <span className="sme-sa-count">{sa.member_count ?? 0}</span>
           </button>
         ))}
-        {newArea !== null && (
-          // A subject area is a filtered view of the model, so creating one belongs
-          // where you are looking at the model — not only in a separate editor.
-          <form
-            className="sme-nav-new"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const name = newArea.trim();
-              if (!name) return setNewArea(null);
-              exec("create_subject_area", { name });
-              setNewArea(null);
-            }}
-          >
-            <input
-              autoFocus
-              value={newArea}
-              placeholder="Area name…"
-              onChange={(e) => setNewArea(e.target.value)}
-              onBlur={() => !newArea.trim() && setNewArea(null)}
-              onKeyDown={(e) => e.key === "Escape" && setNewArea(null)}
-            />
-            {/* A form with no submit control does not submit on Enter in every
-                browser; an offscreen one restores the behaviour people expect. */}
-            <button type="submit" className="visually-hidden" tabIndex={-1}>
-              Create
-            </button>
-          </form>
-        )}
       </nav>
+
+      {creatingArea && (
+        <NewSubjectAreaModal
+          onClose={() => setCreatingArea(false)}
+          onCreate={(name, definition, members) => {
+            // Client-minted so the area keeps its identity from preview to PR, and
+            // so the membership op can reference it in the same batch.
+            const id = newUlid();
+            exec("create_subject_area", {
+              name,
+              ...(definition ? { definition } : {}),
+              id,
+            });
+            if (members.length) {
+              exec("set_subject_area_members", { id, members });
+            }
+            setCreatingArea(false);
+            onSubjectArea(id);
+          }}
+        />
+      )}
 
       <div className="erd-wrap">
         <div className="erd-bar">

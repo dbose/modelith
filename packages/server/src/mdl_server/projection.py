@@ -277,5 +277,8 @@ def project(model: Model, *, subject_area: str | None = None) -> dict:
             "entities": len(entities),
             "relationships": len(relationships),
             "attributes": sum(len(e["attributes"]) for e in entities),
+            # The whole model, regardless of scope — a "Whole model" row in a picker
+            # has to show the real total, not however many survived the filter.
+            "entities_total": len(model.logical_entities),
         },
     }

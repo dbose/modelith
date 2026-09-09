@@ -157,3 +157,43 @@ def test_workspace_is_available_in_read_only_mode(model_dir, sa_id):
     assert ro.get("/api/glossary/subject-areas").status_code == 200
     assert ro.get(f"/api/glossary/subject-area/{sa_id}").status_code == 200
     assert ro.post(f"/api/glossary/subject-area/{sa_id}/expand", json={"seeds": []}).status_code == 200
+
+
+def test_whole_model_count_survives_scoping(client, model_dir, ids):
+    """A "Whole model" row in a picker must show the real total. Reading it off the
+    scoped entity list made it collapse to the filter's size — a view holding one
+    object reported the whole model as having one."""
+    use_case = apply_command(
+        model_dir, "create_subject_area", {"name": "UseCase-Narrow"}
+    ).created_id
+    apply_command(
+        model_dir, "add_subject_area_members", {"id": use_case, "members": [ids["ce"]]}
+    )
+
+    unscoped = client.get("/api/model").json()
+    scoped = client.get("/api/model", params={"subject_area": use_case}).json()
+
+    assert len(scoped["entities"]) == 1
+    assert scoped["counts"]["entities"] == 1  # the scoped view
+    assert scoped["counts"]["entities_total"] == unscoped["counts"]["entities"]  # the model
+
+
+def test_creating_an_area_with_members_is_one_batch(client, model_dir, ids):
+    """The modal creates and seeds in one gesture, so the membership op references a
+    ULID the create op minted in the same batch — only possible because the client
+    mints it."""
+    from mdl_core.ids import new_ulid
+
+    sa = new_ulid()
+    r = client.post(
+        "/api/preview",
+        json={
+            "changes": [
+                {"op": "create_subject_area", "payload": {"name": "UseCase-New", "id": sa}},
+                {"op": "set_subject_area_members", "payload": {"id": sa, "members": [ids["ce"]]}},
+            ]
+        },
+    ).json()
+    assert r["ok"], r.get("error")
+    created = next(a for a in r["model"]["subject_areas"] if a["id"] == sa)
+    assert created["name"] == "UseCase-New" and created["member_count"] == 1

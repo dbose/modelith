@@ -496,3 +496,10 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
   overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }
+
+/* --- new subject area modal ------------------------------------------------------ */
+.sa-modal { width: min(900px, 92vw); max-height: 88vh; }
+.sa-modal .sa-panes { margin-top: 14px; }
+.sa-modal .sa-pane { min-height: 200px; max-height: 260px; }
+.sa-modal .sa-filter { margin-top: 14px; }
+.sa-modal .sa-expand { margin-top: 16px; }

@@ -136,7 +136,13 @@ export interface ModelDoc {
   entities: Entity[];
   relationships: Relationship[];
   physical: PhysicalTable[];
-  counts: { entities: number; relationships: number; attributes: number };
+  counts: {
+    entities: number;
+    relationships: number;
+    attributes: number;
+    /** the whole model regardless of scope, for a "Whole model" row in a picker */
+    entities_total?: number;
+  };
   fingerprint: string;
   read_only: boolean;
   domains: string[];

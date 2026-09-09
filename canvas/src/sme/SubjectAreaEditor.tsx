@@ -278,7 +278,7 @@ export function SubjectAreaEditor({
   );
 }
 
-function Pane({
+export function Pane({
   title,
   rows,
   picked,
