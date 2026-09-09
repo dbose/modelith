@@ -1642,7 +1642,7 @@ def studio(
         cfg = CatalogConfig.resolve(Path.cwd())
         be = make_backend(cfg, _catalog_cache_dir())
         typer.secho(
-            f"Modelith modeler (catalog): http://{host}:{port}/catalog",
+            f"Modelith Studio (catalog): http://{host}:{port}/catalog",
             fg=typer.colors.CYAN,
         )
         serve_catalog(be, host=host, port=port)

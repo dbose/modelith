@@ -163,7 +163,15 @@ def create_catalog_app(backend) -> FastAPI:
             if path and candidate.is_file():
                 return FileResponse(candidate)
             if catalog_html.exists():
-                return FileResponse(catalog_html)
+                # not cached: the HTML names content-hashed bundles, so a cached
+                # copy would keep pointing at a stale build
+                return FileResponse(
+                    catalog_html,
+                    headers={
+                        "Cache-Control": "no-cache, must-revalidate",
+                        "Pragma": "no-cache",
+                    },
+                )
             return FileResponse(STATIC_DIR / "index.html")
 
     return app

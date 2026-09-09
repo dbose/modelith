@@ -90,3 +90,32 @@ def test_default_mode_still_serves_the_canvas(model_dir):
     c = TestClient(create_app(model_dir))
     assert "/assets/main-" in c.get("/").text
     assert "/assets/sme-" in c.get("/sme").text
+
+
+def test_spa_html_is_not_cached(model_dir):
+    """Asset filenames carry a content hash and are safe to cache forever, but the
+    HTML that NAMES them must not be — a cached copy keeps pointing at yesterday's
+    bundle, and a rebuilt app looks like it simply did not change."""
+    from fastapi.testclient import TestClient
+    from mdl_server import create_app
+
+    c = TestClient(create_app(model_dir))
+    for path in ("/", "/sme"):
+        r = c.get(path)
+        assert r.status_code == 200
+        assert "no-cache" in r.headers.get("cache-control", ""), path
+
+
+def test_hashed_assets_are_still_cacheable(model_dir):
+    import re
+
+    from fastapi.testclient import TestClient
+    from mdl_server import create_app
+
+    c = TestClient(create_app(model_dir))
+    html = c.get("/sme").text
+    assets = re.findall(r'/assets/([A-Za-z0-9_.-]+\.js)', html)
+    if not assets:  # a checkout without a built canvas
+        return
+    r = c.get(f"/assets/{assets[0]}")
+    assert "no-cache" not in r.headers.get("cache-control", "")

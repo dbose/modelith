@@ -227,6 +227,18 @@ def create_app(
         sme_html = STATIC_DIR / "sme.html"
         mocks_html = STATIC_DIR / "mocks.html"
 
+        def _page(path: Path) -> FileResponse:
+            """An SPA entry point, explicitly not cached.
+
+            Asset filenames carry a content hash, so they are safe to cache forever
+            — but the HTML that NAMES them must not be, or a browser keeps serving
+            yesterday's HTML pointing at yesterday's bundle, and a rebuilt app looks
+            like it simply did not change."""
+            return FileResponse(
+                path,
+                headers={"Cache-Control": "no-cache, must-revalidate", "Pragma": "no-cache"},
+            )
+
         @app.get("/{path:path}")
         def spa(path: str) -> FileResponse:
             # sme_only: this process IS the modeler app. The architect canvas and
@@ -237,18 +249,18 @@ def create_app(
                     candidate = STATIC_DIR / path
                     if candidate.is_file():
                         return FileResponse(candidate)
-                return FileResponse(sme_html)
+                return _page(sme_html)
             candidate = STATIC_DIR / path
             if path and candidate.is_file():
                 return FileResponse(candidate)
             # The SME app is a second SPA entry served under /sme.
             if (path == "sme" or path.startswith("sme/")) and sme_html.exists():
-                return FileResponse(sme_html)
+                return _page(sme_html)
             # Static UI mocks for screens that aren't built yet (design review only;
             # fixture-driven, no API calls).
             if (path == "mocks" or path.startswith("mocks/")) and mocks_html.exists():
-                return FileResponse(mocks_html)
-            return FileResponse(STATIC_DIR / "index.html")
+                return _page(mocks_html)
+            return _page(STATIC_DIR / "index.html")
 
     return app
 
