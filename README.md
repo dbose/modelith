@@ -29,7 +29,7 @@ cd modelith/demo/ibor
 
 mdl validate -m model                 # the seven-entity model is valid
 cd transform/warehouse && dbt build   # generated dbt builds green against DuckDB
-cd ../.. && mdl serve -m model        # ER canvas + browse the (bundled) FIBO ontology
+cd ../.. && mdl studio -m model       # the model in a browser + the (bundled) FIBO ontology
 ```
 
 Then break a generated column's contract, run `dbt parse`, and
@@ -88,7 +88,7 @@ mdl --help
 ```
 
 Modelith runs in the same environment as dbt-core (Python 3.11+). One install gives
-you the whole toolchain: the CLI, the web canvas (`mdl serve`), the language server,
+you the whole toolchain: the CLI, Studio (`mdl studio`), the language server,
 reverse engineering, drift detection, and the ontology and governance stack.
 
 ### VS Code, Cursor, Windsurf
@@ -120,7 +120,7 @@ mdl init my-model                          # scaffold a model repo
 mdl new entity customer -m my-model        # add an entity (mints ULIDs)
 mdl validate -m my-model                   # schema, refs, naming, ontology
 mdl generate -m my-model -o warehouse      # emit contract-enforced dbt
-mdl serve -m my-model                       # open the visual canvas
+mdl studio -m my-model                      # open Studio: the model in a browser
 ```
 
 `mdl generate` writes dbt models with protected regions, a `schema.yml` carrying
@@ -139,9 +139,11 @@ wrote 2 files to warehouse
 
 ## The visual canvas
 
-`mdl serve` opens an ER canvas in the browser (also embeddable as a VS Code webview).
-It is a full editor, not a viewer: drag between entities to draw a relationship, edit
-attributes and keys inline, align a term to an ontology, and commit from a git panel.
+`mdl studio` opens the model in a browser; `mdl serve` opens the same ER canvas as the
+standalone editor the VS Code extension embeds. Either way it is a full editor, not a
+viewer: drag between entities to draw a relationship, edit attributes and keys inline,
+align a term to an ontology, and land the change as a pull request (Studio) or a commit
+(`mdl serve`, `mdl studio --direct`).
 Every edit is a typed, comment-preserving mutation with optimistic concurrency, so two
 people can work the same repo without clobbering each other.
 
@@ -748,16 +750,32 @@ API returns, so there is one serialiser and no drift between surfaces.
 mdl studio -m . --port 4810       # then open /sme
 ```
 
-**Two personas, one app.** The default is the *modeler* view: edits are staged and
-land as one pull request, and git never gets in the way. `mdl studio --direct` is
-the *engineer* view: the same surface, but edits write the working tree and you
-commit from the git panel — for people who live in git and just want the diagram
-in front of them. (`mdl serve` still serves the architect canvas for the VS Code
-extension, and `mdl glossary` is a deprecated alias.)
+**Two people need different things from the same model, so Studio has two modes.**
 
-This is a **standalone modeler app**, not a view of the canvas. It is its own Vite
-entry, so it never loads the architect canvas bundle, and `mdl glossary` does not
-serve that canvas at all — handing someone this URL hands them one application.
+| | Modeler / steward | Engineer / architect |
+|---|---|---|
+| Command | `mdl studio` | `mdl studio --direct` |
+| An edit | is staged | writes the working tree |
+| Lands via | one pull request | your own commit |
+| Git | never in the way | the panel is right there |
+| Also lives in | the browser | the editor and the CLI |
+
+The **modeler** is the default. Someone who owns what the model *means* — a data
+modeler, a steward, an architect who would rather not live in an editor — opens the
+app, edits, reviews their own change, and submits. They never see a branch, a
+commit or a merge conflict; the review screen is what they see instead.
+
+The **engineer** already lives in git. `--direct` gives them the same surface with
+the staging removed: edits hit the working tree immediately and they commit when
+they are ready, exactly as the canvas has always worked. Most of the time they will
+be in VS Code with the canvas beside their YAML — `--direct` is for the moments
+when a diagram is easier than a diff.
+
+It is one application either way, and a **standalone** one: its own Vite entry, so
+it never loads the architect canvas bundle, and `mdl studio` does not serve that
+canvas at all. Handing someone this URL hands them one app, not two. (`mdl serve`
+still serves the architect canvas for the VS Code extension; `mdl glossary` is a
+deprecated alias that prints a note.)
 (`--with-canvas` serves both from one process when you want that.)
 
 The app has five views. **Terms** is the glossary. **Model** is the full ER editor —
@@ -803,7 +821,7 @@ Reviewers come from your **actual** `.github/CODEOWNERS` when the repo has one,
 falling back to the route defaults — naming a placeholder team would be worse than
 naming none.
 
-**Browse many models.** `mdl glossary --catalog` opens on a list of every published
+**Browse many models.** `mdl studio --catalog` opens on a list of every published
 model instead of a single model dir. Click one to view it; click **edit** and
 Modelith checks that model's own repo out on a proposal branch, so your changes land
 as a pull request *there*. The catalog stays a pointer index — it never becomes a
@@ -811,7 +829,7 @@ second source of truth, and there is no check-out/check-in to manage:
 
 ```bash
 mdl catalog publish          # from each model repo's CI, on merge
-mdl glossary --catalog       # browse them, open one, edit, propose
+mdl studio --catalog         # browse them, open one, edit, propose
 ```
 
 Branching from the *published* commit rather than a moving `main` is deliberate:
@@ -849,10 +867,10 @@ propose.
 **Distributing it.** The app is a client over the API, so it can be hosted anywhere:
 
 ```bash
-mdl glossary --export ./modeler-app     # ~6 files, ~190 KB
+mdl studio --export ./modeler-app       # ~6 files, ~190 KB
 ```
 
-Serve that directory from any static host and proxy `/api/` to an `mdl glossary`
+Serve that directory from any static host and proxy `/api/` to an `mdl studio`
 process. The ER diagram is code-split, so the 190 KB is what loads up front and
 React Flow arrives only when someone opens the Model tab.
 
@@ -895,11 +913,11 @@ catalog.
 
 | Surface | What it is |
 |---|---|
-| `mdl` CLI | The full command set: init, validate, lint, generate, reverse, drift, serve, glossary, ontology, emit, export, import, gov, and more |
-| Web canvas | `mdl serve` opens the ER editor; state stays in git |
-| VS Code extension | Canvas beside your YAML (follows the active editor), full canvas tab, diagnostics on save, generate / drift / lint commands, YAML completion, devcontainer-ready. See [In VS Code](#in-vs-code). |
+| Studio | `mdl studio` — the model in a browser, in two modes. Default: a **modeler** stages edits and proposes them as one pull request, never seeing git. `--direct`: an **engineer** writes the working tree and commits themselves. Terms, the ERD (scoped by subject area), the subject-area picker, a semantic diff and the proposal flow. Distributable on its own with `--export`. |
+| VS Code extension | Where engineers actually live: the canvas beside your YAML, following the active editor, plus diagnostics on save and generate / drift / lint commands. See [In VS Code](#in-vs-code). |
+| `mdl` CLI | The full command set: init, validate, lint, generate, reverse, drift, diff, studio, subject-area, ontology, emit, export, import, gov, catalog, and more |
 | Language server | `mdl lsp` (one server for VS Code, Cursor, Windsurf, JetBrains, and CI): drift and contract diagnostics on the dbt files, hover cards, code actions |
-| Modeler app | `mdl glossary` serves a standalone, git-native app for data modelers who would rather not live in an editor: browse terms, draw the ERD (scoped by subject area), assemble subject areas, review a model diff, and propose changes as a pull request. Distributable on its own with `--export`. |
+| Architect canvas | `mdl serve` — the ER editor the VS Code extension embeds. `mdl studio --direct` is the same editing model with Studio's chrome. |
 
 ## CLI reference
 
@@ -915,11 +933,11 @@ mdl drift --manifest <m> [--check|--reconcile]    compare model to compiled ware
 mdl diff [--base <ref>] [--format json|markdown]  semantic model diff (exit 2 on breaking)
 mdl subject-area list|show|add|remove             scoped views of the model
 mdl subject-area expand [--direction] [--levels]  add related objects (preview by default)
-mdl serve [--read-only] [?subject_area=<ulid>]    web canvas + read API
-mdl studio [--read-only] [--with-canvas]          the app: terms, ERD, subject areas, review, propose
+mdl studio [--read-only] [--with-canvas]          Studio: terms, ERD, subject areas, review, propose
 mdl studio --direct                               engineer mode: edits write the working tree
 mdl studio --catalog                              browse published models, open one to edit
 mdl studio --export <dir>                         write its static files, to host anywhere
+mdl serve [--read-only] [?subject_area=<ulid>]    architect ER canvas + read API (VS Code embeds this)
 mdl ontology search|check                         browse; layer rules + coverage report
 mdl ontology lock|fetch|add                       pin a source, fetch+verify, vendor a file
 mdl ontology align|promote                        propose alignments (§2), accept them
