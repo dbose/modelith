@@ -2,6 +2,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { ReactFlowProvider } from "reactflow";
 import type { Capabilities, Exec } from "../exec";
 import { ModelCanvas, type ModelCanvasHandle } from "../ModelCanvas";
+import { LayersView, OntologyBrowser, type ReadOnlyPanelTab } from "../SidePanel";
 import type { ModelDoc } from "../types";
 import { newUlid } from "../ulid";
 import "../styles.css";
@@ -58,6 +59,7 @@ export function ModelWorkspace({
   busy?: boolean;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [panel, setPanel] = useState<ReadOnlyPanelTab | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query] = useState("");
   const canvasRef = useRef<ModelCanvasHandle | null>(null);
@@ -125,6 +127,20 @@ export function ModelWorkspace({
             </button>
           )}
           <span className="erd-hint">drag between entities to relate them</span>
+          <span className="erd-panels">
+            <button
+              className={"erd-action ghost" + (panel === "ontology" ? " on" : "")}
+              onClick={() => setPanel((p) => (p === "ontology" ? null : "ontology"))}
+            >
+              Ontology
+            </button>
+            <button
+              className={"erd-action ghost" + (panel === "layers" ? " on" : "")}
+              onClick={() => setPanel((p) => (p === "layers" ? null : "layers"))}
+            >
+              Layers
+            </button>
+          </span>
           {busy && <span className="erd-busy">updating…</span>}
           {!canEdit && <span className="sme-chip">read-only</span>}
           {error && <span className="erd-error">{error}</span>}
@@ -144,6 +160,27 @@ export function ModelWorkspace({
               handleRef={canvasRef}
             />
           </ReactFlowProvider>
+          {panel && (
+            <aside className="side-panel">
+              <div className="detail-header">
+                <h2>{panel === "ontology" ? "Ontology" : "Ontology layers"}</h2>
+                <button className="icon-btn" onClick={() => setPanel(null)}>
+                  {"✕"}
+                </button>
+              </div>
+              {panel === "ontology" ? (
+                <OntologyBrowser />
+              ) : (
+                <LayersView
+                  refreshKey={0}
+                  onFocusEntity={(id) => {
+                    setPanel(null);
+                    canvasRef.current?.focusEntity(id);
+                  }}
+                />
+              )}
+            </aside>
+          )}
         </div>
       </div>
     </div>

@@ -106,6 +106,14 @@ export function useStaging({
       // PR, and a create-then-edit batch would fail at submit. The server validates
       // whatever we send.
       payload = withMintedIds(op, payload);
+      // An alignment made in a proposal is a PROPOSAL. Accepting one is an
+      // architect's verdict (promote_alignment, which this surface cannot emit), so
+      // an alignment staged here must not arrive pre-accepted — it would bypass the
+      // proposed/accepted state machine entirely. The glossary editor already does
+      // this; doing it in the staging layer covers the canvas AlignModal too.
+      if (op === "set_alignment" && payload.status === undefined) {
+        payload = { ...payload, status: "proposed" };
+      }
       const key = collapseKey(op, payload);
       const { label, before, after } = describe(op, payload);
       setPending((prev) => {

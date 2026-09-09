@@ -24,6 +24,11 @@ import type {
 
 export type PanelTab = "ontology" | "layers" | "changes" | "decisions";
 
+/** The tabs that only READ. The modeler app mounts these: `changes` offers git
+ * commit/discard, which is mutually exclusive with proposing (propose refuses a
+ * dirty tree), and `decisions` records architect verdicts. */
+export type ReadOnlyPanelTab = "ontology" | "layers";
+
 export function SidePanel({
   tab,
   onClose,
@@ -64,7 +69,7 @@ export function SidePanel({
 
 // --- Ontology browser (E1) -----------------------------------------------------
 
-function OntologyBrowser() {
+export function OntologyBrowser() {
   const [q, setQ] = useState("");
   const [results, setResults] = useState<TermCard[]>([]);
   const [meta, setMeta] = useState<{ loaded: number; vocabs: string[] }>({
@@ -204,7 +209,7 @@ function OntologyBrowser() {
 
 const LAYER_ORDER = ["industry", "core", "domain", "specialised"] as const;
 
-function LayersView({
+export function LayersView({
   refreshKey,
   onFocusEntity,
 }: {

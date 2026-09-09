@@ -462,3 +462,11 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
 .sa-hop-name { font-weight: 600; }
 .sa-hop-why { color: var(--text-dim); font-size: 11.5px; font-family: var(--mono); }
 .sa-hop-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 10px; }
+.erd-panels { display: flex; gap: 6px; }
+.erd-action.ghost {
+  background: none; border-color: var(--border); color: var(--text-dim); font-weight: 500;
+}
+.erd-action.ghost:hover { color: var(--text); border-color: var(--border-strong); background: none; }
+.erd-action.ghost.on {
+  background: rgba(94,234,212,0.12); border-color: rgba(94,234,212,0.35); color: var(--accent);
+}

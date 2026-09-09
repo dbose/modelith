@@ -326,3 +326,41 @@ def test_delete_entity_previews_without_touching_disk(client, model_dir):
     assert len(r["model"]["entities"]) == len(live["entities"]) - 1
     assert "trade" not in [e["name"] for e in r["model"]["entities"]]
     assert _snapshot(model_dir) == before
+
+
+def test_an_alignment_can_be_staged_as_a_proposal(client):
+    """A modeler's alignment is a PROPOSAL: accepting one is promote_alignment, an
+    architect verdict the modeler app cannot emit. If a staged alignment arrived
+    pre-accepted it would bypass the proposed/accepted state machine entirely."""
+    r = client.post(
+        "/api/preview",
+        json={
+            "changes": [
+                {
+                    "op": "set_alignment",
+                    "payload": {
+                        "id": _ce(client, "counterparty"),
+                        "aligns_to": "fibo-fnd-pty-pty:PartyInRole",
+                        "alignment": "skos:exactMatch",
+                        "status": "proposed",
+                    },
+                }
+            ]
+        },
+    ).json()
+    assert r["ok"]
+    ce = next(
+        e["conceptual"]
+        for e in r["model"]["entities"]
+        if e["conceptual"] and e["conceptual"]["ontology_refs"]
+    )
+    assert ce["ontology_refs"][0]["status"] == "proposed"
+
+
+def test_promote_alignment_is_not_proposable(client, model_dir):
+    """The server refuses it even though preview would happily run it — the boundary
+    is the propose endpoint, not the preview."""
+    from mdl_server.git_api import _NOT_PROPOSABLE_REASON, _PROPOSABLE_OPS
+
+    assert "promote_alignment" not in _PROPOSABLE_OPS
+    assert "promote_alignment" in _NOT_PROPOSABLE_REASON
