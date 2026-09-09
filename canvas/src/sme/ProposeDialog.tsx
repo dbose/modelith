@@ -35,6 +35,12 @@ export function ProposeDialog({
   const [title, setTitle] = useState(
     changes.length === 1 ? `Update ${changes[0].label.toLowerCase()}` : "Glossary updates",
   );
+  // The branch slug defaults to the title but is separately editable, so a modeler
+  // can prepend a ticket id (e.g. "PROJ-123-clarify-counterparty"). It follows the
+  // title until the user touches it, then stops so their edit is not overwritten.
+  const [slug, setSlug] = useState("");
+  const [slugTouched, setSlugTouched] = useState(false);
+  const effectiveSlug = slugify(slugTouched ? slug : title);
   const [body, setBody] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ProposeResult | null>(null);
@@ -55,7 +61,8 @@ export function ProposeDialog({
     // what we send here is only the fallback for an anonymous deployment.
     proposeChanges({
       user: authenticated ? "" : user.trim(),
-      slug: title,
+      // send the edited slug when the user set one, else let the title drive it
+      slug: effectiveSlug || title,
       title,
       body: body.trim(),
       changes: changes.map((c) => ({ op: c.op, payload: c.payload })),
@@ -145,11 +152,26 @@ export function ProposeDialog({
           <input value={title} onChange={(e) => setTitle(e.target.value)} />
         </label>
         <label className="sme-field">
+          <span>Branch name (edit to add a ticket id, e.g. PROJ-123)</span>
+          <input
+            value={slugTouched ? slug : effectiveSlug}
+            onChange={(e) => {
+              setSlugTouched(true);
+              setSlug(e.target.value);
+            }}
+            placeholder="clarify-counterparty"
+          />
+        </label>
+        <label className="sme-field">
           <span>Note for the reviewer (optional)</span>
           <textarea rows={2} value={body} onChange={(e) => setBody(e.target.value)} />
         </label>
 
-        <RouteAdvice cl={routeAdvice} user={authenticated ? identity!.name : user} />
+        <RouteAdvice
+          cl={routeAdvice}
+          user={authenticated ? identity!.name : user}
+          changeSlug={effectiveSlug}
+        />
 
         {error && <p className="sme-error-line">{error}</p>}
 
@@ -174,10 +196,20 @@ export function ProposeDialog({
  *  B > E > C > A), so a definition fix bundled with a structural change waits on
  *  architects instead of a steward. Saying so, and naming where it goes, is advice
  *  erwin has no route model to give. */
-function RouteAdvice({ cl, user }: { cl?: ClassificationDoc | null; user: string }) {
+function RouteAdvice({
+  cl,
+  user,
+  changeSlug,
+}: {
+  cl?: ClassificationDoc | null;
+  user: string;
+  /** the (possibly ticket-prefixed) change slug, so the preview shows the real
+   *  branch rather than an ellipsis */
+  changeSlug?: string;
+}) {
   if (!cl?.primary) return null;
   const reviewers = cl.reviewers_actual ?? cl.reviewers;
-  const slug = (user || "you").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const slug = slugify(user || "you");
   const mixed = cl.routes.length > 1;
   return (
     <>
@@ -193,7 +225,7 @@ function RouteAdvice({ cl, user }: { cl?: ClassificationDoc | null; user: string
       <div className="sub-dest">
         <div className="row">
           <span className="k">Goes to</span>
-          <code>sme/{slug}/…</code>
+          <code>sme/{slug}/{changeSlug || "…"}</code>
         </div>
         <div className="row">
           <span className="k">Reviewers</span>
@@ -202,4 +234,11 @@ function RouteAdvice({ cl, user }: { cl?: ClassificationDoc | null; user: string
       </div>
     </>
   );
+}
+
+/** Slugify a branch fragment the same way the server does (mdl_server.git_api
+ *  ._slugify): lowercase, non-alphanumerics to single hyphens, trimmed. Keeping the
+ *  rule identical means the branch preview matches the branch the server creates. */
+function slugify(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "change";
 }

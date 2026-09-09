@@ -497,3 +497,24 @@ def test_propose_ok_when_require_and_proxy(git_model_dir, monkeypatch):
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["branch"].startswith("sme/real-corp-com/")
+
+
+def test_propose_honours_an_edited_ticket_prefixed_slug(client, git_model_dir):
+    """The Studio branch-name field lets a modeler prepend a ticket id; the server
+    slugifies whatever slug it is handed into the branch, so 'PROJ-123-clarify'
+    becomes sme/<identity>/proj-123-clarify."""
+    doc = client.get("/api/glossary/terms").json()
+    cpty = next(t for t in doc["terms"] if t["name"] == "Counterparty")
+    resp = client.post(
+        "/api/git/propose",
+        json={
+            "slug": "PROJ-123-clarify-counterparty",
+            "title": "Clarify Counterparty",
+            "changes": [
+                {"op": "set_definition", "payload": {"id": cpty["id"], "definition": "x."}}
+            ],
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    # identity (t@t.co) drives the user segment; the edited slug drives the rest
+    assert resp.json()["branch"] == "sme/t-t-co/proj-123-clarify-counterparty"
