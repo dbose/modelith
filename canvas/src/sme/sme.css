@@ -133,6 +133,10 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
 .sme-diff-after { color: var(--ok); font-size: 13px; }
 .sme-modal-foot { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
 .sme-error-line { color: var(--err); font-size: 13px; }
+.sme-signed-in { margin-top: 14px; font-size: 13px; color: var(--text-dim);
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
+  padding: 10px 12px; }
+.sme-signed-in strong { color: var(--text); }
 .sme-modal a { color: var(--accent); }
 
 /* --- model git-ops screens (plan §M) --------------------------------------------

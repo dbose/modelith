@@ -46,6 +46,10 @@ export function SmeApp() {
   // objects the SME has unticked in the review screen (selective proposal)
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [user, setUser] = useState(() => localStorage.getItem("mdl.sme.user") ?? "");
+  // Server-established identity (spec §17). When the source is proxy or git, the
+  // acting user is known and trustworthy — the propose dialog greets them instead
+  // of asking for a name, and the server ignores any name we send anyway.
+  const [identity, setIdentity] = useState<ModelDoc["identity"] | null>(null);
   const [modelDoc, setModelDoc] = useState<ModelDoc | null>(null);
   // engineer mode: the server was started with --direct, so edits write the tree
   const [direct, setDirect] = useState(false);
@@ -201,6 +205,12 @@ export function SmeApp() {
         setProjectName(m.project.name);
         setModelDoc(m);
         setDirect(Boolean(m.direct));
+        setIdentity(m.identity ?? null);
+        // A trusted identity seeds the display name so "your proposals" and the
+        // route advice slug reflect the real user without a manual entry.
+        if (m.identity && m.identity.source !== "anonymous" && m.identity.name) {
+          setUser(m.identity.name);
+        }
       })
       .catch(() => undefined);
     fetchGlossaryConfig()
@@ -420,6 +430,7 @@ export function SmeApp() {
         <ProposeDialog
           changes={allPending}
           routeAdvice={routeAdvice}
+          identity={identity}
           user={user}
           onUser={(u) => {
             setUser(u);

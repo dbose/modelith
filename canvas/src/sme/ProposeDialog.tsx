@@ -10,6 +10,7 @@ import type { PendingChange } from "./SmeApp";
 export function ProposeDialog({
   changes,
   routeAdvice,
+  identity,
   user: initialUser,
   onUser,
   onDrop,
@@ -19,12 +20,17 @@ export function ProposeDialog({
   changes: PendingChange[];
   /** route/reviewers/gates for the staged change, for the split advice (§M6) */
   routeAdvice?: ClassificationDoc | null;
+  /** server-established identity (spec §17); when trusted, we greet instead of ask */
+  identity?: { name: string; email: string; source: "proxy" | "git" | "anonymous" } | null;
   user?: string;
   onUser?: (u: string) => void;
   onDrop: (idx: number) => void;
   onClose: () => void;
   onProposed: (result?: ProposeResult) => void;
 }) {
+  // A proxy- or git-established identity is authoritative: the server attributes the
+  // commit to it and IGNORES whatever name we send, so there is nothing to ask for.
+  const authenticated = Boolean(identity && identity.source !== "anonymous");
   const [user, setUser] = useState(initialUser || (localStorage.getItem("mdl.sme.user") ?? ""));
   const [title, setTitle] = useState(
     changes.length === 1 ? `Update ${changes[0].label.toLowerCase()}` : "Glossary updates",
@@ -35,15 +41,20 @@ export function ProposeDialog({
   const [error, setError] = useState<string | null>(null);
 
   const submit = () => {
-    if (!user.trim()) return;
-    localStorage.setItem("mdl.sme.user", user.trim());
-    onUser?.(user.trim());
+    // An authenticated user needs no name; otherwise it is required for attribution.
+    if (!authenticated && !user.trim()) return;
+    if (!authenticated) {
+      localStorage.setItem("mdl.sme.user", user.trim());
+      onUser?.(user.trim());
+    }
     setBusy(true);
     setError(null);
     // The PR body is generated server-side from the real model diff, so the
     // reviewer sees a grouped, severity-tagged summary rather than this list.
+    // When authenticated the server overrides `user` with the trusted identity, so
+    // what we send here is only the fallback for an anonymous deployment.
     proposeChanges({
-      user: user.trim(),
+      user: authenticated ? "" : user.trim(),
       slug: title,
       title,
       body: body.trim(),
@@ -113,10 +124,22 @@ export function ProposeDialog({
           ))}
         </ul>
 
-        <label className="sme-field">
-          <span>Your name (for attribution)</span>
-          <input value={user} onChange={(e) => setUser(e.target.value)} placeholder="e.g. a.hough" />
-        </label>
+        {authenticated ? (
+          <p className="sme-signed-in">
+            Signed in as <strong>{identity!.name}</strong>
+            {identity!.email ? ` (${identity!.email})` : ""} — this proposal is
+            attributed to you.
+          </p>
+        ) : (
+          <label className="sme-field">
+            <span>Your name (for attribution)</span>
+            <input
+              value={user}
+              onChange={(e) => setUser(e.target.value)}
+              placeholder="e.g. a.hough"
+            />
+          </label>
+        )}
         <label className="sme-field">
           <span>Title</span>
           <input value={title} onChange={(e) => setTitle(e.target.value)} />
@@ -126,7 +149,7 @@ export function ProposeDialog({
           <textarea rows={2} value={body} onChange={(e) => setBody(e.target.value)} />
         </label>
 
-        <RouteAdvice cl={routeAdvice} user={user} />
+        <RouteAdvice cl={routeAdvice} user={authenticated ? identity!.name : user} />
 
         {error && <p className="sme-error-line">{error}</p>}
 
@@ -134,7 +157,11 @@ export function ProposeDialog({
           <button className="sme-secondary" onClick={onClose}>
             Keep editing
           </button>
-          <button className="sme-primary" disabled={busy || !user.trim() || changes.length === 0} onClick={submit}>
+          <button
+            className="sme-primary"
+            disabled={busy || (!authenticated && !user.trim()) || changes.length === 0}
+            onClick={submit}
+          >
             {busy ? "Submitting…" : "Submit for review"}
           </button>
         </div>
