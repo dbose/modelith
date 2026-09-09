@@ -727,9 +727,15 @@ gates a proposal will face, surfaced in the propose dialog's route advice. **Don
 the `MDL_AUTH_REQUIRE` write gate — every write endpoint returns 403 for an anonymous
 identity when set (`write_denied_reason` in identity.py), verified anonymous→403 /
 proxy→200 in tests and against the running server.
-*Remaining:* the route/reviewer panel reads the working-tree diff, so it shows "no
-route" for a purely staged proposal; it should classify the previewed change set
-(shares the fix with the staged-diff Review-screen item). Tracked separately.
+**Also done:** the Review screen and the route/reviewer panel now read the STAGED
+change set, not the working-tree diff. Previously a purely staged proposal showed "0
+changes / no route" and Submit was disabled — the steward could not propose at all.
+The Review screen diffs the combined tray via `/api/preview`; a new
+`POST /api/git/classify` previews the change set to learn which files it touches
+(`preview_changed_paths`) and routes those, so reviewers/gates are correct before
+anything is written. Verified end-to-end: a definition edit shows a real before/after
+diff, routes to A · Meaning · data-stewards, and submits to
+`sme/<identity>/…` authored by the resolved identity.
 
 **M9, audit + SOC 2 readiness.** Append-only audit log of identity/permission/config
 events (distinct from git model history); a documented data-flow / no-egress

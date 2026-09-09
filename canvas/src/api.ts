@@ -132,6 +132,12 @@ export const fetchRefDiff = (base: string, head: string) =>
 export const fetchClassification = (base = "HEAD") =>
   get<ClassificationDoc>(`/api/git/classify?base=${encodeURIComponent(base)}`);
 
+/** Route a STAGED proposal (not yet on disk): which reviewers/gates the change set
+ *  in the tray will face. Writes nothing. */
+export const classifyStaged = (
+  changes: { op: string; payload: Record<string, unknown> }[],
+) => post<ClassificationDoc>("/api/git/classify", { changes });
+
 export const fetchConflicts = (base: string) =>
   get<ConflictDoc>(`/api/git/conflicts?base=${encodeURIComponent(base)}`);
 

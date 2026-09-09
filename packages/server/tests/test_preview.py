@@ -364,3 +364,55 @@ def test_promote_alignment_is_not_proposable(client, model_dir):
 
     assert "promote_alignment" not in _PROPOSABLE_OPS
     assert "promote_alignment" in _NOT_PROPOSABLE_REASON
+
+
+# --- staged classification: which files a proposal touches (spec §18 M8) ---------
+
+
+def test_preview_changed_paths_reports_edited_file(client, model_dir):
+    from mdl_server.preview import preview_changed_paths
+
+    from mdl_core.repo import ModelRepo
+
+    ce = _ce(client, "counterparty")
+    repo = ModelRepo.load(model_dir)
+    paths = preview_changed_paths(
+        repo, [{"op": "set_definition", "payload": {"id": ce, "definition": "changed."}}]
+    )
+    assert any("conceptual/" in p for p in paths), paths
+    # nothing was written to disk
+    assert (model_dir / "conceptual" / "entities" / "counterparty.yaml").read_text()
+
+
+def _git_init(model_dir):
+    import subprocess
+
+    for a in (
+        ["init", "-q", str(model_dir)],
+        ["-C", str(model_dir), "config", "user.email", "t@t.co"],
+        ["-C", str(model_dir), "config", "user.name", "t"],
+        ["-C", str(model_dir), "add", "-A"],
+        ["-C", str(model_dir), "commit", "-qm", "base"],
+    ):
+        subprocess.run(["git", *a], check=True)
+
+
+def test_staged_classify_routes_a_conceptual_edit(client, model_dir):
+    """A definition edit is a conceptual (Route A) change — and the staged classify
+    sees it even though nothing is on disk yet."""
+    _git_init(model_dir)
+    ce = _ce(client, "counterparty")
+    r = client.post(
+        "/api/git/classify",
+        json={"changes": [{"op": "set_definition", "payload": {"id": ce, "definition": "x."}}]},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["ok"] is True
+    assert body["primary"] == "A", body
+    assert any("conceptual/" in p for p in body["paths"]), body
+
+
+def test_staged_classify_rejects_non_list(client):
+    r = client.post("/api/git/classify", json={"changes": "notalist"})
+    assert r.status_code == 422

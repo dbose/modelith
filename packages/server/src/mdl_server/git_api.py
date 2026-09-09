@@ -529,6 +529,41 @@ def _classify_response(model_dir: Path, base: str) -> dict:
     return cl
 
 
+def _classify_staged_response(model_dir: Path, changes: list[dict]) -> dict:
+    """Classify a STAGED change set (not yet on disk): preview it to learn which
+    model files it touches, then route those. This makes the route/reviewer panel
+    correct for a proposal before anything is written.
+
+    preview_changed_paths returns MODEL-DIR-relative paths (e.g.
+    'conceptual/entities/x.yaml'). classify_paths keys off a `<model_root>/conceptual/…`
+    shape, so we normalise every layout to a `model/` sentinel prefix and use its
+    default roots — that routes identically whether the model lives at the repo root,
+    under `model/`, or in a nested dir like `demo/ibor/model/`. (mdl-project.yaml lives
+    at the model-dir root and classify_paths matches it by suffix, so it passes through
+    un-prefixed.)"""
+    from mdl_core.repo import ModelRepo
+    from mdl_core.routes import classify_paths
+    from mdl_server.git_models import repo_prefix
+    from mdl_server.preview import preview_changed_paths
+
+    if not _is_repo(model_dir):
+        return {"ok": False, "error": "not a git repository", "git": False}
+
+    repo = ModelRepo.load(model_dir)
+    rel = preview_changed_paths(repo, changes)
+    sentinel = [p if p == "mdl-project.yaml" else f"model/{p}" for p in rel]
+    cl = classify_paths(sentinel).to_dict()
+    cl["ok"] = True
+    cl["paths"] = rel  # report the real model-relative paths, not the sentinel form
+    # CODEOWNERS matches on repo-root-relative paths, so prefix by the model dir's
+    # own location in the repo.
+    prefix = repo_prefix(model_dir).rstrip("/")
+    repo_paths = [f"{prefix}/{p}" if prefix else p for p in rel]
+    actual = _codeowners_reviewers(model_dir, repo_paths)
+    cl["reviewers_actual"] = actual or None
+    return cl
+
+
 def _conflicts_response(model_dir: Path, base: str) -> dict:
     """Dry-run the SAME semantic merge driver git would run, so the answer is not
     an approximation. merge_model_files is pure over three strings; nothing is
@@ -786,6 +821,16 @@ def git_router(
     def classify(base: str = "HEAD") -> JSONResponse:
         """Which review route the change takes, who reviews it, which gates run."""
         return JSONResponse(_classify_response(model_dir, base))
+
+    @router.post("/classify")
+    def classify_staged(body: dict) -> JSONResponse:
+        """Route a STAGED proposal (not yet on disk): the same route/reviewer/gate
+        answer as GET, but for the change set the modeler app holds in its tray.
+        Writes nothing — the preview runs against a throwaway copy."""
+        changes = body.get("changes") or []
+        if not isinstance(changes, list):
+            return JSONResponse({"ok": False, "error": "changes must be a list"}, status_code=422)
+        return JSONResponse(_classify_staged_response(model_dir, changes))
 
     @router.get("/conflicts")
     def conflicts(base: str = "main") -> JSONResponse:

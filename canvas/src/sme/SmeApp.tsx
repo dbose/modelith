@@ -1,12 +1,25 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchGlossary, fetchGlossaryConfig, fetchModel, sendCommand } from "../api";
+import {
+  classifyStaged,
+  fetchGlossary,
+  fetchGlossaryConfig,
+  fetchModel,
+  previewChanges,
+  sendCommand,
+} from "../api";
 import {
   collapseKey,
   dependentKeys,
   useStaging,
   type PendingChange,
 } from "../staging/useStaging";
-import type { ClassificationDoc, GlossaryConfig, GlossaryDoc, ModelDoc } from "../types";
+import type {
+  ClassificationDoc,
+  GlossaryConfig,
+  GlossaryDoc,
+  ModelDiffDoc,
+  ModelDoc,
+} from "../types";
 import type { Exec } from "../exec";
 import { GitBanner } from "./GitBanner";
 import { ModelWorkspace } from "./ModelWorkspace";
@@ -157,6 +170,34 @@ export function SmeApp() {
     () => [...pending, ...staging.pending],
     [pending, staging.pending],
   );
+
+  // The Review screen must diff the WHOLE proposal — glossary-tray edits AND
+  // model-tray edits together. `staging.previewDiff` covers only the model tray, so
+  // a definition edited on the Terms tab (which lands in `pending`) showed as an
+  // empty diff and left Submit disabled. Preview the combined set here so the review
+  // reflects everything staged, from either surface.
+  const [reviewDiff, setReviewDiff] = useState<ModelDiffDoc | null>(null);
+  const [reviewRoute, setReviewRoute] = useState<ClassificationDoc | null>(null);
+  useEffect(() => {
+    if (!allPending.length) {
+      setReviewDiff(null);
+      setReviewRoute(null);
+      return;
+    }
+    const ctrl = new AbortController();
+    const changes = allPending.map((c) => ({ op: c.op, payload: c.payload }));
+    previewChanges(changes, subjectArea || undefined, ctrl.signal)
+      .then((p) => setReviewDiff(p.diff ?? null))
+      .catch((e) => {
+        if ((e as Error).name !== "AbortError") setReviewDiff(null);
+      });
+    // Route the staged set too, so the reviewers/gates panel is correct before the
+    // proposal is written — the working-tree classify would show "no route".
+    classifyStaged(changes)
+      .then(setReviewRoute)
+      .catch(() => setReviewRoute(null));
+    return () => ctrl.abort();
+  }, [allPending, subjectArea]);
 
   // Only the changes that actually depend on a staged creation are locked
   // together; everything else can still be proposed selectively.
@@ -314,7 +355,8 @@ export function SmeApp() {
 
       {view === "review" ? (
         <ReviewScreen
-          stagedDiff={staging.previewDiff}
+          stagedDiff={reviewDiff}
+          stagedRoute={reviewRoute}
           user={user}
           selectable={selectable}
           excluded={excluded}

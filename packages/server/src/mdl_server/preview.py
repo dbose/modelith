@@ -27,6 +27,51 @@ from mdl_core.validate import validate
 from mdl_server.projection import project
 
 
+def preview_changed_paths(repo: ModelRepo, changes: list[dict]) -> list[str]:
+    """The model-dir-relative YAML paths the staged `changes` would add, modify, or
+    remove — computed by projecting the change set to a throwaway tree and comparing
+    it file-by-file against the on-disk model. Used to classify the review ROUTE of a
+    staged proposal (which files it touches → which reviewers/gates), the same way
+    `git diff --name-only` does for an already-written change.
+
+    Returns paths relative to the model dir (e.g. "conceptual/entities/x.yaml"); the
+    caller prefixes them to repo-root-relative for classification."""
+    scratch = copy.deepcopy(repo)
+    disk_root = Path(repo.root)
+    tmp = Path(tempfile.mkdtemp(prefix="mdl-preview-paths-"))
+    try:
+        scratch.root = tmp
+        for change in changes:
+            handler = _HANDLERS.get(change.get("op", ""))
+            if handler is None:
+                continue
+            try:
+                handler(scratch, change.get("payload") or {})
+            except CommandError:
+                # a bad op contributes no reliable paths; skip it, keep the rest
+                continue
+            scratch.save()
+            scratch = ModelRepo.load(tmp)
+        scratch.save()
+
+        def _yaml_bytes(root: Path) -> dict[str, bytes]:
+            out: dict[str, bytes] = {}
+            for p in root.rglob("*.yaml"):
+                out[str(p.relative_to(root))] = p.read_bytes()
+            return out
+
+        before = _yaml_bytes(disk_root)
+        after = _yaml_bytes(tmp)
+        changed = {
+            rel
+            for rel in before.keys() | after.keys()
+            if before.get(rel) != after.get(rel)
+        }
+        return sorted(changed)
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+
 def preview_model(
     repo: ModelRepo, changes: list[dict], *, subject_area: str | None = None
 ) -> dict[str, Any]:
