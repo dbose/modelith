@@ -62,7 +62,11 @@ def _dir_fingerprint(model_dir: Path) -> tuple:
 
 
 def create_app(
-    model_dir: Path, *, read_only: bool = False, sme_only: bool = False
+    model_dir: Path,
+    *,
+    read_only: bool = False,
+    sme_only: bool = False,
+    direct: bool = False,
 ) -> FastAPI:
     model_dir = Path(model_dir)
     app = FastAPI(title="Modelith", docs_url="/api/docs", openapi_url="/api/openapi.json")
@@ -86,6 +90,9 @@ def create_app(
         doc = project(repo.model, subject_area=subject_area or None)
         doc["fingerprint"] = commands.dir_fingerprint(model_dir)
         doc["read_only"] = read_only
+        # Which persona this process is serving: staged edits that become a PR, or
+        # direct writes to the working tree. The app reads it to pick its mode.
+        doc["direct"] = direct
         doc["domains"] = sorted(d.name for d in repo.model.domains.values())
         return JSONResponse(doc)
 
@@ -298,6 +305,7 @@ def serve(
     port: int = 4800,
     read_only: bool = False,
     sme_only: bool = False,
+    direct: bool = False,
 ) -> None:
     import atexit
 
@@ -318,7 +326,7 @@ def serve(
 
     try:
         uvicorn.run(
-            create_app(model_dir, read_only=read_only, sme_only=sme_only),
+            create_app(model_dir, read_only=read_only, sme_only=sme_only, direct=direct),
             host=host,
             port=port,
             log_level="warning",

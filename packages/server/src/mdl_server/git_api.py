@@ -145,15 +145,77 @@ def _catalog_owns_meaning(model_dir: Path) -> tuple[bool, str]:
         return False, "Collibra"
 
 
+# Every hosting service prints a "create a pull request" link on push, as a
+# `remote:` line carrying an https URL — GitHub, GitLab, Azure DevOps, Bitbucket and
+# Gitea all do it, in their own words. Reading the link the SERVICE gave us is
+# provider-agnostic by construction, where a per-provider URL builder is a
+# maintenance surface that never quite covers self-hosted installs.
+_REMOTE_URL = re.compile(r"^remote:\s*(https?://\S+)", re.MULTILINE)
+
+
+def _pr_url_from_push(output: str) -> str | None:
+    """The 'open a pull request' link a git host prints on push, if it printed one."""
+    for m in _REMOTE_URL.finditer(output):
+        url = m.group(1).rstrip(".,;")
+        # skip the plain repo URL some hosts echo; we want the create-PR link
+        if any(k in url for k in ("pull", "merge_request", "compare", "pullrequest")):
+            return url
+    return None
+
+
+def _web_base(remote: str) -> str | None:
+    """Structural https base for a remote — no provider knowledge, so a self-hosted
+    host works the same as a public one."""
+    r = remote.strip()
+    if r.startswith("git@") and ":" in r:
+        host, path = r[4:].split(":", 1)
+        base = f"https://{host}/{path}"
+    elif r.startswith(("http://", "https://")):
+        base = r
+    else:
+        return None
+    # strip credentials a user may have embedded in the remote
+    base = re.sub(r"://[^/@]+@", "://", base)
+    return base[:-4] if base.endswith(".git") else base
+
+
 def _compare_url(model_dir: Path, branch: str) -> str | None:
-    """Derive a GitHub compare URL from the origin remote, for the no-gh fallback."""
+    """A best-effort link to open a proposal, when the push printed none.
+
+    `pr_url_template` in mdl-project.yaml wins — a few lines of config beats code
+    for a provider we have not seen. Otherwise fall back to the repo's web root,
+    which at least lands the user on the right repository."""
     code, url = _git(model_dir, "remote", "get-url", "origin")
     if code != 0 or not url:
         return None
-    m = re.search(r"github\.com[:/](.+?)(?:\.git)?$", url)
-    if not m:
+
+    template = _pr_url_template(model_dir)
+    base = _web_base(url)
+    if template and base:
+        return template.replace("{repo}", base).replace("{branch}", branch)
+    if not base:
         return None
-    return f"https://github.com/{m.group(1)}/compare/{branch}?expand=1"
+    # github/gitlab/gitea all understand this; others land on the repo, which beats
+    # a confidently wrong provider-specific guess
+    return f"{base}/compare/{branch}"
+
+
+def _pr_url_template(model_dir: Path) -> str | None:
+    """`git.pr_url_template` from mdl-project.yaml, e.g. for a self-hosted host:
+    "{repo}/pullrequestcreate?sourceRef={branch}"."""
+    try:
+        from mdl_core.repo import PROJECT_FILE
+        from mdl_core.yaml_io import load_file
+
+        cfg = load_file(model_dir / PROJECT_FILE) or {}
+    except Exception:
+        return None
+    git_cfg = cfg.get("git") if isinstance(cfg, dict) else None
+    if isinstance(git_cfg, dict):
+        t = git_cfg.get("pr_url_template")
+        if isinstance(t, str) and t.strip():
+            return t.strip()
+    return None
 
 
 # --- helpers for the diff / classify / conflicts / proposals endpoints ------------
@@ -725,6 +787,16 @@ def git_router(model_dir: Path, *, read_only: bool = False) -> APIRouter:
                 result["message"] = f"branch committed; push failed: {out}"
                 return _finish(result)
 
+            # The host itself prints a "create a pull request" link on push. Reading
+            # that works on GitHub, GitLab, Azure DevOps, Bitbucket and self-hosted
+            # alike, so it is tried FIRST — `gh` only knows GitHub, and relying on it
+            # left every other provider with a wrong compare URL.
+            pushed_url = _pr_url_from_push(out)
+            if pushed_url:
+                result["compare_url"] = pushed_url
+                result["message"] = "pushed — open the pull request from the link"
+                return _finish(result)
+
             if shutil.which("gh"):
                 proc = subprocess.run(
                     ["gh", "pr", "create", "--head", branch_name,
@@ -740,7 +812,7 @@ def git_router(model_dir: Path, *, read_only: bool = False) -> APIRouter:
                     result["message"] = f"pushed; open the PR: {proc.stderr.strip()}"
             else:
                 result["compare_url"] = _compare_url(model_dir, branch_name)
-                result["message"] = "pushed; `gh` not installed — open the PR from the compare link"
+                result["message"] = "pushed — open the pull request from your git host"
             return _finish(result)
 
     return router

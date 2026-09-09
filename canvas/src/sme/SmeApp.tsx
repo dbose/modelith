@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { fetchGlossary, fetchGlossaryConfig, fetchModel } from "../api";
+import { fetchGlossary, fetchGlossaryConfig, fetchModel, sendCommand } from "../api";
 import {
   collapseKey,
   dependentKeys,
@@ -7,6 +7,7 @@ import {
   type PendingChange,
 } from "../staging/useStaging";
 import type { ClassificationDoc, GlossaryConfig, GlossaryDoc, ModelDoc } from "../types";
+import type { Exec } from "../exec";
 import { GitBanner } from "./GitBanner";
 import { ModelWorkspace } from "./ModelWorkspace";
 import { SubjectAreaEditor } from "./SubjectAreaEditor";
@@ -46,6 +47,8 @@ export function SmeApp() {
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
   const [user, setUser] = useState(() => localStorage.getItem("mdl.sme.user") ?? "");
   const [modelDoc, setModelDoc] = useState<ModelDoc | null>(null);
+  // engineer mode: the server was started with --direct, so edits write the tree
+  const [direct, setDirect] = useState(false);
   const [routeAdvice, setRouteAdvice] = useState<ClassificationDoc | null>(null);
 
   // Selective proposal is only safe when no staged op CREATES something: a
@@ -120,6 +123,18 @@ export function SmeApp() {
 
   const staging = useStaging({ subjectArea, describe });
 
+  // In direct mode edits go straight to the working tree, the way the architect
+  // canvas has always worked — same components, same exec shape, different target.
+  const directExec = useCallback<Exec>(
+    async (op, payload) => {
+      const fp = modelDoc?.fingerprint ?? "";
+      const r = await sendCommand(op, payload, fp);
+      await fetchModel(subjectArea || undefined).then(setModelDoc);
+      return r;
+    },
+    [modelDoc, subjectArea],
+  );
+
   // The glossary tray and the model tray are one proposal: a definition edited on
   // the Terms tab and an attribute added on the Model tab belong in the same PR.
   // Members staged but not yet on disk, so the picker reflects the tray rather
@@ -185,6 +200,7 @@ export function SmeApp() {
         setReadOnly(m.read_only);
         setProjectName(m.project.name);
         setModelDoc(m);
+        setDirect(Boolean(m.direct));
       })
       .catch(() => undefined);
     fetchGlossaryConfig()
@@ -314,8 +330,9 @@ export function SmeApp() {
             doc={(staging.previewDoc ?? modelDoc)!}
             subjectArea={subjectArea}
             onSubjectArea={setSubjectArea}
-            exec={staging.exec}
+            exec={direct ? directExec : staging.exec}
             canEdit={canEdit}
+            direct={direct}
             busy={staging.busy}
           />
         ) : (

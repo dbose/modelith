@@ -46,6 +46,8 @@ export function ModelWorkspace({
   onSubjectArea,
   exec,
   canEdit,
+  /** engineer mode: edits write the working tree instead of staging a proposal */
+  direct = false,
   onSelectEntity,
   busy,
 }: {
@@ -55,6 +57,7 @@ export function ModelWorkspace({
   onSubjectArea: (id: string) => void;
   exec: Exec;
   canEdit: boolean;
+  direct?: boolean;
   onSelectEntity?: (id: string) => void;
   busy?: boolean;
 }) {
@@ -67,16 +70,18 @@ export function ModelWorkspace({
   const caps: Capabilities = useMemo(
     () => ({
       canEdit,
-      mode: "staged",
-      allow: MODELER_OPS,
+      mode: direct ? "direct" : "staged",
+      // In direct mode the engineer is the architect: no narrowed op list, and the
+      // server's own read_only flag is the only gate.
+      allow: direct ? undefined : MODELER_OPS,
       // promoting an alignment is an architect verdict: a proposer must not be able
       // to accept their own proposal in the same gesture
-      canArbitrate: false,
+      canArbitrate: direct,
       // committing and proposing are mutually exclusive — propose refuses a dirty
       // tree, so a surface that can commit can strand itself
-      canCommit: false,
+      canCommit: direct,
     }),
-    [canEdit],
+    [canEdit, direct],
   );
 
   const select = useCallback(

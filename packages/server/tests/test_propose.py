@@ -202,3 +202,98 @@ def test_every_command_is_classified(client):
         c for c in COMMANDS if c not in _PROPOSABLE_OPS and c not in _NOT_PROPOSABLE_REASON
     ]
     assert not unclassified, f"new commands need an allow/deny decision: {unclassified}"
+
+
+# --- provider-agnostic pull-request links -----------------------------------------
+#
+# Every hosting service prints a "create a pull request" link on push. Reading the
+# link the SERVICE gave us works everywhere, where a per-provider URL builder is a
+# maintenance surface that never quite covers self-hosted installs.
+
+
+@pytest.mark.parametrize(
+    ("provider", "stderr", "expected"),
+    [
+        (
+            "github",
+            "remote: Create a pull request for 'f' on GitHub by visiting:\n"
+            "remote:      https://github.com/acme/repo/pull/new/f\n",
+            "https://github.com/acme/repo/pull/new/f",
+        ),
+        (
+            "gitlab",
+            "remote: To create a merge request for f, visit:\n"
+            "remote:   https://gitlab.com/acme/repo/-/merge_requests/new?x=f\n",
+            "https://gitlab.com/acme/repo/-/merge_requests/new?x=f",
+        ),
+        (
+            "azure devops",
+            "remote: Create a pull request for 'f' on Azure Repos:\n"
+            "remote:      https://dev.azure.com/o/p/_git/r/pullrequestcreate?sourceRef=f\n",
+            "https://dev.azure.com/o/p/_git/r/pullrequestcreate?sourceRef=f",
+        ),
+        (
+            "bitbucket server",
+            "remote: Create pull request for f:\n"
+            "remote:   https://bb.acme.com/projects/P/repos/r/compare/commits?sourceBranch=f\n",
+            "https://bb.acme.com/projects/P/repos/r/compare/commits?sourceBranch=f",
+        ),
+        (
+            "gitea",
+            "remote: Create a new pull request for 'f':\n"
+            "remote:   https://git.acme.com/acme/repo/compare/main...f\n",
+            "https://git.acme.com/acme/repo/compare/main...f",
+        ),
+    ],
+)
+def test_pr_link_is_read_from_the_push_output(provider, stderr, expected):
+    from mdl_server.git_api import _pr_url_from_push
+
+    assert _pr_url_from_push(stderr) == expected, provider
+
+
+def test_a_plain_push_offers_no_link():
+    """A bare or self-managed remote prints no create-PR line, and inventing one
+    would send the user somewhere that does not exist."""
+    from mdl_server.git_api import _pr_url_from_push
+
+    assert (
+        _pr_url_from_push(
+            "To /srv/git/repo.git\n * [new branch]      f -> f\n"
+            "branch 'f' set up to track 'origin/f'.\n"
+        )
+        is None
+    )
+
+
+def test_web_base_is_structural_not_provider_specific():
+    """Self-hosted hosts have to work the same as public ones."""
+    from mdl_server.git_api import _web_base
+
+    assert _web_base("git@github.com:acme/repo.git") == "https://github.com/acme/repo"
+    assert _web_base("git@git.acme.internal:team/model.git") == "https://git.acme.internal/team/model"
+    assert _web_base("https://dev.azure.com/org/proj/_git/repo") == "https://dev.azure.com/org/proj/_git/repo"
+    # credentials embedded in a remote must not leak into a link we show or log
+    assert _web_base("https://user:tok@git.acme.com/t/m.git") == "https://git.acme.com/t/m"
+    assert _web_base("/srv/git/repo.git") is None
+
+
+def test_a_configured_template_wins(tmp_path, git_model_dir):
+    """A provider we have not seen is a few lines of config, not a code change."""
+    import subprocess
+
+    from mdl_server.git_api import _compare_url
+
+    proj = git_model_dir / "mdl-project.yaml"
+    proj.write_text(
+        proj.read_text() + "\ngit:\n  pr_url_template: '{repo}/pullrequestcreate?sourceRef={branch}'\n"
+    )
+    subprocess.run(
+        ["git", "-C", str(git_model_dir), "remote", "add", "origin",
+         "https://dev.azure.com/org/proj/_git/repo"],
+        check=True,
+    )
+    assert (
+        _compare_url(git_model_dir, "sme/a/x")
+        == "https://dev.azure.com/org/proj/_git/repo/pullrequestcreate?sourceRef=sme/a/x"
+    )

@@ -1569,7 +1569,10 @@ def serve(
         False, "--read-only", help="Disable editing (viewer only, for shared deployments)"
     ),
 ) -> None:
-    """Serve the web canvas + API. Editing writes the working tree; git owns state."""
+    """Serve the architect ER canvas + API. Editing writes the working tree.
+
+    Kept for the VS Code extension and existing scripts; `mdl studio --direct`
+    is the same thing with the modeler app's chrome."""
     from mdl_server.app import serve as run_server
 
     mode = "read-only" if read_only else "editable"
@@ -1581,7 +1584,7 @@ def serve(
 
 
 @app.command()
-def glossary(
+def studio(
     model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
     host: str = typer.Option("127.0.0.1", "--host"),
     port: int = typer.Option(4810, "--port", "-p"),
@@ -1603,14 +1606,25 @@ def glossary(
         "--catalog",
         help="Open on a list of published models instead of one model dir",
     ),
+    direct: bool = typer.Option(
+        False,
+        "--direct",
+        help="Engineer mode: edits write the working tree instead of staging a PR",
+    ),
 ) -> None:
-    """Serve the modeler app: browse terms, assemble subject areas, review a model
-    diff, and propose changes as a pull request. The user never sees git or a CLI
-    (collaboration model §5.1).
+    """Modelith Studio: the model, in a browser.
 
-    This is a self-contained application, not a view of the canvas — by default the
-    architect ER canvas is NOT served, so handing someone this URL hands them one
-    app rather than two. Pass --with-canvas to serve both from one process."""
+    Two ways to work, because two people need different things from the same model:
+
+    \b
+      default    modeler/steward — edits are staged and land as ONE pull request.
+                 Git is never in the way; the review screen is.
+      --direct   engineer/architect — edits write the working tree, and you commit
+                 from the git panel. The same surface the VS Code canvas gives you.
+
+    A self-contained application, not a view of the canvas: by default the architect
+    ER canvas is NOT served at /, so handing someone this URL hands them one app
+    rather than two. Pass --with-canvas to serve both from one process."""
     from mdl_server.app import serve as run_server
 
     if export is not None:
@@ -1634,14 +1648,48 @@ def glossary(
         serve_catalog(be, host=host, port=port)
         return
 
-    mode = "read-only" if read_only else "propose-as-PR"
+    if read_only:
+        mode = "read-only"
+    elif direct:
+        mode = "direct — writes the working tree"
+    else:
+        mode = "propose-as-PR"
     extra = " + canvas at /" if with_canvas else ""
     typer.secho(
-        f"Modelith modeler ({mode}{extra}): http://{host}:{port}/sme  (model: {model_dir})",
+        f"Modelith Studio ({mode}{extra}): http://{host}:{port}/sme  (model: {model_dir})",
         fg=typer.colors.CYAN,
     )
     run_server(
-        model_dir, host=host, port=port, read_only=read_only, sme_only=not with_canvas
+        model_dir,
+        host=host,
+        port=port,
+        read_only=read_only,
+        sme_only=not with_canvas,
+        direct=direct,
+    )
+
+
+@app.command(hidden=True)
+def glossary(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    host: str = typer.Option("127.0.0.1", "--host"),
+    port: int = typer.Option(4810, "--port", "-p"),
+    read_only: bool = typer.Option(False, "--read-only"),
+    with_canvas: bool = typer.Option(False, "--with-canvas"),
+    export: Path = typer.Option(None, "--export"),
+    catalog: bool = typer.Option(False, "--catalog"),
+) -> None:
+    """Deprecated alias for `mdl studio` (the app outgrew the name)."""
+    typer.secho("note: `mdl glossary` is now `mdl studio`", fg=typer.colors.YELLOW)
+    studio(
+        model_dir=model_dir,
+        host=host,
+        port=port,
+        read_only=read_only,
+        with_canvas=with_canvas,
+        export=export,
+        catalog=catalog,
+        direct=False,
     )
 
 

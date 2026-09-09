@@ -745,8 +745,15 @@ API returns, so there is one serialiser and no drift between surfaces.
 ### 5. Review and propose, in the browser
 
 ```bash
-mdl glossary -m . --port 4810     # then open /sme
+mdl studio -m . --port 4810       # then open /sme
 ```
+
+**Two personas, one app.** The default is the *modeler* view: edits are staged and
+land as one pull request, and git never gets in the way. `mdl studio --direct` is
+the *engineer* view: the same surface, but edits write the working tree and you
+commit from the git panel — for people who live in git and just want the diagram
+in front of them. (`mdl serve` still serves the architect canvas for the VS Code
+extension, and `mdl glossary` is a deprecated alias.)
 
 This is a **standalone modeler app**, not a view of the canvas. It is its own Vite
 entry, so it never loads the architect canvas bundle, and `mdl glossary` does not
@@ -811,10 +818,27 @@ Branching from the *published* commit rather than a moving `main` is deliberate:
 your proposal is based on exactly the model you were shown, and if `main` has moved
 the conflict banner says so instead of silently rebasing under you.
 
-Two things to know before pointing this at a shared server: the process needs push
-rights on each model's source repo, and reopening a model always restarts from the
-published commit rather than resuming a previous session's branch — the checkout
-cache is disposable, and edits live in the browser's tray until you propose.
+**Any git host.** Proposals work the same on GitHub, GitLab, Azure DevOps,
+Bitbucket and self-hosted installs: Modelith pushes the branch and then reads the
+"create a pull request" link the host itself printed, rather than knowing about any
+provider's API. Where a host prints none, set a template in `mdl-project.yaml`:
+
+```yaml
+git:
+  pr_url_template: "{repo}/pullrequestcreate?sourceRef={branch}"
+```
+
+**Credentials stay yours.** Run `mdl studio` on your own machine and it pushes with
+the git credentials you already have — SSH key, credential helper, whatever your
+host expects. Nothing to configure, signed commits keep working, and SAML-protected
+orgs are satisfied because it is *your* identity doing the push. A shared server
+would need push rights of its own; running it locally avoids that question
+entirely.
+
+One thing to know about opening a model from the catalog: it always restarts from
+the published commit rather than resuming a previous session's branch — the
+checkout cache is disposable, and edits live in the browser's tray until you
+propose.
 
 **Distributing it.** The app is a client over the API, so it can be hosted anywhere:
 
@@ -886,9 +910,10 @@ mdl diff [--base <ref>] [--format json|markdown]  semantic model diff (exit 2 on
 mdl subject-area list|show|add|remove             scoped views of the model
 mdl subject-area expand [--direction] [--levels]  add related objects (preview by default)
 mdl serve [--read-only] [?subject_area=<ulid>]    web canvas + read API
-mdl glossary [--read-only] [--with-canvas]        standalone modeler app (terms, ERD, review, propose)
-mdl glossary --catalog                            browse published models, open one to edit
-mdl glossary --export <dir>                       write its static files, to host anywhere
+mdl studio [--read-only] [--with-canvas]          the app: terms, ERD, subject areas, review, propose
+mdl studio --direct                               engineer mode: edits write the working tree
+mdl studio --catalog                              browse published models, open one to edit
+mdl studio --export <dir>                         write its static files, to host anywhere
 mdl ontology search|check                         browse; layer rules + coverage report
 mdl ontology lock|fetch|add                       pin a source, fetch+verify, vendor a file
 mdl ontology align|promote                        propose alignments (§2), accept them

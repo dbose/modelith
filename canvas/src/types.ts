@@ -118,6 +118,8 @@ export interface PhysicalTable {
 export interface ModelDoc {
   /** the subject area this doc is scoped to, or null for the whole model */
   scope?: string | null;
+  /** true when the server runs in engineer mode: edits write the working tree */
+  direct?: boolean;
   project: {
     name: string;
     dbt_target: string | null;
