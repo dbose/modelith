@@ -212,3 +212,102 @@ def test_entry_from_repo_reads_config(tmp_path):
     assert e.commit == "deadbeef"
     assert e.ontology_layers == ["fibo"]  # from ontology_stack name
     assert e.namespace_ulid == "01KZ265963K1SX5TK770VJEYHD"
+
+
+# --- editable materialisation (opening a model from the Mart) ---------------------
+
+
+def _source_repo(tmp_path):
+    """A model in its own git repo, standing in for one an org has published."""
+    import subprocess
+
+    src = tmp_path / "src"
+    (src / "model").mkdir(parents=True)
+    (src / "model" / "mdl-project.yaml").write_text("name: pension_ibor\ndbt_target: duckdb\n")
+    for cmd in (
+        ["init", "-q", "."],
+        ["config", "user.email", "t@t.co"],
+        ["config", "user.name", "t"],
+        ["add", "-A"],
+        ["commit", "-qm", "base"],
+        ["branch", "-M", "main"],
+    ):
+        subprocess.run(["git", "-C", str(src), *cmd], check=True)
+    sha = subprocess.run(
+        ["git", "-C", str(src), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    return src, sha
+
+
+def _branch_of(path):
+    import subprocess
+
+    return subprocess.run(
+        ["git", "-C", str(path), "rev-parse", "--abbrev-ref", "HEAD"],
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+
+
+def test_checkout_branch_makes_the_cache_proposable(tmp_path):
+    """`git checkout <commit>` leaves a DETACHED HEAD, which is perfectly branchable
+    — and branching from the pinned commit is better than branching from a moving
+    main, because the proposal is based on exactly the model the user was shown."""
+    from mdl_catalog.entry import CatalogEntry
+    from mdl_catalog.git_backend import GitBackend, RealGitRunner
+
+    src, sha = _source_repo(tmp_path)
+    be = GitBackend(work_dir=tmp_path / "work", remote=None, runner=RealGitRunner())
+    entry = CatalogEntry(model="pension_ibor", remote=str(src), commit=sha)
+
+    model_dir = be.checkout_branch(entry, "sme/a-hough/edit")
+    assert _branch_of(model_dir.parent) == "sme/a-hough/edit"
+    # the full clone means origin is present, so a proposal can be pushed home
+    import subprocess
+
+    assert (
+        subprocess.run(
+            ["git", "-C", str(model_dir.parent), "remote", "get-url", "origin"],
+            capture_output=True,
+        ).returncode
+        == 0
+    )
+
+
+def test_reopening_starts_from_the_pinned_commit_again(tmp_path):
+    """The cache is keyed slug@commit and otherwise reused as-is, so without the
+    refresh a second visit would resume whatever branch the last one left behind."""
+    from mdl_catalog.entry import CatalogEntry
+    from mdl_catalog.git_backend import GitBackend, RealGitRunner
+
+    src, sha = _source_repo(tmp_path)
+    be = GitBackend(work_dir=tmp_path / "work", remote=None, runner=RealGitRunner())
+    entry = CatalogEntry(model="pension_ibor", remote=str(src), commit=sha)
+
+    be.checkout_branch(entry, "sme/a-hough/first")
+    model_dir = be.checkout_branch(entry, "sme/b-other/second")
+    assert _branch_of(model_dir.parent) == "sme/b-other/second"
+
+
+def test_a_proposal_pushes_back_to_the_models_own_repo(tmp_path):
+    """The point of the whole thing: the catalog stays a pointer index, and an edit
+    made from it lands as a branch on the model's own repo."""
+    import subprocess
+
+    from mdl_catalog.entry import CatalogEntry
+    from mdl_catalog.git_backend import GitBackend, RealGitRunner
+
+    src, sha = _source_repo(tmp_path)
+    be = GitBackend(work_dir=tmp_path / "work", remote=None, runner=RealGitRunner())
+    entry = CatalogEntry(model="pension_ibor", remote=str(src), commit=sha)
+
+    model_dir = be.checkout_branch(entry, "sme/a-hough/edit")
+    (model_dir / "mdl-project.yaml").write_text("name: pension_ibor\ndbt_target: duckdb\n# edited\n")
+    root = model_dir.parent
+    subprocess.run(["git", "-C", str(root), "commit", "-qam", "edit"], check=True)
+    subprocess.run(["git", "-C", str(root), "push", "-q", "origin", "sme/a-hough/edit"], check=True)
+
+    branches = subprocess.run(
+        ["git", "-C", str(src), "branch", "--list", "sme/*"], capture_output=True, text=True
+    ).stdout
+    assert "sme/a-hough/edit" in branches

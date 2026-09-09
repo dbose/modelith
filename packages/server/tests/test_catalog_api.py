@@ -113,3 +113,58 @@ def test_open_without_remote_degrades_to_source_link(tmp_path):
     body = client.post("/api/catalog/open/noremote").json()
     assert body["ok"] is False
     assert "reason" in body
+
+
+# --- opening a model from the Mart ------------------------------------------------
+
+
+def _real_backend(tmp_path):
+    """A published model in its own git repo — materialize needs a real remote."""
+    import subprocess
+
+    from mdl_catalog import RealGitRunner
+
+    src = tmp_path / "src"
+    (src / "model").mkdir(parents=True)
+    (src / "model" / "mdl-project.yaml").write_text("name: pension_ibor\ndbt_target: duckdb\n")
+    for cmd in (
+        ["init", "-q", "."],
+        ["config", "user.email", "t@t.co"],
+        ["config", "user.name", "t"],
+        ["add", "-A"],
+        ["commit", "-qm", "base"],
+        ["branch", "-M", "main"],
+    ):
+        subprocess.run(["git", "-C", str(src), *cmd], check=True)
+    sha = subprocess.run(
+        ["git", "-C", str(src), "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+    be = GitBackend(work_dir=tmp_path / "cat", remote=None, runner=RealGitRunner())
+    be.publish(CatalogEntry(model="pension_ibor", commit=sha, remote=str(src)))
+    return be
+
+
+def test_open_serves_the_modeler_app_not_the_architect_canvas(tmp_path):
+    """Someone browsing a catalog of models wants to look at a MODEL. Handing them
+    the architect canvas hands them a second application they did not ask for."""
+    client = TestClient(create_catalog_app(_real_backend(tmp_path)))
+    r = client.post("/api/catalog/open/pension_ibor", json={})
+    assert r.status_code == 200 and r.json()["ok"], r.json()
+    page = client.get("/view/pension_ibor/").text
+    assert "/assets/sme-" in page
+    assert "/assets/main-" not in page
+
+
+def test_open_is_read_only_by_default_and_writable_when_editing(tmp_path):
+    """A slug opened read-only and then reopened for editing needs a NEW mount:
+    Starlette matches the first route whose prefix fits, so a stale mount would keep
+    serving the old mode."""
+    client = TestClient(create_catalog_app(_real_backend(tmp_path)))
+
+    client.post("/api/catalog/open/pension_ibor", json={})
+    assert client.get("/view/pension_ibor/api/model").json()["read_only"] is True
+
+    r = client.post("/api/catalog/open/pension_ibor", json={"edit": True, "user": "a.hough"})
+    assert r.json()["edit"] is True
+    assert client.get("/view/pension_ibor/api/model").json()["read_only"] is False

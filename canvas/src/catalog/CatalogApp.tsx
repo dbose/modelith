@@ -31,11 +31,20 @@ export function CatalogApp() {
 
   /** Open an entry's LDM canvas: ask the server to materialise + mount it, then
    * navigate. Falls back to the source repo link when the backend can't materialise. */
-  async function openModel(r: CatalogRow) {
+  async function openModel(r: CatalogRow, edit = false) {
     setOpenError(null);
     setOpening(r.model);
     try {
-      const res = await fetch(`/api/catalog/open/${slugOf(r.model)}`, { method: "POST" });
+      const res = await fetch(`/api/catalog/open/${slugOf(r.model)}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        // Editing checks the model's OWN repo out on a proposal branch, so changes
+        // land as a PR there. The catalog stays a pointer index.
+        body: JSON.stringify({
+          edit,
+          user: localStorage.getItem("mdl.sme.user") ?? "you",
+        }),
+      });
       const d = await res.json();
       if (d.ok && d.url) {
         window.location.href = d.url;
@@ -144,8 +153,18 @@ export function CatalogApp() {
               <span className="cat-model">{r.model}</span>
               {r.commit && <code className="cat-commit">{r.commit.slice(0, 8)}</code>}
               <span className="cat-open-hint">
-                {opening === r.model ? "opening…" : "open canvas →"}
+                {opening === r.model ? "opening…" : "open →"}
               </span>
+              <button
+                className="cat-edit"
+                title="Check this model out on a proposal branch and edit it"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (opening === null) openModel(r, true);
+                }}
+              >
+                edit
+              </button>
             </div>
             <div className="cat-meta">
               {r.ontology_layers.map((l) => (

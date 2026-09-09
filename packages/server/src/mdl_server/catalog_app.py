@@ -56,6 +56,12 @@ def _repo_link(remote: str | None, commit: str | None) -> str | None:
     return base
 
 
+def _slug_user(name: str) -> str:
+    """Branch-safe form of a user's name, matching git_api's slugify."""
+    out = "".join(c if c.isalnum() else "-" for c in name.strip().lower())
+    return "-".join(p for p in out.split("-") if p) or "you"
+
+
 def create_catalog_app(backend) -> FastAPI:
     """A read-only FastAPI app over a CatalogBackend.
 
@@ -72,7 +78,11 @@ def create_catalog_app(backend) -> FastAPI:
     # canvas apps are sub-mounted onto it on demand (Starlette matches mounts by path).
     view_host = Starlette()
     app.mount("/view", view_host)
-    mounted: dict[str, bool] = {}  # slug -> True once its canvas is mounted
+    # slug -> whether it is mounted EDITABLE. A slug opened read-only and then
+    # opened for editing must be re-mounted, so this records the mode, not a flag.
+    # slug -> whether it is mounted EDITABLE. A slug opened read-only and then
+    # reopened for editing needs a new mount, so this records the MODE, not a flag.
+    mounted: dict[str, bool] = {}
 
     def _entry_by_slug(slug: str):
         for e in backend.list():
@@ -92,18 +102,27 @@ def create_catalog_app(backend) -> FastAPI:
         )
 
     @app.post("/api/catalog/open/{slug}")
-    def catalog_open(slug: str) -> JSONResponse:
-        """Materialise an entry's model and mount its read-only canvas at `/view/<slug>`.
-        Returns the URL to navigate to. Idempotent: the checkout and the mount are cached
-        so a second open is instant."""
+    def catalog_open(slug: str, body: dict | None = None) -> JSONResponse:
+        """Materialise an entry's model and mount it at `/view/<slug>`.
+
+        With `{"edit": true, "user": "..."}` the checkout is put on a proposal branch
+        first, so edits made from the catalog land as a PR on that model's OWN repo.
+        The catalog stays a pointer index either way — it never becomes a second
+        source of truth."""
         entry = _entry_by_slug(slug)
         if entry is None:
             raise HTTPException(status_code=404, detail=f"no catalog entry {slug!r}")
+        body = body or {}
+        edit = bool(body.get("edit"))
         view_url = f"/view/{slug}/"
-        if mounted.get(slug):
-            return JSONResponse({"ok": True, "url": view_url, "model": entry.model})
+        if mounted.get(slug) == edit:
+            return JSONResponse({"ok": True, "url": view_url, "model": entry.model, "edit": edit})
         try:
-            model_dir = backend.materialize(entry)
+            if edit:
+                user = _slug_user(str(body.get("user") or "you"))
+                model_dir = backend.checkout_branch(entry, f"sme/{user}/{slug}")
+            else:
+                model_dir = backend.materialize(entry)
         except MaterializeNotSupported as exc:
             # Degrade to the source link — the UI opens that instead.
             return JSONResponse(
@@ -120,9 +139,19 @@ def create_catalog_app(backend) -> FastAPI:
 
         # Mounted onto view_host (already at /view), so its routes live under
         # /view/<slug>/... and are matched ahead of the catalog SPA catch-all.
-        view_host.mount(f"/{slug}", create_app(model_dir, read_only=True))
-        mounted[slug] = True
-        return JSONResponse({"ok": True, "url": view_url, "model": entry.model})
+        # Starlette matches the FIRST route whose prefix fits, so a slug re-opened in
+        # a different mode would keep serving the old mount. Drop it first.
+        view_host.routes[:] = [
+            r for r in view_host.routes if getattr(r, "path", None) != f"/{slug}"
+        ]
+        # sme_only: a catalog visitor gets the modeler app, not the architect canvas —
+        # they came here to look at a MODEL, not to be handed a second application.
+        view_host.mount(
+            f"/{slug}",
+            create_app(model_dir, read_only=not edit, sme_only=True),
+        )
+        mounted[slug] = edit
+        return JSONResponse({"ok": True, "url": view_url, "model": entry.model, "edit": edit})
 
     if STATIC_DIR.exists():
         app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")

@@ -753,10 +753,13 @@ entry, so it never loads the architect canvas bundle, and `mdl glossary` does no
 serve that canvas at all — handing someone this URL hands them one application.
 (`--with-canvas` serves both from one process when you want that.)
 
-The app has four views. **Terms** is the glossary. **Model** is the ER diagram,
-with a subject-area picker down the side: pick a view and the diagram scopes to it.
-**My proposals** lists your open proposal branches. Stage an edit and the tray takes
-you to **Review**, which shows:
+The app has five views. **Terms** is the glossary. **Model** is the full ER editor —
+the same canvas the architect uses, with the inspector, attribute types and roles,
+drawing relationships, and creating or deleting entities, scoped by subject area.
+**Subject areas** is erwin's Available/Included picker, with an "add related objects"
+preview that names the relationship each object arrived through. **My proposals**
+lists your open proposal branches. Stage an edit and the tray takes you to
+**Review**, which shows:
 
 - the diff, grouped by object, each change as a sentence rather than a YAML hunk —
   definitions get a word-level intra-diff so only what changed is highlighted;
@@ -792,6 +795,26 @@ clean: True | behind: 0
 Reviewers come from your **actual** `.github/CODEOWNERS` when the repo has one,
 falling back to the route defaults — naming a placeholder team would be worse than
 naming none.
+
+**Browse many models.** `mdl glossary --catalog` opens on a list of every published
+model instead of a single model dir. Click one to view it; click **edit** and
+Modelith checks that model's own repo out on a proposal branch, so your changes land
+as a pull request *there*. The catalog stays a pointer index — it never becomes a
+second source of truth, and there is no check-out/check-in to manage:
+
+```bash
+mdl catalog publish          # from each model repo's CI, on merge
+mdl glossary --catalog       # browse them, open one, edit, propose
+```
+
+Branching from the *published* commit rather than a moving `main` is deliberate:
+your proposal is based on exactly the model you were shown, and if `main` has moved
+the conflict banner says so instead of silently rebasing under you.
+
+Two things to know before pointing this at a shared server: the process needs push
+rights on each model's source repo, and reopening a model always restarts from the
+published commit rather than resuming a previous session's branch — the checkout
+cache is disposable, and edits live in the browser's tray until you propose.
 
 **Distributing it.** The app is a client over the API, so it can be hosted anywhere:
 
@@ -864,6 +887,7 @@ mdl subject-area list|show|add|remove             scoped views of the model
 mdl subject-area expand [--direction] [--levels]  add related objects (preview by default)
 mdl serve [--read-only] [?subject_area=<ulid>]    web canvas + read API
 mdl glossary [--read-only] [--with-canvas]        standalone modeler app (terms, ERD, review, propose)
+mdl glossary --catalog                            browse published models, open one to edit
 mdl glossary --export <dir>                       write its static files, to host anywhere
 mdl ontology search|check                         browse; layer rules + coverage report
 mdl ontology lock|fetch|add                       pin a source, fetch+verify, vendor a file

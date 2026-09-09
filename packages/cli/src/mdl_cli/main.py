@@ -1598,6 +1598,11 @@ def glossary(
         "--export",
         help="Write the app's static files to a directory and exit (no server)",
     ),
+    catalog: bool = typer.Option(
+        False,
+        "--catalog",
+        help="Open on a list of published models instead of one model dir",
+    ),
 ) -> None:
     """Serve the modeler app: browse terms, assemble subject areas, review a model
     diff, and propose changes as a pull request. The user never sees git or a CLI
@@ -1610,6 +1615,23 @@ def glossary(
 
     if export is not None:
         _export_sme_app(export)
+        return
+
+    if catalog:
+        # Browse every published model and open one to edit, instead of being bound
+        # to a single model dir. The catalog stays a pointer index: opening a model
+        # checks its own repo out on a proposal branch, so edits land as a PR there.
+        from mdl_catalog.backend import CatalogConfig
+        from mdl_catalog.git_backend import make_backend
+        from mdl_server.catalog_app import serve_catalog
+
+        cfg = CatalogConfig.resolve(Path.cwd())
+        be = make_backend(cfg, _catalog_cache_dir())
+        typer.secho(
+            f"Modelith modeler (catalog): http://{host}:{port}/catalog",
+            fg=typer.colors.CYAN,
+        )
+        serve_catalog(be, host=host, port=port)
         return
 
     mode = "read-only" if read_only else "propose-as-PR"

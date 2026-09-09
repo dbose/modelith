@@ -167,7 +167,29 @@ class GitBackend:
 
     # --- materialize (browse-view canvas) -----------------------------------
 
-    def materialize(self, entry: CatalogEntry) -> Path:
+    def checkout_branch(self, entry: CatalogEntry, branch: str) -> Path:
+        """Materialise the entry and put its checkout on `branch`, ready to propose from.
+
+        The checkout is a full clone with `origin` set, and `git checkout <commit>`
+        leaves a detached HEAD — which is perfectly branchable. Branching from the
+        PINNED commit is in fact better than branching from a moving `main`: the
+        proposal is based on exactly the model the user was looking at, and any
+        divergence surfaces in the conflict banner rather than silently rebasing
+        under them.
+
+        Idempotent: an existing branch of the same name is resumed, not recreated."""
+        model_dir = self.materialize(entry, refresh=True)
+        repo_root = model_dir
+        while repo_root != repo_root.parent and not (repo_root / ".git").exists():
+            repo_root = repo_root.parent
+        code, out = self.runner.run(["checkout", "-B", branch], repo_root)
+        if code != 0:
+            raise MaterializeNotSupported(
+                f"could not create branch {branch} in {entry.model}: {out.strip()[:200]}"
+            )
+        return model_dir
+
+    def materialize(self, entry: CatalogEntry, *, refresh: bool = False) -> Path:
         """Check the entry's source repo out at its pinned commit into a local cache and
         return the model dir inside it (the dir holding `mdl-project.yaml`). Idempotent:
         an already-materialised checkout for the same slug@commit is reused as-is.
@@ -181,6 +203,12 @@ class GitBackend:
         short = (entry.commit or "head")[:12]
         dest = Path(self.work_dir).parent / _SOURCES_DIR / f"{entry.slug()}-{short}"
         marker = dest / ".git"
+        if marker.exists() and refresh and entry.commit:
+            # The cache is keyed by slug@commit and otherwise reused as-is, so a
+            # second visit would find HEAD on whatever branch the last visit left
+            # behind rather than the pinned commit. Re-checkout when the caller is
+            # about to branch, so a proposal always starts from the published state.
+            self.runner.run(["checkout", "--quiet", "--force", entry.commit], dest)
         if not marker.exists():
             dest.parent.mkdir(parents=True, exist_ok=True)
             # Full clone (not shallow): a pinned commit may be unreachable by a shallow

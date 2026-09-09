@@ -46,6 +46,13 @@ class CatalogBackend(Protocol):
         """Entries matching a free-text query (v1: substring over summary fields)."""
         ...
 
+    def checkout_branch(self, entry: CatalogEntry, branch: str) -> Path:
+        """Materialise `entry` on a working branch, so edits can be proposed from it.
+
+        Optional: a backend that can only serve read-only snapshots raises
+        MaterializeNotSupported and the browse UI stays read-only."""
+        raise MaterializeNotSupported("this backend cannot produce a working branch")
+
     def materialize(self, entry: CatalogEntry) -> Path:
         """Produce a *local, read-only* model dir for `entry`, so a client (the browse
         server) can mount the LDM canvas over it. HOW is backend-specific and that is the
