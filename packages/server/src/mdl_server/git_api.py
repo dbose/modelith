@@ -14,9 +14,16 @@ import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+
+from mdl_server.identity import (
+    Identity,
+    IdentityPolicy,
+    effective_author,
+    resolve_identity,
+)
 
 
 def _git(model_dir: Path, *args: str, timeout: int = 30) -> tuple[int, str]:
@@ -40,7 +47,11 @@ class ChangeOp(BaseModel):
 
 
 class ProposeBody(BaseModel):
-    user: str
+    # Optional: a proxy- or git-established identity (spec §17) overrides it, and it
+    # is only used as the author when nothing else is known (the anonymous fallback,
+    # today's zero-config behaviour). Kept so a solo user with no git config still
+    # gets attribution.
+    user: str = ""
     slug: str = ""
     title: str
     body: str = ""
@@ -50,6 +61,15 @@ class ProposeBody(BaseModel):
 def _slugify(s: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "-", s.strip().lower()).strip("-")
     return s or "change"
+
+
+def _branch_user(ident: Identity, client_user: str) -> str:
+    """The name that seeds the `sme/<slug>/` branch prefix. A trusted identity wins
+    over the query-string `user`, so "your proposals" filters by the real user rather
+    than a typed guess; otherwise fall back to the client string (today's behaviour)."""
+    if ident.is_trusted:
+        return ident.email or ident.name
+    return client_user
 
 
 # Mutation ops that write the catalog-owned meaning-fields. When the glossary's
@@ -687,16 +707,30 @@ def _ahead_behind_branch(model_dir: Path, base: str, branch: str) -> tuple[int, 
     return int(ahead), int(behind)
 
 
-def git_router(model_dir: Path, *, read_only: bool = False) -> APIRouter:
+def git_router(
+    model_dir: Path,
+    *,
+    read_only: bool = False,
+    identity_policy: IdentityPolicy | None = None,
+) -> APIRouter:
     """Git operations for the canvas and the SME app.
 
     READS are always registered — including under `mdl glossary --read-only`,
     which is exactly the "SME just looking" and catalog-browse case. The SME view
     has to be able to say which branch it is on and whether a proposal would
     merge cleanly, and a diff is a read. Only the mutating routes (commit,
-    discard, propose) sit behind `read_only`, matching ontology_router."""
+    discard, propose) sit behind `read_only`, matching ontology_router.
+
+    `identity_policy` (spec §17) decides how the acting user is established for the
+    propose author and the "your proposals" branch prefix. None means the solo
+    default (git config / anonymous), which is what stand-alone callers and the
+    existing tests get."""
     router = APIRouter(prefix="/api/git")
     model_dir = Path(model_dir).resolve()
+    policy = identity_policy if identity_policy is not None else IdentityPolicy.from_env({})
+
+    def _identity(request: Request) -> Identity:
+        return resolve_identity(request.headers, policy, model_dir)
 
     @router.get("/status")
     def status() -> JSONResponse:
@@ -759,15 +793,17 @@ def git_router(model_dir: Path, *, read_only: bool = False) -> APIRouter:
         return JSONResponse(_conflicts_response(model_dir, base))
 
     @router.get("/context")
-    def context(user: str = "") -> JSONResponse:
+    def context(user: str = "", ident: Identity = Depends(_identity)) -> JSONResponse:
         """Everything the SME view's git banner needs, in one call."""
-        return JSONResponse(_context_response(model_dir, user, read_only=read_only))
+        return JSONResponse(
+            _context_response(model_dir, _branch_user(ident, user), read_only=read_only)
+        )
 
     @router.get("/proposals")
-    def proposals(user: str = "") -> JSONResponse:
+    def proposals(user: str = "", ident: Identity = Depends(_identity)) -> JSONResponse:
         """Open proposal branches with their state. Everything except the PR row
         is derived from plain git, so the list is never empty without `gh`."""
-        return JSONResponse(_proposals_response(model_dir, user))
+        return JSONResponse(_proposals_response(model_dir, _branch_user(ident, user)))
 
     if not read_only:
 
@@ -792,10 +828,17 @@ def git_router(model_dir: Path, *, read_only: bool = False) -> APIRouter:
             return JSONResponse({"ok": ok, "error": None if ok else f"{out1}\n{out2}"})
 
         @router.post("/propose")
-        def propose(body: ProposeBody) -> JSONResponse:
+        def propose(
+            body: ProposeBody, ident: Identity = Depends(_identity)
+        ) -> JSONResponse:
             """The SME PR flow (§5.1), atomic: branch -> apply commands through the
             shared mutation engine -> commit with Co-authored-by -> push -> open a PR.
-            Degrades gracefully with no remote / no gh so the SME always gets a result."""
+            Degrades gracefully with no remote / no gh so the SME always gets a result.
+
+            The commit author is the SERVER-resolved identity (spec §17): a
+            proxy-authenticated user or the git config identity OVERRIDES the
+            self-asserted body.user, so the attribution is trustworthy. Only when
+            nothing is established (anonymous) do we fall back to body.user."""
             # The server is the real boundary, not the UI: reject anything outside
             # the allow-list BEFORE branching, so a refused proposal leaves no stray
             # branch behind.
@@ -844,8 +887,13 @@ def git_router(model_dir: Path, *, read_only: bool = False) -> APIRouter:
                     status_code=409,
                 )
 
+            # The effective author drives BOTH the branch prefix and the commit
+            # trailer, so the two never disagree.
+            author = effective_author(ident, body.user)
+            author_key = author.email or author.name or "you"
+
             slug = _slugify(body.slug or body.title)
-            branch_name = f"sme/{_slugify(body.user)}/{slug}"
+            branch_name = f"sme/{_slugify(author_key)}/{slug}"
             # Remember where we started. Without this the server is left sitting on
             # the SME branch: the next SME browses an un-merged proposal as if it
             # were truth, and a second propose branches off the first, stacking
@@ -875,8 +923,9 @@ def git_router(model_dir: Path, *, read_only: bool = False) -> APIRouter:
 
             _git(model_dir, "add", "--", ".")
             message = body.body.strip() or body.title.strip()
-            email = f"{_slugify(body.user)}@users.noreply.github.com"
-            message += f"\n\nCo-authored-by: {body.user} <{email}>"
+            if author.source != "anonymous" or author.name:
+                trailer_name = author.name or author_key
+                message += f"\n\nCo-authored-by: {trailer_name} <{author.email}>"
             code, out = _git(model_dir, "commit", "-m", message, "--", ".")
             if code != 0:
                 return JSONResponse({"ok": False, "error": out}, status_code=409)

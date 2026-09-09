@@ -59,7 +59,9 @@ def test_propose_creates_branch_and_coauthored_commit(client, git_model_dir):
     assert resp.status_code == 200, resp.text
     data = resp.json()
     assert data["ok"] and data["applied"] == 1
-    assert data["branch"] == "sme/a-hough/clarify-counterparty"
+    # the git-config identity (t@t.co) now authors the proposal, overriding the
+    # self-asserted "a.hough" — this is the §17 identity behaviour.
+    assert data["branch"] == "sme/t-t-co/clarify-counterparty"
     # no origin remote -> graceful message, not an error
     assert data["pushed"] is False
     assert "no `origin` remote" in data["message"]
@@ -69,15 +71,15 @@ def test_propose_creates_branch_and_coauthored_commit(client, git_model_dir):
     # un-merged proposal as truth, and a second propose stacked onto the first.
     assert data["returned_to"] == "main"
     assert _git(git_model_dir, "rev-parse", "--abbrev-ref", "HEAD") == "main"
-    assert "sme/a-hough/clarify-counterparty" in _git(git_model_dir, "branch", "--list", "sme/*")
+    assert "sme/t-t-co/clarify-counterparty" in _git(git_model_dir, "branch", "--list", "sme/*")
     # the commit lives on the branch, so read the log from there
-    log = _git(git_model_dir, "log", "-1", "--pretty=%B", "sme/a-hough/clarify-counterparty")
-    assert "Co-authored-by: a.hough" in log
+    log = _git(git_model_dir, "log", "-1", "--pretty=%B", "sme/t-t-co/clarify-counterparty")
+    assert "Co-authored-by: t <t@t.co>" in log
     assert "prospective parties" in log
     # the edit actually landed
     from mdl_core.repo import ModelRepo
 
-    _git(git_model_dir, "checkout", "sme/a-hough/clarify-counterparty")
+    _git(git_model_dir, "checkout", "sme/t-t-co/clarify-counterparty")
     repo = ModelRepo.load(git_model_dir)
     ce = repo.model.conceptual_entities[cpty["id"]]
     assert "may have" in (ce.definition or "")
@@ -347,3 +349,88 @@ def test_the_hosts_own_link_is_still_preferred_when_present():
     )
     # a re-push prints no such line — this is the case that made scraping unsafe
     assert _pr_url_from_push("To github.com:acme/repo.git\n   abc..def  f -> f\n") is None
+
+
+# --- identity: the server-resolved author overrides a self-asserted string (§17) ---
+
+
+def test_propose_trusts_proxy_identity_over_client_user(git_model_dir, monkeypatch):
+    """A proxy-authenticated user proposing with a DIFFERENT self-asserted body.user
+    must produce a commit attributed to the proxy identity, not the spoofed string."""
+    from fastapi.testclient import TestClient
+    from mdl_server import create_app
+    from mdl_server.identity import ENV_USER_HEADER
+
+    monkeypatch.setenv(ENV_USER_HEADER, "X-Auth-Request-Email")
+    client = TestClient(create_app(git_model_dir))
+
+    doc = client.get("/api/glossary/terms").json()
+    cpty = next(t for t in doc["terms"] if t["name"] == "Counterparty")
+
+    resp = client.post(
+        "/api/git/propose",
+        headers={"X-Auth-Request-Email": "real.user@corp.com"},
+        json={
+            "user": "impostor",  # self-asserted; must be ignored
+            "slug": "clarify",
+            "title": "Clarify",
+            "changes": [
+                {"op": "set_definition", "payload": {"id": cpty["id"], "definition": "x."}}
+            ],
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    branch = resp.json()["branch"]
+    # branch prefix derives from the proxy identity, not "impostor"
+    assert branch.startswith("sme/real-user-corp-com/")
+    assert "impostor" not in branch
+
+    body = _git(git_model_dir, "log", branch, "-1", "--format=%b")
+    assert "real.user@corp.com" in body
+    assert "impostor" not in body
+
+
+def test_api_model_reports_proxy_identity(git_model_dir, monkeypatch):
+    from fastapi.testclient import TestClient
+    from mdl_server import create_app
+    from mdl_server.identity import ENV_USER_HEADER
+
+    monkeypatch.setenv(ENV_USER_HEADER, "X-Auth-Request-Email")
+    client = TestClient(create_app(git_model_dir))
+    ident = client.get(
+        "/api/model", headers={"X-Auth-Request-Email": "anita.hough@corp.com"}
+    ).json()["identity"]
+    assert ident["source"] == "proxy"
+    assert ident["name"] == "Anita Hough"
+
+
+def test_api_model_reports_git_identity_solo(client):
+    """No proxy configured: /api/model greets the git-config user (the fixture sets
+    user.name=t / user.email=t@t.co)."""
+    ident = client.get("/api/model").json()["identity"]
+    assert ident["source"] == "git"
+    assert ident["email"] == "t@t.co"
+
+
+def test_propose_solo_still_attributes_without_proxy(client, git_model_dir):
+    """Regression: with no proxy policy, propose attributes to the git-config identity
+    and the flow still succeeds."""
+    doc = client.get("/api/glossary/terms").json()
+    cpty = next(t for t in doc["terms"] if t["name"] == "Counterparty")
+    resp = client.post(
+        "/api/git/propose",
+        json={
+            "user": "a.hough",
+            "slug": "solo-change",
+            "title": "Solo change",
+            "changes": [
+                {"op": "set_definition", "payload": {"id": cpty["id"], "definition": "y."}}
+            ],
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    branch = resp.json()["branch"]
+    # git config identity (t@t.co) wins over the self-asserted "a.hough"
+    assert branch.startswith("sme/t-t-co/")
+    body = _git(git_model_dir, "log", branch, "-1", "--format=%b")
+    assert "t@t.co" in body

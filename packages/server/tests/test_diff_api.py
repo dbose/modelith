@@ -220,10 +220,12 @@ def test_conflicts_writes_nothing(client, repo):
 
 
 def test_context_reports_branch_and_dirtiness(client, repo):
+    # The trusted git-config identity (t@t.co) overrides the query-string user,
+    # so the branch prefix reflects who the server actually thinks you are (§17).
     doc = client.get("/api/git/context", params={"user": "a.hough"}).json()
     assert doc["git"] and doc["branch"] == "main" and doc["on_base"] is True
     assert doc["dirty"] is False and doc["can_propose"] is True
-    assert doc["sme_branch_prefix"] == "sme/a-hough/"
+    assert doc["sme_branch_prefix"] == "sme/t-t-co/"
 
     (repo / "conceptual" / "entities" / "counterparty.yaml").write_text("broken: true\n")
     doc = client.get("/api/git/context").json()
@@ -236,15 +238,15 @@ def test_proposals_are_fully_populated_without_gh(client, repo, monkeypatch):
 
     monkeypatch.setattr(ga.shutil, "which", lambda _n: None)  # no gh on PATH
 
-    _git(repo, "checkout", "-q", "-b", "sme/a-hough/clarify")
+    _git(repo, "checkout", "-q", "-b", "sme/t-t-co/clarify")
     ce = repo / "conceptual" / "entities" / "counterparty.yaml"
     ce.write_text(ce.read_text().replace("A legal person", "Restated"))
     _git(repo, "commit", "-qam", "Clarify Counterparty definition")
     _git(repo, "checkout", "-q", "main")
 
-    doc = client.get("/api/git/proposals", params={"user": "a.hough"}).json()
+    doc = client.get("/api/git/proposals").json()
     assert doc["ok"] and doc["gh"] is False
-    p = next(x for x in doc["proposals"] if x["branch"] == "sme/a-hough/clarify")
+    p = next(x for x in doc["proposals"] if x["branch"] == "sme/t-t-co/clarify")
     # everything but the PR row survives the absence of gh
     assert p["title"] == "Clarify Counterparty definition"
     assert p["pushed"] is False and p["merged"] is False and p["ahead"] == 1
@@ -252,15 +254,15 @@ def test_proposals_are_fully_populated_without_gh(client, repo, monkeypatch):
 
 
 def test_merged_proposal_is_reported_as_merged(client, repo):
-    _git(repo, "checkout", "-q", "-b", "sme/a-hough/syn")
+    _git(repo, "checkout", "-q", "-b", "sme/t-t-co/syn")
     ce = repo / "conceptual" / "entities" / "counterparty.yaml"
     ce.write_text(ce.read_text() + "\n")
     _git(repo, "commit", "-qam", "Add synonym")
     _git(repo, "checkout", "-q", "main")
-    _git(repo, "merge", "-q", "--no-ff", "-m", "merge", "sme/a-hough/syn")
+    _git(repo, "merge", "-q", "--no-ff", "-m", "merge", "sme/t-t-co/syn")
 
     doc = client.get("/api/git/proposals").json()
-    p = next(x for x in doc["proposals"] if x["branch"] == "sme/a-hough/syn")
+    p = next(x for x in doc["proposals"] if x["branch"] == "sme/t-t-co/syn")
     assert p["merged"] is True
 
 

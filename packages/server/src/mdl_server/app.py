@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -19,6 +19,7 @@ from mdl_core.validate import validate
 from mdl_server import commands
 from mdl_server.git_api import git_router
 from mdl_server.glossary_api import glossary_router, subject_area_router
+from mdl_server.identity import Identity, IdentityPolicy, resolve_identity
 from mdl_server.ontology_api import ontology_router
 from mdl_server.projection import project
 
@@ -72,6 +73,25 @@ def create_app(
     app = FastAPI(title="Modelith", docs_url="/api/docs", openapi_url="/api/openapi.json")
     cache: dict = {"fingerprint": None, "repo": None}
 
+    # Identity is resolved per request from a trusted-proxy header (enterprise) or the
+    # model dir's git config (solo), or falls back to anonymous — see identity.py. The
+    # policy is read from the environment ONCE, here, so serve() and the CLI need no
+    # signature change. Nothing is trusted unless the operator opted in.
+    policy = IdentityPolicy.from_env()
+    if policy.misconfigured_secret():
+        import warnings
+
+        warnings.warn(
+            "MDL_AUTH_PROXY_SECRET_HEADER is set but MDL_AUTH_PROXY_SECRET is empty; "
+            "trusted-header auth is DISABLED (fail-closed). Set the secret value to "
+            "enable it.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+
+    def _identity(request: Request) -> Identity:
+        return resolve_identity(request.headers, policy, model_dir)
+
     def _load() -> ModelRepo:
         try:
             fp = _dir_fingerprint(model_dir)
@@ -83,7 +103,9 @@ def create_app(
             raise HTTPException(status_code=404, detail=str(e)) from e
 
     @app.get("/api/model")
-    def get_model(subject_area: str = "") -> JSONResponse:
+    def get_model(
+        subject_area: str = "", ident: Identity = Depends(_identity)
+    ) -> JSONResponse:
         """`?subject_area=<ulid>` scopes the model to that area — which also gives
         the main canvas a subject-area filter, not just the SME workspace."""
         repo = _load()
@@ -93,6 +115,10 @@ def create_app(
         # Which persona this process is serving: staged edits that become a PR, or
         # direct writes to the working tree. The app reads it to pick its mode.
         doc["direct"] = direct
+        # Who the server thinks you are (spec §17). The Studio app reads this: when
+        # source != "anonymous" it greets you and stops asking for a name. Purely
+        # informational on a read — identity gates writes, never reads.
+        doc["identity"] = {"name": ident.name, "email": ident.email, "source": ident.source}
         doc["domains"] = sorted(d.name for d in repo.model.domains.values())
         return JSONResponse(doc)
 
@@ -219,7 +245,7 @@ def create_app(
     # classify, conflicts, context, proposals) must work under --read-only, which
     # is exactly the catalog-browse and "SME just looking" case. Writes are gated
     # inside the router.
-    app.include_router(git_router(model_dir, read_only=read_only))
+    app.include_router(git_router(model_dir, read_only=read_only, identity_policy=policy))
 
     # Static canvas build. Mounted last so /api/* wins.
     if STATIC_DIR.exists():

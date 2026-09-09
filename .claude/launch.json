@@ -12,6 +12,12 @@
       "runtimeExecutable": "uv",
       "runtimeArgs": ["run", "mdl", "serve", "-m", "demo/ibor/model", "--port", "4802"],
       "port": 4802
+    },
+    {
+      "name": "studio-ibor",
+      "runtimeExecutable": "mdl",
+      "runtimeArgs": ["studio", "-m", "demo/ibor/model", "--port", "4810"],
+      "port": 4810
     }
   ]
 }

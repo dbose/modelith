@@ -574,3 +574,170 @@ The PR comment format matters more than it sounds. Render added/dropped/type-cha
 - No warehouse-side execution beyond optional profiling for inference.
 - No LLM in the critical path. AI assists naming, term matching and description drafting; it never decides a relationship or writes to a catalog without a recorded human verdict.
 - No canvas before M5.
+
+---
+
+# Part II — Enterprise adoption (Principal-Architect / PM review)
+
+*Added on the `experimental` branch. Part I above is the build spec for the tool
+itself and is not changed by this part — where Part I is good it stays. This part
+adds only what enterprise adoption requires, sequenced so a solo user never pays for
+a feature only a shared deployment needs.*
+
+## 15. Where Modelith stands, and against whom
+
+The defensible wedge, confirmed by a competitive scan (erwin, ER/Studio, SqlDBM,
+Ellie.ai, Hackolade, Azimutt; dbt Canvas + Semantic Layer/MetricFlow, Cube; Collibra,
+Alation, Atlan, Purview, DataHub, OpenMetadata, Unity Catalog; TopBraid, Stardog,
+PoolParty; Stoplight, Backstage):
+
+> **An ontology-anchored logical/ER model held in git as plain YAML, that
+> forward-generates contract-enforced dbt, reverse-engineers dbt back, and classifies
+> the drift between them — a round-trip no single competitor offers.**
+
+Each pillar alone is contested. The combination is not. Two consequences shape
+priorities:
+
+- **The sharpest threat is dbt Canvas** (GA, dbt Enterprise-gated). It already nails
+  the visual-editor → *Commit → open a PR* workflow that Modelith pitches for the
+  steward persona, and it is bundled for teams already on dbt Cloud. Modelith must
+  lead with what Canvas lacks: a real **logical/ER + conceptual layer**, **ontology
+  alignment**, **reverse + drift classification**, and life **outside the dbt Cloud
+  walled garden** (any warehouse, any git host, self-hostable, offline-capable).
+- **"The model lives in git, every tool is a client" is now table stakes**, not a
+  differentiator — Stoplight (API specs), Backstage (`catalog-info.yaml`), and dbt
+  itself all do it. Modelith's git-nativeness is necessary, not sufficient; the
+  round-trip is the moat.
+
+**Do not chase** the things the platforms above own and a git-YAML design tool
+structurally cannot: automated estate-wide metadata crawling, column-level *runtime*
+lineage from query logs, and data-quality/observability. Modelith captures *intended
+design and contract relationships*; it should emit lineage (it already plans
+OpenLineage, §9.6) and let a governance platform sit above it, not try to become one.
+
+## 16. The enterprise-adoption gap, ranked
+
+The single hardest procurement blocker is **identity**. Modelith today has *no*
+authentication: the acting user is a self-asserted free-text string
+(`ProposeBody.user`, browser `localStorage["mdl.sme.user"]`) threaded into a git
+`Co-authored-by` trailer. Anyone can claim to be anyone. Every commercial competitor
+clears this bar; a solo user does not need it. That tension — enterprise needs
+verified identity, solo needs zero friction — is resolved in §17.
+
+Ranked, most-blocking first. Each is a *requirement* enterprises impose; the roadmap
+in §18 sequences them.
+
+1. **Verified identity (SSO-compatible).** Who authored a proposal must be
+   trustworthy, without Modelith implementing any IdP flow. → **§17, specified, build
+   now.**
+2. **Authorization / RBAC.** Not everyone may edit everything. Modelith's honest
+   answer is *git already does this* — branch protection + CODEOWNERS decide who
+   merges — but that must be documented as the RBAC story and surfaced, not left
+   implicit. → §18 M8.
+3. **Audit trail for administrative events.** Git history records *model* changes;
+   it does not record *who was let in, what config changed, who was denied*. A
+   thin append-only audit log of identity/permission/config events. → §18 M9.
+4. **SOC 2 Type II readiness.** Process/organizational, not code — but the code must
+   not block it (deterministic builds, no telemetry-by-default, documented data
+   flows). Called out so it is tracked, not built. → §18 M9.
+5. **Lineage emission enterprises can consume.** OpenLineage is already planned
+   (§9.6); ship it and integrate with Atlan/Collibra/DataHub rather than competing on
+   observed lineage. → existing M5, reaffirmed.
+
+## 17. Identity — a thin, IdP-agnostic seam
+
+**Principle: solo pays nothing.** With nothing configured, identity resolves to the
+user's own git config (exactly like a normal `git commit`), and if even that is
+absent, to anonymous. There is no login, no account, no server-side user store, ever
+(this restates and does not weaken §13.5 / §14: *state stays in git*).
+
+**Principle: trust the proxy, not the client.** The near-universal enterprise pattern
+is a reverse proxy (oauth2-proxy, Pomerium, cloudflared, nginx `auth_request`, Azure
+App Proxy) that authenticates against the org IdP — OIDC, SAML, whatever — and injects
+an identity header. Modelith trusts *that header* and implements **no** OAuth/OIDC/SAML
+flow itself. This makes every IdP "just work" and keeps Modelith out of token
+validation, key rotation, redirect URIs, and four provider code paths.
+
+### 17.1 Resolution
+
+A single module `mdl_server/identity.py`:
+
+```
+Identity(name, email, source)          source ∈ {"proxy", "git", "anonymous"}
+IdentityPolicy.from_env(os.environ)    resolved once at create_app time, immutable
+resolve_identity(headers, policy, model_dir) -> Identity
+```
+
+Precedence: **trusted header** (only if the operator opted in) → **git config** of the
+model dir → **anonymous**. A request with a raw `X-Forwarded-User` and no configured
+policy resolves to *anonymous*, never proxy — the safe default.
+
+### 17.2 Configuration (env vars, namespaced `MDL_AUTH_*`)
+
+| Env var | Purpose | Default |
+|---|---|---|
+| `MDL_AUTH_TRUSTED_USER_HEADER` | Header the trusted proxy sets with the user's email/id (e.g. `X-Auth-Request-Email`). **Its presence is the master switch that turns header auth ON.** | unset ⇒ OFF |
+| `MDL_AUTH_TRUSTED_NAME_HEADER` | Optional display-name header. | unset ⇒ derive from email local-part |
+| `MDL_AUTH_PROXY_SECRET_HEADER` | Optional header the proxy must present to prove it *is* the proxy. | unset |
+| `MDL_AUTH_PROXY_SECRET` | Expected value of that header (constant-time compared). If the secret *header* is set but this is empty ⇒ **fail closed** (header auth off). | unset |
+
+Config is deployment/environment data, so it lives in env vars read inside
+`create_app` — `serve()` and the CLI need no signature change. A separate optional
+hardening switch, `MDL_AUTH_REQUIRE=1` (or `mdl studio --require-identity`), makes
+*write* endpoints refuse an anonymous identity; ship it as a small follow-up, not in
+the first cut.
+
+### 17.3 Effects
+
+- `/api/model` gains an `identity` block `{name, email, source}`. The Studio app reads
+  it: when `source != "anonymous"` it shows "signed in as {name}" and stops asking for
+  a name / stops sending `user`.
+- **Propose author precedence** (`_effective_author`): `proxy` overrides any
+  client-supplied `user` (the whole enterprise point); `git` uses the git-config
+  identity (correct solo behavior); `anonymous` falls back to `body.user` (no
+  regression). The proposal branch name and the `Co-authored-by` trailer are built
+  from the *effective* author, not the self-asserted string.
+- **Reads are never gated by identity.** Identity is a write-time concern; a read-only
+  viewer (catalog browse, the week-3 gate) needs none. `/api/model` may still carry
+  the block so the UI can greet the viewer.
+
+### 17.4 Explicit non-goals for identity
+
+No OAuth/OIDC/SAML flow, no JWT/JWKS verification, no token vault, no user database,
+no roles table, no sessions/cookies/login page, and no change to *push credentials*
+(identity ≠ credentials — the server keeps pushing with its own git credentials, a
+deploy key the operator sets up). Authorization stays in git (branch protection +
+CODEOWNERS). Keeping the seam this thin is what preserves the solo promise.
+
+## 18. Roadmap deltas (append to §12 milestones)
+
+**M7, identity seam.** `identity.py`; `IdentityPolicy` from `MDL_AUTH_*`;
+`/api/model` `identity` block; propose author precedence; Studio "signed in as".
+*Accept:* a POST `/propose` carrying a trusted user header and a *different*
+self-asserted `user` produces a commit attributed to the header identity, not the
+spoofed string; with no policy configured, propose still attributes to git config and
+all existing tests stay green.
+
+**M8, authorization story.** Document git-native RBAC (branch protection +
+CODEOWNERS) as the authorization model; surface the reviewers/gates a proposal will
+face *before* submit (the route/reviewers panel already exists); optional
+`MDL_AUTH_REQUIRE` write gate.
+*Accept:* a proposal preview names the reviewers and required checks its PR will
+trigger, derived from the repo's CODEOWNERS.
+
+**M9, audit + SOC 2 readiness.** Append-only audit log of identity/permission/config
+events (distinct from git model history); a documented data-flow / no-egress
+statement; deterministic-build evidence.
+*Accept:* every write endpoint emits an audit record `{ts, identity, source, op,
+target}`; the log is append-only and queryable; a security reviewer can trace any
+administrative event.
+
+## 19. Anti-goals (append to §14)
+
+- **Modelith is not a data catalog or observability platform.** It emits lineage
+  (OpenLineage) and definitions for one; it does not crawl the estate, compute
+  runtime lineage, or run data-quality checks.
+- **Modelith implements no identity-provider protocol.** It trusts a proxy header or
+  git config. SSO is the proxy's job.
+- **No server-side user or permission store.** Identity is resolved per request;
+  authorization lives in git.
