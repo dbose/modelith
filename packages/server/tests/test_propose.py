@@ -434,3 +434,66 @@ def test_propose_solo_still_attributes_without_proxy(client, git_model_dir):
     assert branch.startswith("sme/t-t-co/")
     body = _git(git_model_dir, "log", branch, "-1", "--format=%b")
     assert "t@t.co" in body
+
+
+# --- the MDL_AUTH_REQUIRE write gate (spec §18 M8) --------------------------------
+
+
+def test_propose_403_when_require_and_anonymous(git_model_dir, monkeypatch, tmp_path):
+    """A shared server with MDL_AUTH_REQUIRE refuses an anonymous write with 403,
+    rather than committing under a self-asserted name."""
+    from fastapi.testclient import TestClient
+    from mdl_server import create_app
+    from mdl_server.identity import ENV_REQUIRE
+
+    # isolate git so the repo has no resolvable identity -> anonymous
+    empty = tmp_path / "empty.gitconfig"
+    empty.write_text("")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(empty))
+    monkeypatch.setenv("GIT_CONFIG_SYSTEM", str(empty))
+    subprocess.run(["git", "-C", str(git_model_dir), "config", "--unset", "user.name"], check=False)
+    subprocess.run(["git", "-C", str(git_model_dir), "config", "--unset", "user.email"], check=False)
+    monkeypatch.setenv(ENV_REQUIRE, "1")
+
+    client = TestClient(create_app(git_model_dir))
+    doc = client.get("/api/glossary/terms").json()
+    cpty = next(t for t in doc["terms"] if t["name"] == "Counterparty")
+    resp = client.post(
+        "/api/git/propose",
+        json={
+            "user": "anon",
+            "title": "t",
+            "changes": [
+                {"op": "set_definition", "payload": {"id": cpty["id"], "definition": "z."}}
+            ],
+        },
+    )
+    assert resp.status_code == 403, resp.text
+    assert "authenticated identity" in resp.json()["error"]
+    # and no branch was created
+    assert _git(git_model_dir, "branch", "--list", "sme/*") == ""
+
+
+def test_propose_ok_when_require_and_proxy(git_model_dir, monkeypatch):
+    """The same require gate lets a proxy-authenticated user through."""
+    from fastapi.testclient import TestClient
+    from mdl_server import create_app
+    from mdl_server.identity import ENV_REQUIRE, ENV_USER_HEADER
+
+    monkeypatch.setenv(ENV_REQUIRE, "1")
+    monkeypatch.setenv(ENV_USER_HEADER, "X-Auth-Request-Email")
+    client = TestClient(create_app(git_model_dir))
+    doc = client.get("/api/glossary/terms").json()
+    cpty = next(t for t in doc["terms"] if t["name"] == "Counterparty")
+    resp = client.post(
+        "/api/git/propose",
+        headers={"X-Auth-Request-Email": "real@corp.com"},
+        json={
+            "title": "t",
+            "changes": [
+                {"op": "set_definition", "payload": {"id": cpty["id"], "definition": "z."}}
+            ],
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["branch"].startswith("sme/real-corp-com/")

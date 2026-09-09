@@ -682,10 +682,12 @@ policy resolves to *anonymous*, never proxy — the safe default.
 | `MDL_AUTH_PROXY_SECRET` | Expected value of that header (constant-time compared). If the secret *header* is set but this is empty ⇒ **fail closed** (header auth off). | unset |
 
 Config is deployment/environment data, so it lives in env vars read inside
-`create_app` — `serve()` and the CLI need no signature change. A separate optional
-hardening switch, `MDL_AUTH_REQUIRE=1` (or `mdl studio --require-identity`), makes
-*write* endpoints refuse an anonymous identity; ship it as a small follow-up, not in
-the first cut.
+`create_app` — `serve()` and the CLI need no signature change. A separate hardening
+switch, `MDL_AUTH_REQUIRE=1` (truthy: `1`/`true`/`yes`/`on`/`require`), makes every
+*write* endpoint (`/propose`, `/commit`, `/discard`, `/api/command`,
+`/api/decisions/{k}/verdict`) refuse an anonymous identity with **403** rather than
+committing under a self-asserted name. Off by default, so a solo user with no git
+identity is never blocked. **Built** (see M8).
 
 ### 17.3 Effects
 
@@ -718,12 +720,16 @@ self-asserted `user` produces a commit attributed to the header identity, not th
 spoofed string; with no policy configured, propose still attributes to git config and
 all existing tests stay green.
 
-**M8, authorization story.** Document git-native RBAC (branch protection +
-CODEOWNERS) as the authorization model; surface the reviewers/gates a proposal will
-face *before* submit (the route/reviewers panel already exists); optional
-`MDL_AUTH_REQUIRE` write gate.
-*Accept:* a proposal preview names the reviewers and required checks its PR will
-trigger, derived from the repo's CODEOWNERS.
+**M8, authorization story.** Git-native RBAC is the model: branch protection +
+CODEOWNERS decide who MERGES; the `/api/git/classify` route already computes the
+review route, the real CODEOWNERS reviewers (`_codeowners_reviewers`), and the CI
+gates a proposal will face, surfaced in the propose dialog's route advice. **Done:**
+the `MDL_AUTH_REQUIRE` write gate — every write endpoint returns 403 for an anonymous
+identity when set (`write_denied_reason` in identity.py), verified anonymous→403 /
+proxy→200 in tests and against the running server.
+*Remaining:* the route/reviewer panel reads the working-tree diff, so it shows "no
+route" for a purely staged proposal; it should classify the previewed change set
+(shares the fix with the staged-diff Review-screen item). Tracked separately.
 
 **M9, audit + SOC 2 readiness.** Append-only audit log of identity/permission/config
 events (distinct from git model history); a documented data-flow / no-egress

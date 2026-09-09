@@ -23,6 +23,7 @@ from mdl_server.identity import (
     IdentityPolicy,
     effective_author,
     resolve_identity,
+    write_denied_reason,
 )
 
 
@@ -808,7 +809,10 @@ def git_router(
     if not read_only:
 
         @router.post("/commit")
-        def commit(body: CommitBody) -> JSONResponse:
+        def commit(body: CommitBody, ident: Identity = Depends(_identity)) -> JSONResponse:
+            denied = write_denied_reason(ident, policy)
+            if denied:
+                return JSONResponse({"ok": False, "error": denied}, status_code=403)
             code, out = _git(model_dir, "add", "--", ".")
             if code != 0:
                 return JSONResponse({"ok": False, "error": out}, status_code=500)
@@ -820,7 +824,10 @@ def git_router(
             return JSONResponse({"ok": True, "sha": sha})
 
         @router.post("/discard")
-        def discard() -> JSONResponse:
+        def discard(ident: Identity = Depends(_identity)) -> JSONResponse:
+            denied = write_denied_reason(ident, policy)
+            if denied:
+                return JSONResponse({"ok": False, "error": denied}, status_code=403)
             # revert tracked edits + remove untracked files, model dir only
             code1, out1 = _git(model_dir, "checkout", "--", ".")
             code2, out2 = _git(model_dir, "clean", "-fd", "--", ".")
@@ -839,6 +846,12 @@ def git_router(
             proxy-authenticated user or the git config identity OVERRIDES the
             self-asserted body.user, so the attribution is trustworthy. Only when
             nothing is established (anonymous) do we fall back to body.user."""
+            # Shared-server gate (spec §18 M8): when the operator requires an
+            # authenticated identity, an anonymous proposer is refused rather than
+            # committing under a self-asserted name. Checked first, before any work.
+            denied = write_denied_reason(ident, policy)
+            if denied:
+                return JSONResponse({"ok": False, "error": denied}, status_code=403)
             # The server is the real boundary, not the UI: reject anything outside
             # the allow-list BEFORE branching, so a refused proposal leaves no stray
             # branch behind.

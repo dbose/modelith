@@ -19,7 +19,12 @@ from mdl_core.validate import validate
 from mdl_server import commands
 from mdl_server.git_api import git_router
 from mdl_server.glossary_api import glossary_router, subject_area_router
-from mdl_server.identity import Identity, IdentityPolicy, resolve_identity
+from mdl_server.identity import (
+    Identity,
+    IdentityPolicy,
+    resolve_identity,
+    write_denied_reason,
+)
 from mdl_server.ontology_api import ontology_router
 from mdl_server.projection import project
 
@@ -205,7 +210,12 @@ def create_app(
     if not read_only:
 
         @app.post("/api/decisions/{signal_key}/verdict")
-        def set_verdict(signal_key: str, body: dict) -> JSONResponse:
+        def set_verdict(
+            signal_key: str, body: dict, ident: Identity = Depends(_identity)
+        ) -> JSONResponse:
+            denied = write_denied_reason(ident, policy)
+            if denied:
+                raise HTTPException(status_code=403, detail=denied)
             from mdl_reverse.ledger import DecisionLedger, Verdict
 
             ledger = DecisionLedger.load(model_dir)
@@ -220,7 +230,10 @@ def create_app(
             return JSONResponse({"ok": True})
 
         @app.post("/api/command")
-        def command(body: dict) -> JSONResponse:
+        def command(body: dict, ident: Identity = Depends(_identity)) -> JSONResponse:
+            denied = write_denied_reason(ident, policy)
+            if denied:
+                return JSONResponse({"ok": False, "error": denied}, status_code=403)
             op = body.get("op", "")
             payload = body.get("payload") or {}
             base_fp = body.get("fingerprint")

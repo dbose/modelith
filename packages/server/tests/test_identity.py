@@ -12,6 +12,7 @@ import subprocess
 import pytest
 from mdl_server.identity import (
     ENV_NAME_HEADER,
+    ENV_REQUIRE,
     ENV_SECRET_HEADER,
     ENV_SECRET_VALUE,
     ENV_USER_HEADER,
@@ -19,6 +20,7 @@ from mdl_server.identity import (
     _name_from_email,
     effective_author,
     resolve_identity,
+    write_denied_reason,
 )
 
 
@@ -195,3 +197,43 @@ def test_name_from_email():
     assert _name_from_email("anita.hough@corp.com") == "Anita Hough"
     assert _name_from_email("a_b-c@x.io") == "A B C"
     assert _name_from_email("plainuser") == "Plainuser"
+
+
+# --- the MDL_AUTH_REQUIRE write gate (spec §18 M8) --------------------------------
+
+
+def test_require_off_by_default(bare_dir):
+    policy = IdentityPolicy.from_env({})
+    assert policy.require_identity is False
+    ident = resolve_identity({}, policy, bare_dir)  # anonymous
+    assert write_denied_reason(ident, policy) is None  # solo never blocked
+
+
+def test_require_blocks_anonymous_write(bare_dir):
+    policy = IdentityPolicy.from_env({ENV_REQUIRE: "1"})
+    assert policy.require_identity is True
+    ident = resolve_identity({}, policy, bare_dir)
+    assert ident.source == "anonymous"
+    reason = write_denied_reason(ident, policy)
+    assert reason and "authenticated identity" in reason
+
+
+def test_require_allows_proxy_write(bare_dir):
+    policy = IdentityPolicy.from_env({ENV_REQUIRE: "yes", ENV_USER_HEADER: "X-User"})
+    ident = resolve_identity({"X-User": "a@b.com"}, policy, bare_dir)
+    assert ident.source == "proxy"
+    assert write_denied_reason(ident, policy) is None
+
+
+def test_require_allows_git_write(git_dir):
+    policy = IdentityPolicy.from_env({ENV_REQUIRE: "true"})
+    ident = resolve_identity({}, policy, git_dir)
+    assert ident.source == "git"
+    assert write_denied_reason(ident, policy) is None
+
+
+def test_require_various_truthy_values():
+    for v in ("1", "true", "TRUE", "Yes", "on", "require"):
+        assert IdentityPolicy.from_env({ENV_REQUIRE: v}).require_identity is True
+    for v in ("0", "false", "no", "", "off"):
+        assert IdentityPolicy.from_env({ENV_REQUIRE: v}).require_identity is False

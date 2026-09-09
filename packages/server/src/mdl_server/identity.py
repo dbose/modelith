@@ -40,6 +40,11 @@ ENV_USER_HEADER = "MDL_AUTH_TRUSTED_USER_HEADER"
 ENV_NAME_HEADER = "MDL_AUTH_TRUSTED_NAME_HEADER"
 ENV_SECRET_HEADER = "MDL_AUTH_PROXY_SECRET_HEADER"
 ENV_SECRET_VALUE = "MDL_AUTH_PROXY_SECRET"
+ENV_REQUIRE = "MDL_AUTH_REQUIRE"
+
+# Values that turn the write gate ON (case-insensitive). Anything else — including
+# unset — leaves it off, so solo stays frictionless.
+_TRUTHY = {"1", "true", "yes", "on", "require"}
 
 
 @dataclass(frozen=True)
@@ -69,6 +74,11 @@ class IdentityPolicy:
     trusted_name_header: str | None
     trusted_secret_header: str | None
     trusted_secret_value: str | None
+    # When True, a write by an anonymous (unestablished) identity is refused with 403
+    # rather than falling back to a self-asserted author. For shared/enterprise
+    # deployments that want to hard-fail instead of silently accepting "you". Off by
+    # default, so a solo user with no git identity is never blocked from proposing.
+    require_identity: bool
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> IdentityPolicy:
@@ -77,6 +87,7 @@ class IdentityPolicy:
         name_header = (env.get(ENV_NAME_HEADER) or "").strip() or None
         secret_header = (env.get(ENV_SECRET_HEADER) or "").strip() or None
         secret_value = env.get(ENV_SECRET_VALUE) or None
+        require = (env.get(ENV_REQUIRE) or "").strip().lower() in _TRUTHY
 
         # Fail closed: a configured secret GATE with no secret VALUE to check against
         # would trust the user header on nothing more than "a header named X exists".
@@ -92,6 +103,7 @@ class IdentityPolicy:
             trusted_name_header=name_header,
             trusted_secret_header=secret_header,
             trusted_secret_value=secret_value,
+            require_identity=require,
         )
 
     @property
@@ -206,6 +218,20 @@ def effective_author(ident: Identity, client_user: str) -> Identity:
     email = user if "@" in user else f"{_slug(user)}@users.noreply.github.com"
     name = user if "@" not in user else _name_from_email(user)
     return Identity(name=name, email=email, source="anonymous")
+
+
+def write_denied_reason(ident: Identity, policy: IdentityPolicy) -> str | None:
+    """When a write should be refused, the message to return (403); otherwise None.
+
+    Only fires when the operator set MDL_AUTH_REQUIRE and the request has no
+    established identity — the shared-server "no anonymous writes" gate. A trusted
+    proxy/git identity always passes; an unconfigured (solo) server always passes."""
+    if policy.require_identity and not ident.is_trusted:
+        return (
+            "this deployment requires an authenticated identity to make changes "
+            "(MDL_AUTH_REQUIRE is set) and none was established for this request"
+        )
+    return None
 
 
 def _slug(s: str) -> str:
