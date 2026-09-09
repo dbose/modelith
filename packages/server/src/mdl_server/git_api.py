@@ -11,6 +11,7 @@ import json
 import re
 import shutil
 import subprocess
+from dataclasses import dataclass
 from pathlib import Path
 
 from fastapi import APIRouter
@@ -145,77 +146,193 @@ def _catalog_owns_meaning(model_dir: Path) -> tuple[bool, str]:
         return False, "Collibra"
 
 
-# Every hosting service prints a "create a pull request" link on push, as a
-# `remote:` line carrying an https URL — GitHub, GitLab, Azure DevOps, Bitbucket and
-# Gitea all do it, in their own words. Reading the link the SERVICE gave us is
-# provider-agnostic by construction, where a per-provider URL builder is a
-# maintenance surface that never quite covers self-hosted installs.
+# Opening a proposal is a per-provider URL, and the shape is stable and documented
+# for each. Building it from the remote is deterministic: it works on a re-push
+# (where the host prints no link at all — the amend-a-proposal case), under a
+# non-English locale, and with push output captured or quiet.
+#
+# The host's own "create a pull request" line is still read when present, because a
+# host that tells us the exact URL beats our reconstruction of it — but it is a
+# confirmation, not the mechanism.
+
 _REMOTE_URL = re.compile(r"^remote:\s*(https?://\S+)", re.MULTILINE)
+_PR_HINT = ("pull", "merge_request", "compare", "pullrequest")
 
 
 def _pr_url_from_push(output: str) -> str | None:
-    """The 'open a pull request' link a git host prints on push, if it printed one."""
+    """The 'open a pull request' link a git host printed, if it printed one.
+
+    Absent on a re-push, so this can only ever be an optimisation over building the
+    URL ourselves."""
     for m in _REMOTE_URL.finditer(output):
         url = m.group(1).rstrip(".,;")
-        # skip the plain repo URL some hosts echo; we want the create-PR link
-        if any(k in url for k in ("pull", "merge_request", "compare", "pullrequest")):
+        if any(k in url for k in _PR_HINT):
             return url
     return None
 
 
-def _web_base(remote: str) -> str | None:
-    """Structural https base for a remote — no provider knowledge, so a self-hosted
-    host works the same as a public one."""
-    r = remote.strip()
-    if r.startswith("git@") and ":" in r:
-        host, path = r[4:].split(":", 1)
-        base = f"https://{host}/{path}"
+@dataclass(frozen=True)
+class RemoteRef:
+    """A git remote decomposed into the parts a PR URL needs."""
+
+    host: str
+    path: str  # owner/repo, or org/project/_git/repo on Azure DevOps
+
+    @property
+    def web(self) -> str:
+        return f"https://{self.host}/{self.path}"
+
+
+def parse_remote(remote: str) -> RemoteRef | None:
+    """Decompose a git remote URL. Handles ssh, https, and the scp-like form, and
+    strips any credentials the user embedded so they cannot leak into a link."""
+    r = (remote or "").strip()
+    if not r:
+        return None
+
+    if r.startswith("ssh://"):
+        r = r[len("ssh://") :]
     elif r.startswith(("http://", "https://")):
-        base = r
+        r = r.split("://", 1)[1]
+    elif r.startswith("git@") or (":" in r and "/" not in r.split(":", 1)[0]):
+        pass  # scp-like: user@host:path
+    else:
+        return None  # local path, or something we should not guess about
+
+    r = re.sub(r"^[^/@]+@", "", r)  # drop user[:token]@
+    if ":" in r.split("/", 1)[0]:  # scp-like host:path, or host:port
+        host, path = r.split(":", 1)
+        if path.split("/", 1)[0].isdigit():  # it was a port, not a path
+            host = f"{host}:{path.split('/', 1)[0]}"
+            path = path.split("/", 1)[1] if "/" in path else ""
+    elif "/" in r:
+        host, path = r.split("/", 1)
     else:
         return None
-    # strip credentials a user may have embedded in the remote
-    base = re.sub(r"://[^/@]+@", "://", base)
-    return base[:-4] if base.endswith(".git") else base
+
+    path = path.strip("/")
+    if path.endswith(".git"):
+        path = path[:-4]
+    if not host or not path:
+        return None
+    return RemoteRef(host=host, path=path)
+
+
+def _azure_parts(ref: RemoteRef) -> tuple[str, str, str] | None:
+    """(org, project, repo) for an Azure DevOps remote, whose path is org/project/
+    _git/repo over https but v3/org/project/repo over ssh."""
+    parts = [p for p in ref.path.split("/") if p]
+    if parts and parts[0] == "v3":  # ssh://ssh.dev.azure.com/v3/org/project/repo
+        parts = parts[1:]
+    if "_git" in parts:
+        i = parts.index("_git")
+        if i >= 2 and len(parts) > i + 1:
+            return parts[i - 2], parts[i - 1], parts[i + 1]
+        if i == 1 and len(parts) > i + 1:  # org.visualstudio.com/project/_git/repo
+            org = ref.host.split(".")[0]
+            return org, parts[0], parts[i + 1]
+    if len(parts) == 3:  # ssh form, already stripped of v3
+        return parts[0], parts[1], parts[2]
+    return None
+
+
+def _provider_pr_url(remote: str, branch: str) -> str | None:
+    """The provider's documented 'create a pull request' URL, built from the remote.
+
+    Host matching is on the DOMAIN, so a self-hosted GitLab or Bitbucket is served
+    by an explicit `git.provider` setting rather than a guess — inventing a URL for
+    an unknown host would send someone somewhere that does not exist."""
+    ref = parse_remote(remote)
+    if ref is None:
+        return None
+    return _build_pr_url(_provider_of(ref.host), ref, branch)
+
+
+def _provider_of(host: str) -> str | None:
+    h = host.lower()
+    if "github" in h:
+        return "github"
+    if "gitlab" in h:
+        return "gitlab"
+    if "bitbucket" in h:
+        return "bitbucket"
+    if "dev.azure.com" in h or "visualstudio.com" in h:
+        return "azure"
+    return None
+
+
+def _build_pr_url(provider: str | None, ref: RemoteRef, branch: str) -> str | None:
+    from urllib.parse import quote
+
+    # GitHub carries the branch in the PATH, so its slashes must stay literal —
+    # `sme/a.hough/x` is three path segments there. Everyone else puts it in a query
+    # parameter, where they must be encoded.
+    b = quote(branch, safe="")
+    if provider == "github":
+        return f"{ref.web}/pull/new/{quote(branch, safe='/')}"
+    if provider == "gitlab":
+        return (
+            f"{ref.web}/-/merge_requests/new"
+            f"?merge_request%5Bsource_branch%5D={b}"
+        )
+    if provider == "bitbucket":
+        return f"{ref.web}/pull-requests/new?source={b}"
+    if provider == "azure":
+        parts = _azure_parts(ref)
+        if parts is None:
+            return None
+        org, project, repo = parts
+        host = "dev.azure.com" if "visualstudio.com" not in ref.host else ref.host
+        base = (
+            f"https://{host}/{org}/{project}/_git/{repo}"
+            if host == "dev.azure.com"
+            else f"https://{ref.host}/{project}/_git/{repo}"
+        )
+        return f"{base}/pullrequestcreate?sourceRef={b}"
+    return None
 
 
 def _compare_url(model_dir: Path, branch: str) -> str | None:
-    """A best-effort link to open a proposal, when the push printed none.
+    """A link that opens a proposal for `branch`.
 
-    `pr_url_template` in mdl-project.yaml wins — a few lines of config beats code
-    for a provider we have not seen. Otherwise fall back to the repo's web root,
-    which at least lands the user on the right repository."""
+    Order: an explicit template (self-hosted, or a provider we do not know), then
+    the provider's documented URL built from the remote."""
     code, url = _git(model_dir, "remote", "get-url", "origin")
     if code != 0 or not url:
         return None
 
-    template = _pr_url_template(model_dir)
-    base = _web_base(url)
-    if template and base:
-        return template.replace("{repo}", base).replace("{branch}", branch)
-    if not base:
-        return None
-    # github/gitlab/gitea all understand this; others land on the repo, which beats
-    # a confidently wrong provider-specific guess
-    return f"{base}/compare/{branch}"
+    ref = parse_remote(url)
+    template, configured = _git_settings(model_dir)
+    if template and ref:
+        return template.replace("{repo}", ref.web).replace("{branch}", branch)
+    if configured and ref:
+        return _build_pr_url(configured, ref, branch)
+    return _provider_pr_url(url, branch)
 
 
-def _pr_url_template(model_dir: Path) -> str | None:
-    """`git.pr_url_template` from mdl-project.yaml, e.g. for a self-hosted host:
-    "{repo}/pullrequestcreate?sourceRef={branch}"."""
+def _git_settings(model_dir: Path) -> tuple[str | None, str | None]:
+    """(pr_url_template, provider) from mdl-project.yaml's `git:` block. `provider`
+    names the software for a self-hosted install whose domain we cannot recognise:
+
+        git:
+          provider: gitlab          # self-hosted at git.acme.internal
+    """
     try:
         from mdl_core.repo import PROJECT_FILE
         from mdl_core.yaml_io import load_file
 
         cfg = load_file(model_dir / PROJECT_FILE) or {}
     except Exception:
-        return None
+        return None, None
     git_cfg = cfg.get("git") if isinstance(cfg, dict) else None
-    if isinstance(git_cfg, dict):
-        t = git_cfg.get("pr_url_template")
-        if isinstance(t, str) and t.strip():
-            return t.strip()
-    return None
+    if not isinstance(git_cfg, dict):
+        return None, None
+    t = git_cfg.get("pr_url_template")
+    p = git_cfg.get("provider")
+    return (
+        t.strip() if isinstance(t, str) and t.strip() else None,
+        p.strip().lower() if isinstance(p, str) and p.strip() else None,
+    )
 
 
 # --- helpers for the diff / classify / conflicts / proposals endpoints ------------
@@ -787,13 +904,14 @@ def git_router(model_dir: Path, *, read_only: bool = False) -> APIRouter:
                 result["message"] = f"branch committed; push failed: {out}"
                 return _finish(result)
 
-            # The host itself prints a "create a pull request" link on push. Reading
-            # that works on GitHub, GitLab, Azure DevOps, Bitbucket and self-hosted
-            # alike, so it is tried FIRST — `gh` only knows GitHub, and relying on it
-            # left every other provider with a wrong compare URL.
-            pushed_url = _pr_url_from_push(out)
-            if pushed_url:
-                result["compare_url"] = pushed_url
+            # Build the provider's documented create-PR URL from the remote. The
+            # host also prints one on a FIRST push, and where it does we prefer it —
+            # it is authoritative. But it is absent on a re-push (amending a
+            # proposal), so it cannot be the mechanism.
+            result["compare_url"] = _pr_url_from_push(out) or _compare_url(
+                model_dir, branch_name
+            )
+            if result["compare_url"]:
                 result["message"] = "pushed — open the pull request from the link"
                 return _finish(result)
 
@@ -811,7 +929,6 @@ def git_router(model_dir: Path, *, read_only: bool = False) -> APIRouter:
                     result["compare_url"] = _compare_url(model_dir, branch_name)
                     result["message"] = f"pushed; open the PR: {proc.stderr.strip()}"
             else:
-                result["compare_url"] = _compare_url(model_dir, branch_name)
                 result["message"] = "pushed — open the pull request from your git host"
             return _finish(result)
 

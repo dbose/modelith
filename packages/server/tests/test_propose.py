@@ -204,96 +204,146 @@ def test_every_command_is_classified(client):
     assert not unclassified, f"new commands need an allow/deny decision: {unclassified}"
 
 
-# --- provider-agnostic pull-request links -----------------------------------------
+# --- pull-request links, per provider ---------------------------------------------
 #
-# Every hosting service prints a "create a pull request" link on push. Reading the
-# link the SERVICE gave us works everywhere, where a per-provider URL builder is a
-# maintenance surface that never quite covers self-hosted installs.
+# Built from the remote rather than scraped from push output: the host prints its
+# link only on the FIRST push, so scraping silently yields nothing exactly when
+# someone amends a proposal.
 
 
 @pytest.mark.parametrize(
-    ("provider", "stderr", "expected"),
+    ("label", "remote", "expected"),
     [
         (
-            "github",
-            "remote: Create a pull request for 'f' on GitHub by visiting:\n"
-            "remote:      https://github.com/acme/repo/pull/new/f\n",
-            "https://github.com/acme/repo/pull/new/f",
+            "github ssh",
+            "git@github.com:acme/repo.git",
+            "https://github.com/acme/repo/pull/new/sme/a/x",
+        ),
+        (
+            "github https",
+            "https://github.com/acme/repo.git",
+            "https://github.com/acme/repo/pull/new/sme/a/x",
         ),
         (
             "gitlab",
-            "remote: To create a merge request for f, visit:\n"
-            "remote:   https://gitlab.com/acme/repo/-/merge_requests/new?x=f\n",
-            "https://gitlab.com/acme/repo/-/merge_requests/new?x=f",
+            "git@gitlab.com:acme/repo.git",
+            "https://gitlab.com/acme/repo/-/merge_requests/new"
+            "?merge_request%5Bsource_branch%5D=sme%2Fa%2Fx",
         ),
         (
-            "azure devops",
-            "remote: Create a pull request for 'f' on Azure Repos:\n"
-            "remote:      https://dev.azure.com/o/p/_git/r/pullrequestcreate?sourceRef=f\n",
-            "https://dev.azure.com/o/p/_git/r/pullrequestcreate?sourceRef=f",
+            "bitbucket",
+            "https://bitbucket.org/acme/repo.git",
+            "https://bitbucket.org/acme/repo/pull-requests/new?source=sme%2Fa%2Fx",
         ),
         (
-            "bitbucket server",
-            "remote: Create pull request for f:\n"
-            "remote:   https://bb.acme.com/projects/P/repos/r/compare/commits?sourceBranch=f\n",
-            "https://bb.acme.com/projects/P/repos/r/compare/commits?sourceBranch=f",
+            "azure https",
+            "https://dev.azure.com/org/proj/_git/repo",
+            "https://dev.azure.com/org/proj/_git/repo/pullrequestcreate?sourceRef=sme%2Fa%2Fx",
         ),
         (
-            "gitea",
-            "remote: Create a new pull request for 'f':\n"
-            "remote:   https://git.acme.com/acme/repo/compare/main...f\n",
-            "https://git.acme.com/acme/repo/compare/main...f",
+            "azure https with user",
+            "https://org@dev.azure.com/org/proj/_git/repo",
+            "https://dev.azure.com/org/proj/_git/repo/pullrequestcreate?sourceRef=sme%2Fa%2Fx",
+        ),
+        (
+            "azure ssh (v3, no _git)",
+            "git@ssh.dev.azure.com:v3/org/proj/repo",
+            "https://dev.azure.com/org/proj/_git/repo/pullrequestcreate?sourceRef=sme%2Fa%2Fx",
+        ),
+        (
+            "azure legacy host",
+            "https://org.visualstudio.com/proj/_git/repo",
+            "https://org.visualstudio.com/proj/_git/repo/pullrequestcreate?sourceRef=sme%2Fa%2Fx",
         ),
     ],
 )
-def test_pr_link_is_read_from_the_push_output(provider, stderr, expected):
-    from mdl_server.git_api import _pr_url_from_push
+def test_pr_url_is_built_from_the_remote(label, remote, expected):
+    from mdl_server.git_api import _provider_pr_url
 
-    assert _pr_url_from_push(stderr) == expected, provider
+    assert _provider_pr_url(remote, "sme/a/x") == expected, label
 
 
-def test_a_plain_push_offers_no_link():
-    """A bare or self-managed remote prints no create-PR line, and inventing one
-    would send the user somewhere that does not exist."""
-    from mdl_server.git_api import _pr_url_from_push
+def test_github_keeps_branch_slashes_but_others_encode_them():
+    """GitHub carries the branch in the PATH (`sme/a/x` is three segments); everyone
+    else puts it in a query parameter, where the slashes must be encoded."""
+    from mdl_server.git_api import _provider_pr_url
 
-    assert (
-        _pr_url_from_push(
-            "To /srv/git/repo.git\n * [new branch]      f -> f\n"
-            "branch 'f' set up to track 'origin/f'.\n"
-        )
-        is None
+    gh = _provider_pr_url("git@github.com:acme/repo.git", "sme/a.hough/clarify")
+    assert gh.endswith("/pull/new/sme/a.hough/clarify")
+    gl = _provider_pr_url("git@gitlab.com:acme/repo.git", "sme/a.hough/clarify")
+    assert "sme%2Fa.hough%2Fclarify" in gl
+
+
+def test_an_unknown_host_gets_no_invented_url():
+    """A self-hosted install we cannot identify needs `git.provider` in the project
+    file. Guessing would send someone to a URL that does not exist."""
+    from mdl_server.git_api import _provider_pr_url
+
+    assert _provider_pr_url("git@git.acme.internal:team/model.git", "f") is None
+    assert _provider_pr_url("/srv/git/repo.git", "f") is None
+
+
+def test_credentials_in_a_remote_never_reach_the_link():
+    from mdl_server.git_api import parse_remote
+
+    ref = parse_remote("https://user:ghp_secret@github.com/acme/repo.git")
+    assert ref is not None
+    assert "ghp_secret" not in ref.web
+    assert ref.web == "https://github.com/acme/repo"
+
+
+def test_a_self_hosted_provider_can_be_declared(git_model_dir):
+    """A self-hosted GitLab is one line of config, not a code change."""
+    import subprocess
+
+    from mdl_server.git_api import _compare_url
+
+    proj = git_model_dir / "mdl-project.yaml"
+    proj.write_text(proj.read_text() + "\ngit:\n  provider: gitlab\n")
+    subprocess.run(
+        ["git", "-C", str(git_model_dir), "remote", "add", "origin",
+         "git@git.acme.internal:team/model.git"],
+        check=True,
+    )
+    url = _compare_url(git_model_dir, "sme/a/x")
+    assert url == (
+        "https://git.acme.internal/team/model/-/merge_requests/new"
+        "?merge_request%5Bsource_branch%5D=sme%2Fa%2Fx"
     )
 
 
-def test_web_base_is_structural_not_provider_specific():
-    """Self-hosted hosts have to work the same as public ones."""
-    from mdl_server.git_api import _web_base
-
-    assert _web_base("git@github.com:acme/repo.git") == "https://github.com/acme/repo"
-    assert _web_base("git@git.acme.internal:team/model.git") == "https://git.acme.internal/team/model"
-    assert _web_base("https://dev.azure.com/org/proj/_git/repo") == "https://dev.azure.com/org/proj/_git/repo"
-    # credentials embedded in a remote must not leak into a link we show or log
-    assert _web_base("https://user:tok@git.acme.com/t/m.git") == "https://git.acme.com/t/m"
-    assert _web_base("/srv/git/repo.git") is None
-
-
-def test_a_configured_template_wins(tmp_path, git_model_dir):
-    """A provider we have not seen is a few lines of config, not a code change."""
+def test_a_template_overrides_everything(git_model_dir):
+    """The escape hatch for a host with a shape we do not implement."""
     import subprocess
 
     from mdl_server.git_api import _compare_url
 
     proj = git_model_dir / "mdl-project.yaml"
     proj.write_text(
-        proj.read_text() + "\ngit:\n  pr_url_template: '{repo}/pullrequestcreate?sourceRef={branch}'\n"
+        proj.read_text() + "\ngit:\n  pr_url_template: '{repo}/newpr?from={branch}'\n"
     )
     subprocess.run(
         ["git", "-C", str(git_model_dir), "remote", "add", "origin",
-         "https://dev.azure.com/org/proj/_git/repo"],
+         "https://git.acme.internal/t/m.git"],
         check=True,
     )
     assert (
         _compare_url(git_model_dir, "sme/a/x")
-        == "https://dev.azure.com/org/proj/_git/repo/pullrequestcreate?sourceRef=sme/a/x"
+        == "https://git.acme.internal/t/m/newpr?from=sme/a/x"
     )
+
+
+def test_the_hosts_own_link_is_still_preferred_when_present():
+    """A host that tells us the exact URL beats our reconstruction of it — but it
+    only does so on a first push, which is why it cannot be the mechanism."""
+    from mdl_server.git_api import _pr_url_from_push
+
+    assert (
+        _pr_url_from_push(
+            "remote: Create a pull request for 'f' on GitHub by visiting:\n"
+            "remote:      https://github.com/acme/repo/pull/new/f\n"
+        )
+        == "https://github.com/acme/repo/pull/new/f"
+    )
+    # a re-push prints no such line — this is the case that made scraping unsafe
+    assert _pr_url_from_push("To github.com:acme/repo.git\n   abc..def  f -> f\n") is None

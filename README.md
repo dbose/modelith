@@ -818,14 +818,20 @@ Branching from the *published* commit rather than a moving `main` is deliberate:
 your proposal is based on exactly the model you were shown, and if `main` has moved
 the conflict banner says so instead of silently rebasing under you.
 
-**Any git host.** Proposals work the same on GitHub, GitLab, Azure DevOps,
-Bitbucket and self-hosted installs: Modelith pushes the branch and then reads the
-"create a pull request" link the host itself printed, rather than knowing about any
-provider's API. Where a host prints none, set a template in `mdl-project.yaml`:
+**Any git host.** Proposals work the same on GitHub, GitLab, Azure DevOps and
+Bitbucket. The "open a pull request" link is built from your `origin` remote and the
+branch name — ssh or https, with or without embedded credentials, including Azure's
+`v3/org/project/repo` ssh form and the legacy `*.visualstudio.com` host. No provider
+API, no `gh` dependency.
+
+Self-hosted installs need one line, because a domain we do not recognise is not
+something to guess at:
 
 ```yaml
 git:
-  pr_url_template: "{repo}/pullrequestcreate?sourceRef={branch}"
+  provider: gitlab                # self-hosted GitLab at git.acme.internal
+  # or, for a host whose URL shape we do not implement:
+  # pr_url_template: "{repo}/newpr?from={branch}"
 ```
 
 **Credentials stay yours.** Run `mdl studio` on your own machine and it pushes with
