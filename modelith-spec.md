@@ -737,12 +737,12 @@ anything is written. Verified end-to-end: a definition edit shows a real before/
 diff, routes to A · Meaning · data-stewards, and submits to
 `sme/<identity>/…` authored by the resolved identity.
 
-**M9, audit + SOC 2 readiness.** Append-only audit log of identity/permission/config
+**M9, audit + SOC 2 readiness.** Append-only audit log of write/administrative
 events (distinct from git model history); a documented data-flow / no-egress
 statement; deterministic-build evidence.
 *Accept:* every write endpoint emits an audit record `{ts, identity, source, op,
-target}`; the log is append-only and queryable; a security reviewer can trace any
-administrative event.
+target, outcome}`; the log is append-only and queryable; a security reviewer can
+trace any administrative event. **Built** — see §20.
 
 ## 19. Anti-goals (append to §14)
 
@@ -753,3 +753,133 @@ administrative event.
   git config. SSO is the proxy's job.
 - **No server-side user or permission store.** Identity is resolved per request;
   authorization lives in git.
+
+## 20. Audit log
+
+### 20.1 Why, and what it is NOT
+
+Git already records every *model* change — who edited which YAML, when, in which
+commit. What git does **not** record is the *administrative* history a compliance
+reviewer asks for: who was let in, what a request tried to do and whether it was
+allowed or refused, a write that was rejected (so never became a commit), a decision
+verdict, a config-level action. SOC 2 Type II and regulated buyers require a
+queryable, append-only trail of exactly these events. That is the whole and only job
+of the audit log.
+
+Deliberately **not** the audit log's job: replacing git history (model diffs live in
+git), being a metrics/analytics pipeline, or capturing reads (a read is not an
+attributable change — capturing every `/api/model` would bury the signal and leak
+what someone merely *looked* at).
+
+### 20.2 OpenTelemetry-native
+
+An audit event IS an **OpenTelemetry log record** (the OTel *logs* signal). Modelith
+emits it once through the OTel SDK; where the events go is the operator's choice via
+standard OTel configuration, not a Modelith-specific one. This means an enterprise
+that already runs an OTLP collector (Splunk, Datadog, Grafana/Loki, Honeycomb, any
+OpenTelemetry Collector) gets Modelith's audit trail in the same place as everything
+else, with no bespoke integration — the whole reason to be OTel-compatible rather
+than inventing a format.
+
+Concretely, `mdl_server/audit.py` holds a `LoggerProvider` with:
+
+- an **OTLP log exporter** (`opentelemetry-exporter-otlp`) that activates when the
+  standard `OTEL_EXPORTER_OTLP_ENDPOINT` (or `…_LOGS_ENDPOINT`) env var is set —
+  Modelith honours the OTel spec's own variables (`OTEL_SERVICE_NAME`,
+  `OTEL_RESOURCE_ATTRIBUTES`, headers, protocol) rather than reinventing them; and
+- a **JSONL file exporter** — a tiny custom `LogRecordExporter` writing one line per
+  record — as the always-available local fallback and the CLI/`GET /api/audit`
+  source.
+
+Both are just exporters on the same provider: the event is constructed once, and each
+configured exporter receives it. `opentelemetry-sdk` + `opentelemetry-exporter-otlp`
+are the only new dependencies, optional-extra-gated (`modelith[audit]`) so the core
+CLI stays dependency-light; if the packages are absent, audit degrades to the JSONL
+file writer alone (no OTLP), never an import error.
+
+`resource` carries `service.name=modelith` and the model/project name, so records are
+attributable to a deployment in a multi-service backend. When a request already has
+trace context, the audit record is stamped with its `trace_id`/`span_id`, so an audit
+event ties back to the request span in the same trace view.
+
+### 20.3 The record
+
+Emitted as an OTel LogRecord: `Timestamp` (UTC, ns), `SeverityNumber`
+(`INFO` for `ok`, `WARN` for `denied`, `ERROR` for `error`), a stable `Body`
+(`"audit"`), and structured `Attributes` under an `mdl.audit.*` namespace. The JSONL
+exporter flattens the same fields to one line:
+
+```json
+{"ts":"2026-09-10T14:22:31.004Z","identity":"anita.hough@corp.com",
+ "source":"proxy","op":"propose","target":"sme/anita-hough-corp-com/proj-123",
+ "outcome":"ok","detail":"3 changes, route A",
+ "trace_id":"7b2e…","span_id":"a19c…"}
+```
+
+- `ts` — UTC, ISO-8601 in the file; OTel `Timestamp` on the record.
+- `identity` / `source` (`mdl.audit.identity` / `mdl.audit.source`) — the
+  SERVER-resolved identity and how it was established (`proxy` | `git` | `anonymous`),
+  the same values §17 already computes. This is why audit is built *after* identity:
+  an audit record is only as trustworthy as the identity on it.
+- `op` (`mdl.audit.op`) — the action: `command`, `propose`, `commit`, `discard`,
+  `verdict`.
+- `target` (`mdl.audit.target`) — what it acted on: the branch for a propose, the op
+  name for a command, the signal key for a verdict. Never the full payload (see 20.5).
+- `outcome` (`mdl.audit.outcome`) — `ok` | `denied` | `error`. **A denied or errored
+  write is recorded**, which is the point: git can only show writes that succeeded, so
+  the refusals — the events a security reviewer most wants — would otherwise be
+  invisible.
+- `detail` (`mdl.audit.detail`) — a short, non-sensitive human note (count of
+  changes, the route, the denial reason). Optional.
+
+### 20.4 Where it lives — outside the model tree
+
+The server never writes model files (§13.5), and state stays in git (§14). The JSONL
+fallback is *operational* state, not model state, so it must not land in the model dir
+(it would pollute the git working tree, trip the fingerprint cache, and risk being
+committed into a proposal). Configuration, in order:
+
+1. `OTEL_EXPORTER_OTLP_ENDPOINT` set ⇒ export to the collector (plus the JSONL file if
+   also configured). The enterprise answer — no Modelith-specific plumbing.
+2. `MDL_AUDIT_LOG=/var/log/modelith/audit.jsonl` ⇒ write the local JSONL file (with or
+   without OTLP). The directory is created if absent.
+3. Neither set ⇒ **audit is OFF**. Solo users get nothing to configure, no stray file,
+   no exporter — auditing a single-user laptop is noise.
+
+Export is best-effort and never fails a request: a full disk, an unreachable collector,
+or a permission error is logged to stderr, not surfaced to the user — an audit sink
+outage must not take down editing. (A deployment that needs *hard* "no write without a
+durable audit record" is a stricter mode noted as future work, not the default.)
+
+### 20.5 Append-only, and the read surface
+
+- The JSONL exporter only ever appends; it never rewrites or truncates. OTLP records
+  are append-only by nature. Tamper-*evidence* (an OS-level append-only file,
+  `chattr +a`, or the immutability guarantees of the SIEM the OTLP data lands in) is
+  the operator's to enforce — Modelith documents the contract and does not pretend to
+  guarantee immutability on a file it can also open.
+- `GET /api/audit?limit=&op=&identity=` returns the most recent records from the local
+  JSONL file (newest first), filterable — enough for "show me everything anon tried"
+  without shipping a query engine (the collector/SIEM is the real query surface when
+  OTLP is on). **This endpoint is admin-only**: served only when auditing is
+  configured, and gated behind the identity write-gate posture (`MDL_AUTH_REQUIRE`) so
+  a shared deployment does not expose its own audit trail to any anonymous viewer.
+  `mdl audit tail`/`mdl audit grep` read the same file for the CLI.
+
+### 20.6 Privacy
+
+The record names an action and its target, never its contents: no definitions, no
+attribute values, no payloads. So the log says *"anita proposed on branch X, 3
+changes, route A, allowed"* — never *what* the new definition said. The what is in
+git, readable by whoever already has repo access; the audit trail answers *who/when/
+allowed?* for people who may not. This keeps it shareable with a compliance function
+(or a shared telemetry backend) without widening who can read the model's content.
+
+### 20.7 Explicitly deferred
+
+Log rotation/retention (hand off to `logrotate`, the OTLP collector, or the SIEM),
+cryptographic signing / hash-chaining of records, a hard "refuse writes when the audit
+sink is down" mode, OTel *traces/metrics* for Modelith beyond the audit logs signal,
+and any UI beyond the raw tail. Each is a real enterprise feature; none is needed for
+the trail to exist, be OTel-exportable, and be queryable — the M9 bar.
+

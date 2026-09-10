@@ -13,6 +13,7 @@ import shutil
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
@@ -25,6 +26,9 @@ from mdl_server.identity import (
     resolve_identity,
     write_denied_reason,
 )
+
+if TYPE_CHECKING:
+    from mdl_server.audit import AuditSink
 
 
 def _git(model_dir: Path, *args: str, timeout: int = 30) -> tuple[int, str]:
@@ -748,6 +752,7 @@ def git_router(
     *,
     read_only: bool = False,
     identity_policy: IdentityPolicy | None = None,
+    audit: AuditSink | None = None,
 ) -> APIRouter:
     """Git operations for the canvas and the SME app.
 
@@ -764,9 +769,19 @@ def git_router(
     router = APIRouter(prefix="/api/git")
     model_dir = Path(model_dir).resolve()
     policy = identity_policy if identity_policy is not None else IdentityPolicy.from_env({})
+    if audit is None:
+        from mdl_server.audit import AuditSink
+
+        audit = AuditSink(log_path=None, otel_endpoint=None)  # a disabled no-op sink
 
     def _identity(request: Request) -> Identity:
         return resolve_identity(request.headers, policy, model_dir)
+
+    def _audit(op: str, ident: Identity, target: str, outcome: str, detail: str | None = None):
+        audit.record(
+            op, identity=ident.name or ident.email, source=ident.source,
+            target=target, outcome=outcome, detail=detail,
+        )
 
     @router.get("/status")
     def status() -> JSONResponse:
@@ -857,26 +872,32 @@ def git_router(
         def commit(body: CommitBody, ident: Identity = Depends(_identity)) -> JSONResponse:
             denied = write_denied_reason(ident, policy)
             if denied:
+                _audit("commit", ident, "HEAD", "denied", denied)
                 return JSONResponse({"ok": False, "error": denied}, status_code=403)
             code, out = _git(model_dir, "add", "--", ".")
             if code != 0:
+                _audit("commit", ident, "HEAD", "error", "git add failed")
                 return JSONResponse({"ok": False, "error": out}, status_code=500)
             msg = body.message.strip() or "canvas edits"
             code, out = _git(model_dir, "commit", "-m", msg, "--", ".")
             if code != 0:
+                _audit("commit", ident, "HEAD", "error", "git commit failed")
                 return JSONResponse({"ok": False, "error": out}, status_code=409)
             _, sha = _git(model_dir, "rev-parse", "--short", "HEAD")
+            _audit("commit", ident, sha, "ok")
             return JSONResponse({"ok": True, "sha": sha})
 
         @router.post("/discard")
         def discard(ident: Identity = Depends(_identity)) -> JSONResponse:
             denied = write_denied_reason(ident, policy)
             if denied:
+                _audit("discard", ident, "working-tree", "denied", denied)
                 return JSONResponse({"ok": False, "error": denied}, status_code=403)
             # revert tracked edits + remove untracked files, model dir only
             code1, out1 = _git(model_dir, "checkout", "--", ".")
             code2, out2 = _git(model_dir, "clean", "-fd", "--", ".")
             ok = code1 == 0 and code2 == 0
+            _audit("discard", ident, "working-tree", "ok" if ok else "error")
             return JSONResponse({"ok": ok, "error": None if ok else f"{out1}\n{out2}"})
 
         @router.post("/propose")
@@ -896,6 +917,7 @@ def git_router(
             # committing under a self-asserted name. Checked first, before any work.
             denied = write_denied_reason(ident, policy)
             if denied:
+                _audit("propose", ident, "-", "denied", denied)
                 return JSONResponse({"ok": False, "error": denied}, status_code=403)
             # The server is the real boundary, not the UI: reject anything outside
             # the allow-list BEFORE branching, so a refused proposal leaves no stray
@@ -906,6 +928,10 @@ def git_router(
                     f"{op}: {_NOT_PROPOSABLE_REASON.get(op, 'not allowed in a proposal')}"
                     for op in rejected
                 ]
+                _audit(
+                    "propose", ident, ",".join(rejected), "denied",
+                    "op not proposable",
+                )
                 return JSONResponse(
                     {
                         "ok": False,
@@ -994,6 +1020,10 @@ def git_router(
                 goes back, so the next reader sees the base branch."""
                 _git(model_dir, "checkout", starting_branch)
                 payload["returned_to"] = starting_branch
+                _audit(
+                    "propose", ident, branch_name, "ok",
+                    f"{applied} change(s), pushed={payload.get('pushed')}",
+                )
                 return JSONResponse(payload)
 
             result: dict = {"ok": True, "branch": branch_name, "applied": applied}

@@ -17,6 +17,7 @@ from mdl_core.diagnostics import Severity
 from mdl_core.repo import ModelRepo
 from mdl_core.validate import validate
 from mdl_server import commands
+from mdl_server.audit import AuditSink
 from mdl_server.git_api import git_router
 from mdl_server.glossary_api import glossary_router, subject_area_router
 from mdl_server.identity import (
@@ -96,6 +97,10 @@ def create_app(
 
     def _identity(request: Request) -> Identity:
         return resolve_identity(request.headers, policy, model_dir)
+
+    # Audit sink (spec §20): OTLP export when an OTEL endpoint is set, a local JSONL
+    # file when MDL_AUDIT_LOG is set, off when neither is. Resolved once; best-effort.
+    audit = AuditSink.from_env(resource_attrs={"mdl.model_dir": str(model_dir)})
 
     def _load() -> ModelRepo:
         try:
@@ -177,6 +182,27 @@ def create_app(
     def health() -> dict:
         return {"status": "ok", "model_dir": str(model_dir), "read_only": read_only}
 
+    # Audit read surface (spec §20.5). Admin-gated: a shared deployment must not
+    # expose its own audit trail to an anonymous viewer, so the identity write-gate
+    # posture applies here too. Returns a clean 404 (not the SPA page) when auditing
+    # is not configured.
+    @app.get("/api/audit")
+    def get_audit(
+        limit: int = 100,
+        op: str = "",
+        identity: str = "",
+        ident: Identity = Depends(_identity),
+    ) -> JSONResponse:
+        if not audit.enabled:
+            raise HTTPException(status_code=404, detail="auditing is not enabled")
+        denied = write_denied_reason(ident, policy)
+        if denied:
+            raise HTTPException(status_code=403, detail=denied)
+        records = audit.read(
+            limit=max(1, min(limit, 1000)), op=op or None, identity=identity or None
+        )
+        return JSONResponse({"ok": True, "count": len(records), "records": records})
+
     # Ontology + glossary read APIs — always available (read-only + edit modes).
     app.include_router(ontology_router(model_dir, lambda: _load().model, read_only=read_only))
     app.include_router(glossary_router(lambda: _load().model))
@@ -215,6 +241,10 @@ def create_app(
         ) -> JSONResponse:
             denied = write_denied_reason(ident, policy)
             if denied:
+                audit.record(
+                    "verdict", identity=ident.name or ident.email, source=ident.source,
+                    target=signal_key, outcome="denied", detail=denied,
+                )
                 raise HTTPException(status_code=403, detail=denied)
             from mdl_reverse.ledger import DecisionLedger, Verdict
 
@@ -227,24 +257,33 @@ def create_app(
                 raise HTTPException(status_code=422, detail="verdict: accepted|rejected") from e
             ledger.set_verdict(signal_key, verdict)
             ledger.save(model_dir)
+            audit.record(
+                "verdict", identity=ident.name or ident.email, source=ident.source,
+                target=signal_key, outcome="ok", detail=verdict.value,
+            )
             return JSONResponse({"ok": True})
 
         @app.post("/api/command")
         def command(body: dict, ident: Identity = Depends(_identity)) -> JSONResponse:
             denied = write_denied_reason(ident, policy)
-            if denied:
-                return JSONResponse({"ok": False, "error": denied}, status_code=403)
             op = body.get("op", "")
+            _who = dict(identity=ident.name or ident.email, source=ident.source)
+            if denied:
+                audit.record("command", target=op, outcome="denied", detail=denied, **_who)
+                return JSONResponse({"ok": False, "error": denied}, status_code=403)
             payload = body.get("payload") or {}
             base_fp = body.get("fingerprint")
             try:
                 result = commands.apply_command(model_dir, op, payload, base_fp)
             except commands.StaleModelError as e:
+                audit.record("command", target=op, outcome="error", detail="stale model", **_who)
                 return JSONResponse({"ok": False, "error": str(e)}, status_code=409)
             except commands.CommandError as e:
+                audit.record("command", target=op, outcome="error", detail=str(e)[:200], **_who)
                 return JSONResponse({"ok": False, "error": str(e)}, status_code=422)
             cache["repo"] = None  # bust the model cache
             _cache_on_align(model_dir, op, payload)
+            audit.record("command", target=op, outcome="ok", **_who)
             return JSONResponse(
                 {
                     "ok": True,
@@ -258,7 +297,9 @@ def create_app(
     # classify, conflicts, context, proposals) must work under --read-only, which
     # is exactly the catalog-browse and "SME just looking" case. Writes are gated
     # inside the router.
-    app.include_router(git_router(model_dir, read_only=read_only, identity_policy=policy))
+    app.include_router(
+        git_router(model_dir, read_only=read_only, identity_policy=policy, audit=audit)
+    )
 
     # Static canvas build. Mounted last so /api/* wins.
     if STATIC_DIR.exists():
