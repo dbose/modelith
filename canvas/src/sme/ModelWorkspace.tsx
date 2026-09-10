@@ -3,6 +3,7 @@ import { ReactFlowProvider } from "reactflow";
 import type { Capabilities, Exec } from "../exec";
 import { ModelCanvas, type ModelCanvasHandle } from "../ModelCanvas";
 import { LayersView, OntologyBrowser, type ReadOnlyPanelTab } from "../SidePanel";
+import { ImportExportMenu } from "./ImportExportMenu";
 import { NewSubjectAreaModal } from "./NewSubjectAreaModal";
 import type { ModelDoc } from "../types";
 import { newUlid } from "../ulid";
@@ -52,6 +53,7 @@ export function ModelWorkspace({
   /** engineer mode: edits write the working tree instead of staging a proposal */
   direct = false,
   onSelectEntity,
+  onImported,
   busy,
 }: {
   /** the PREVIEWED model when anything is staged, otherwise the model on disk */
@@ -62,6 +64,8 @@ export function ModelWorkspace({
   canEdit: boolean;
   direct?: boolean;
   onSelectEntity?: (id: string) => void;
+  /** after an import stages its changes, jump the shell to the review screen */
+  onImported?: (tables: number) => void;
   busy?: boolean;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -184,6 +188,7 @@ export function ModelWorkspace({
             >
               Layers
             </button>
+            <ImportExportMenu exec={exec} canEdit={canEdit} onImported={onImported} />
           </span>
           {busy && <span className="erd-busy">updating…</span>}
           {!canEdit && <span className="sme-chip">read-only</span>}

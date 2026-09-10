@@ -26,6 +26,7 @@ dependencies = [
     "uvicorn>=0.29",
     "python-multipart>=0.0.18",
     "pygls>=2.0",
+    "sqlglot>=25",
 ]
 
 # Optional OpenTelemetry export for the audit log (spec §20). `pip install
@@ -61,6 +62,7 @@ dev-mode-dirs = [
     "packages/emit-contract/src",
     "packages/emit-pydantic/src",
     "packages/emit-graph/src",
+    "packages/emit-erd/src",
     "packages/reverse/src",
     "packages/ontology/src",
     "packages/emit-semantic/src",
@@ -84,6 +86,7 @@ modelith-emit-dbt = { workspace = true }
 modelith-emit-contract = { workspace = true }
 modelith-emit-pydantic = { workspace = true }
 modelith-emit-graph = { workspace = true }
+modelith-emit-erd = { workspace = true }
 modelith-reverse = { workspace = true }
 modelith-ontology = { workspace = true }
 modelith-emit-semantic = { workspace = true }
