@@ -1557,6 +1557,117 @@ def import_erwin_cmd(
     )
 
 
+# --- ER interchange: SQL DDL / Mermaid / DBML / CSV export + import --------------
+
+
+@export_app.command("sql")
+def export_sql_cmd(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    out: Path = typer.Option(None, "--out", "-o"),
+    dialect: str = typer.Option("postgres", "--dialect", help="postgres|snowflake|duckdb|..."),
+) -> None:
+    """Export CREATE TABLE DDL (PK/FK/UNIQUE/NOT NULL) for a chosen SQL dialect."""
+    from mdl_emit_erd import emit_sql_ddl
+
+    repo = _load(model_dir)
+    _emit_text(emit_sql_ddl(repo.model, dialect=dialect), out, "sql")
+
+
+@export_app.command("mermaid")
+def export_mermaid_cmd(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    out: Path = typer.Option(None, "--out", "-o"),
+) -> None:
+    """Export a Mermaid erDiagram (renders in GitHub/GitLab/markdown)."""
+    from mdl_emit_erd import emit_mermaid
+
+    repo = _load(model_dir)
+    _emit_text(emit_mermaid(repo.model), out, "mermaid")
+
+
+@export_app.command("dbml")
+def export_dbml_cmd(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    out: Path = typer.Option(None, "--out", "-o"),
+) -> None:
+    """Export DBML (opens in dbdiagram.io / dbdocs / ChartDB)."""
+    from mdl_emit_erd import emit_dbml
+
+    repo = _load(model_dir)
+    _emit_text(emit_dbml(repo.model), out, "dbml")
+
+
+@export_app.command("csv")
+def export_csv_cmd(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    out: Path = typer.Option(None, "--out", "-o"),
+) -> None:
+    """Export a flat attributes CSV (entity, attribute, type, PK/FK, nullable)."""
+    from mdl_emit_erd import emit_csv
+
+    repo = _load(model_dir)
+    _emit_text(emit_csv(repo.model), out, "csv")
+
+
+def _apply_imported(model_dir: Path, imported, source: str) -> None:
+    """Apply a parsed ImportedModel to the model dir via the mutation engine, so the
+    import goes through the same validated path as manual editing."""
+    from mdl_emit_erd.imports.model import to_commands
+
+    from mdl_core.commands import CommandError, apply_command
+
+    for w in imported.warnings:
+        typer.secho(f"  note: {w}", fg=typer.colors.YELLOW)
+    cmds = to_commands(imported)
+    applied = 0
+    for c in cmds:
+        try:
+            apply_command(model_dir, c["op"], c["payload"])
+            applied += 1
+        except (CommandError, FileNotFoundError) as e:
+            typer.secho(f"  skipped {c['op']}: {e}", fg=typer.colors.YELLOW)
+    typer.secho(
+        f"imported {len(imported.tables)} table(s) from {source} "
+        f"({applied} change(s) applied)",
+        fg=typer.colors.GREEN,
+    )
+
+
+@import_app.command("sql")
+def import_sql_cmd(
+    file: Path = typer.Argument(..., help="SQL DDL file (CREATE TABLE ...)"),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    dialect: str = typer.Option("postgres", "--dialect", help="postgres|snowflake|mysql|..."),
+) -> None:
+    """Import a SQL DDL script into the model (parsed via a real SQL AST)."""
+    from mdl_emit_erd.imports import parse_sql_ddl
+
+    _apply_imported(model_dir, parse_sql_ddl(file.read_text(encoding="utf-8"), dialect=dialect),
+                    "SQL DDL")
+
+
+@import_app.command("mermaid")
+def import_mermaid_cmd(
+    file: Path = typer.Argument(..., help="Mermaid erDiagram (.mmd / markdown)"),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+) -> None:
+    """Import a Mermaid erDiagram (structural: entities, attributes, relationships)."""
+    from mdl_emit_erd.imports import parse_mermaid
+
+    _apply_imported(model_dir, parse_mermaid(file.read_text(encoding="utf-8")), "Mermaid")
+
+
+@import_app.command("json-schema")
+def import_json_schema_cmd(
+    file: Path = typer.Argument(..., help="JSON Schema ($defs of object schemas, or one object)"),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+) -> None:
+    """Import a JSON Schema; each object definition becomes an entity."""
+    from mdl_emit_erd.imports import parse_json_schema
+
+    _apply_imported(model_dir, parse_json_schema(file.read_text(encoding="utf-8")), "JSON Schema")
+
+
 @app.command()
 def lsp() -> None:
     """Start the Modelith language server (stdio). One server for VS Code,

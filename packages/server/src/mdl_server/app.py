@@ -150,6 +150,99 @@ def create_app(
         doc["read_only"] = read_only
         return JSONResponse(doc)
 
+    # --- ER interchange import/export (Model-tab toolbar) ---------------------
+    # Reads: always available. Export writes nothing; import returns a change list
+    # the client previews and proposes (it does not write the model itself).
+
+    @app.get("/api/export/{fmt}")
+    def export_model(fmt: str, dialect: str = "postgres"):
+        """Export the model to an interchange format. Returns text/plain (or CSV) so
+        the browser can offer it as a download."""
+        from fastapi.responses import PlainTextResponse
+        from mdl_emit_erd import emit_csv, emit_dbml, emit_mermaid, emit_sql_ddl
+
+        model = _load().model
+        try:
+            if fmt == "sql":
+                text, media, ext = emit_sql_ddl(model, dialect=dialect), "text/plain", "sql"
+            elif fmt == "mermaid":
+                text, media, ext = emit_mermaid(model), "text/plain", "mmd"
+            elif fmt == "dbml":
+                text, media, ext = emit_dbml(model), "text/plain", "dbml"
+            elif fmt == "csv":
+                text, media, ext = emit_csv(model), "text/csv", "csv"
+            elif fmt == "contract":
+                from mdl_emit_contract import emit_datacontract
+
+                text, media, ext = emit_datacontract(model), "text/yaml", "yaml"
+            elif fmt == "cypher":
+                from mdl_emit_graph import emit_cypher
+
+                text, media, ext = emit_cypher(model), "text/plain", "cypher"
+            else:
+                raise HTTPException(status_code=404, detail=f"unknown export format {fmt!r}")
+        except HTTPException:
+            raise
+        except Exception as e:  # noqa: BLE001 - a bad model shouldn't 500 opaquely
+            raise HTTPException(status_code=422, detail=str(e)) from e
+        name = f"{model.config.name}.{ext}"
+        return PlainTextResponse(
+            text,
+            media_type=media,
+            headers={"Content-Disposition": f'attachment; filename="{name}"'},
+        )
+
+    @app.get("/api/export")
+    def export_formats() -> JSONResponse:
+        """The export formats this build offers, for the toolbar menu."""
+        return JSONResponse(
+            {
+                "formats": [
+                    {
+                        "id": "sql",
+                        "label": "SQL DDL",
+                        "dialects": ["postgres", "snowflake", "duckdb"],
+                    },
+                    {"id": "mermaid", "label": "Mermaid erDiagram"},
+                    {"id": "dbml", "label": "DBML (dbdiagram.io)"},
+                    {"id": "csv", "label": "CSV (spreadsheet)"},
+                    {"id": "contract", "label": "Data contract (ODCS)"},
+                    {"id": "cypher", "label": "Neo4j Cypher"},
+                ]
+            }
+        )
+
+    @app.post("/api/import")
+    def import_model(body: dict) -> JSONResponse:
+        """Parse an interchange document into a change list the client can preview and
+        propose. Accepts {format: sql|mermaid|json-schema, content, dialect?}. Writes
+        nothing itself."""
+        from mdl_emit_erd.imports import parse_json_schema, parse_mermaid, parse_sql_ddl
+        from mdl_emit_erd.imports.model import to_commands
+
+        fmt = body.get("format", "")
+        content = body.get("content", "")
+        if not content:
+            return JSONResponse({"ok": False, "error": "content is empty"}, status_code=422)
+        if fmt == "sql":
+            imported = parse_sql_ddl(content, dialect=body.get("dialect") or "postgres")
+        elif fmt == "mermaid":
+            imported = parse_mermaid(content)
+        elif fmt == "json-schema":
+            imported = parse_json_schema(content)
+        else:
+            return JSONResponse(
+                {"ok": False, "error": f"unknown import format {fmt!r}"}, status_code=422
+            )
+        return JSONResponse(
+            {
+                "ok": True,
+                "changes": to_commands(imported),
+                "tables": len(imported.tables),
+                "warnings": imported.warnings,
+            }
+        )
+
     @app.get("/api/entities/{ulid}")
     def get_entity(ulid: str) -> JSONResponse:
         repo = _load()

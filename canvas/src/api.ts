@@ -149,6 +149,34 @@ export const fetchProposals = (user = "") =>
 
 /** Project a set of staged changes without writing anything (plan §A). Returns the
  *  previewed model, the diff against disk, and diagnostics in one round trip. */
+// --- ER interchange import/export (Model-tab toolbar) ---------------------------
+
+export interface ExportFormat {
+  id: string;
+  label: string;
+  dialects?: string[];
+}
+
+export const fetchExportFormats = () =>
+  get<{ formats: ExportFormat[] }>("/api/export");
+
+/** A same-origin URL the browser can open to download an export (the endpoint sets
+ *  Content-Disposition: attachment). Respects the /view/<slug> catalog prefix. */
+export const exportUrl = (fmt: string, dialect?: string): string => {
+  const q = dialect ? `?dialect=${encodeURIComponent(dialect)}` : "";
+  return `${API_BASE}/api/export/${encodeURIComponent(fmt)}${q}`;
+};
+
+export interface ImportResult {
+  ok: boolean;
+  changes: { op: string; payload: Record<string, unknown> }[];
+  tables: number;
+  warnings: string[];
+}
+
+export const importModel = (format: string, content: string, dialect?: string) =>
+  post<ImportResult>("/api/import", { format, content, dialect });
+
 export const previewChanges = (
   changes: { op: string; payload: Record<string, unknown> }[],
   subjectArea?: string,

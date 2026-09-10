@@ -15,6 +15,7 @@ members = [
     "modelith-dbt",
     "modelith-emit-contract",
     "modelith-emit-dbt",
+    "modelith-emit-erd",
     "modelith-emit-graph",
     "modelith-emit-pydantic",
     "modelith-emit-semantic",
@@ -735,6 +736,7 @@ dependencies = [
     { name = "python-multipart" },
     { name = "rdflib" },
     { name = "ruamel-yaml" },
+    { name = "sqlglot" },
     { name = "typer" },
     { name = "uvicorn" },
 ]
@@ -767,6 +769,7 @@ requires-dist = [
     { name = "python-multipart", specifier = ">=0.0.18" },
     { name = "rdflib", specifier = ">=7.0" },
     { name = "ruamel-yaml", specifier = ">=0.18" },
+    { name = "sqlglot", specifier = ">=25" },
     { name = "typer", specifier = ">=0.12" },
     { name = "uvicorn", specifier = ">=0.29" },
 ]
@@ -806,6 +809,23 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [{ name = "modelith-core", editable = "packages/core" }]
+
+[[package]]
+name = "modelith-emit-erd"
+version = "0.1.1"
+source = { editable = "packages/emit-erd" }
+dependencies = [
+    { name = "modelith-core" },
+    { name = "modelith-emit-dbt" },
+    { name = "sqlglot" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "modelith-core", editable = "packages/core" },
+    { name = "modelith-emit-dbt", editable = "packages/emit-dbt" },
+    { name = "sqlglot", specifier = ">=25" },
+]
 
 [[package]]
 name = "modelith-emit-graph"
@@ -917,6 +937,9 @@ source = { editable = "packages/server" }
 dependencies = [
     { name = "fastapi" },
     { name = "modelith-core" },
+    { name = "modelith-emit-contract" },
+    { name = "modelith-emit-erd" },
+    { name = "modelith-emit-graph" },
     { name = "modelith-ontology" },
     { name = "modelith-reverse" },
     { name = "python-multipart" },
@@ -933,6 +956,9 @@ audit = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.110" },
     { name = "modelith-core", editable = "packages/core" },
+    { name = "modelith-emit-contract", editable = "packages/emit-contract" },
+    { name = "modelith-emit-erd", editable = "packages/emit-erd" },
+    { name = "modelith-emit-graph", editable = "packages/emit-graph" },
     { name = "modelith-ontology", editable = "packages/ontology" },
     { name = "modelith-reverse", editable = "packages/reverse" },
     { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'audit'", specifier = ">=1.20" },
@@ -1379,6 +1405,15 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/e8/c4/ba2f8066cceb6f23394729afe52f3bf7adec04bf9ed2c820b39e19299111/sortedcontainers-2.4.0.tar.gz", hash = "sha256:25caa5a06cc30b6b83d11423433f65d1f9d76c4c6a0c90e3379eaa43b9bfdb88", size = 30594 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/32/46/9cb0e58b2deb7f82b84065f37f3bffeb12413f947f9388e4cac22c4621ce/sortedcontainers-2.4.0-py2.py3-none-any.whl", hash = "sha256:a163dcaede0f1c021485e957a39245190e74249897e2ae4b2aa38595db237ee0", size = 29575 },
+]
+
+[[package]]
+name = "sqlglot"
+version = "30.18.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e4/73/5b5ce3e23b3ded3ea1986c2c2991217460d5fd5161b3e00a8425f5dcb8a3/sqlglot-30.18.0.tar.gz", hash = "sha256:e57e1b205e341979d1df5b1212c1435c598a0437e4619e3f428b15d5bc3a5cc6", size = 6018496 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/08/9f/3dd2ec8dd84a33e0092f1c815267bc055073f9e833b93e389c59c10f62cc/sqlglot-30.18.0-py3-none-any.whl", hash = "sha256:ee0f9a9f3e2193e763c326e52dfb377b96fdb4292f6305c3ff2d9a220e71c601", size = 748788 },
 ]
 
 [[package]]

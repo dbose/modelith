@@ -385,6 +385,7 @@ export function SmeApp() {
             exec={direct ? directExec : staging.exec}
             canEdit={canEdit}
             direct={direct}
+            onImported={() => goto("review")}
             busy={staging.busy}
           />
         ) : (

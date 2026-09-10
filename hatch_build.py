@@ -31,6 +31,7 @@ FORCE_INCLUDE = {
     "packages/emit-contract/src/mdl_emit_contract": "mdl_emit_contract",
     "packages/emit-pydantic/src/mdl_emit_pydantic": "mdl_emit_pydantic",
     "packages/emit-graph/src/mdl_emit_graph": "mdl_emit_graph",
+    "packages/emit-erd/src/mdl_emit_erd": "mdl_emit_erd",
     "packages/reverse/src/mdl_reverse": "mdl_reverse",
     "packages/ontology/src/mdl_ontology": "mdl_ontology",
     "packages/emit-semantic/src/mdl_emit_semantic": "mdl_emit_semantic",
