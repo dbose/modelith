@@ -38,6 +38,45 @@ _OBJECT_GLOBS = [
 PROJECT_FILE = "mdl-project.yaml"
 
 
+def find_project_root(start: Path) -> Path:
+    """The model directory for `start`: `start` itself if it holds an
+    `mdl-project.yaml`, else the nearest ancestor that does, else `start` unchanged.
+
+    This is what lets every command run from ANYWHERE inside a model — a nested
+    working dir, or the project root one level above — instead of forcing the user to
+    `cd` into the exact folder holding the project file (issue #7). Returning `start`
+    unchanged when nothing is found keeps the caller's "no mdl-project.yaml in <dir>"
+    error pointing at the directory the user actually named."""
+    start = Path(start)
+    # A file path is meaningless as a root; resolve to its directory first.
+    base = start if start.is_dir() else start.parent
+    base = base.resolve()
+    for d in (base, *base.parents):
+        if (d / PROJECT_FILE).is_file():
+            return d
+    return start
+
+
+def _no_project_message(where: Path) -> str:
+    """A not-found message that helps rather than confuses (issue #7): when the model
+    is in a subdirectory just below `where` (the classic "I'm at the project root, the
+    model is in my-model/" case), name it so the user knows where to go, instead of a
+    bare 'no mdl-project.yaml in .'."""
+    base = f"no {PROJECT_FILE} in {where}"
+    try:
+        subdirs = [
+            p.parent.name
+            for p in Path(where).glob(f"*/{PROJECT_FILE}")
+            if p.is_file()
+        ]
+    except OSError:
+        subdirs = []
+    if subdirs:
+        which = ", ".join(sorted(subdirs))
+        return f"{base} — the model is in {which}/ (run from there, or pass -m {subdirs[0]})"
+    return base
+
+
 class ModelRepo:
     def __init__(self, root: Path) -> None:
         self.root = Path(root)
@@ -51,14 +90,16 @@ class ModelRepo:
 
     @classmethod
     def load(cls, root: Path) -> ModelRepo:
-        repo = cls(root)
+        # Walk up to the model dir so a load works from anywhere inside the project,
+        # not only from the exact folder holding mdl-project.yaml (issue #7).
+        repo = cls(find_project_root(root))
         repo._load()
         return repo
 
     def _load(self) -> None:
         project_path = self.root / PROJECT_FILE
         if not project_path.exists():
-            raise FileNotFoundError(f"no {PROJECT_FILE} in {self.root}")
+            raise FileNotFoundError(_no_project_message(self.root))
         project_raw = load_file(project_path)
         self.raw[PROJECT_FILE] = project_raw
         config = ProjectConfig.model_validate(_to_plain(project_raw))

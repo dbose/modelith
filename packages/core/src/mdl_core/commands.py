@@ -22,7 +22,7 @@ from pathlib import Path
 
 from mdl_core.diagnostics import Severity
 from mdl_core.ids import is_ulid, new_ulid
-from mdl_core.repo import PROJECT_FILE, ModelRepo
+from mdl_core.repo import PROJECT_FILE, ModelRepo, find_project_root
 from mdl_core.validate import validate
 
 # ---------------------------------------------------------------------------
@@ -63,7 +63,11 @@ class CommandResult:
 def apply_command(
     model_dir: Path, op: str, payload: dict, base_fingerprint: str | None = None
 ) -> CommandResult:
-    model_dir = Path(model_dir)
+    # Resolve to the model dir first, so a command run from a nested dir or the
+    # project root (not only from the exact folder holding mdl-project.yaml) acts on
+    # the right tree — and so the fingerprint below matches ModelRepo.load's own
+    # walk-up (issue #7).
+    model_dir = find_project_root(Path(model_dir))
     if base_fingerprint and dir_fingerprint(model_dir) != base_fingerprint:
         raise StaleModelError("model changed on disk — refresh before editing")
 
