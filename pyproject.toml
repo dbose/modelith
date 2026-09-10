@@ -28,6 +28,15 @@ dependencies = [
     "pygls>=2.0",
 ]
 
+# Optional OpenTelemetry export for the audit log (spec §20). `pip install
+# modelith-dbt[audit]` / `uv sync --extra audit` adds it; without it, the audit log
+# still writes its local JSONL file, just no OTLP.
+[project.optional-dependencies]
+audit = [
+    "opentelemetry-sdk>=1.20",
+    "opentelemetry-exporter-otlp-proto-http>=1.20",
+]
+
 # Single `mdl` command. Not exposing a `modelith` script avoids colliding with
 # the unrelated `modelith` package that already exists on PyPI.
 [project.scripts]

@@ -15,6 +15,7 @@ export function ReviewScreen({
    *  diffs the working tree — which staging never touches, so a staged edit showed
    *  as an empty diff. */
   stagedDiff,
+  stagedRoute,
   user,
   onBack,
   onSubmit,
@@ -24,6 +25,9 @@ export function ReviewScreen({
   selectable,
 }: {
   stagedDiff?: ModelDiffDoc | null;
+  /** route/reviewers/gates for the STAGED set (POST /api/git/classify); the
+   *  working-tree GET classify shows "no route" for an unwritten proposal */
+  stagedRoute?: ClassificationDoc | null;
   user: string;
   onBack: () => void;
   onSubmit: (cl: ClassificationDoc | null) => void;
@@ -52,11 +56,17 @@ export function ReviewScreen({
             .then((d) => (d.ok ? setDiff(d) : setError(d.error ?? "could not read the model")))
             .catch((e) => setError(String(e)));
         }
-        fetchClassification("HEAD").then(setCl).catch(() => undefined);
+        // A staged proposal is not on disk, so the working-tree classify sees nothing;
+        // use the route computed for the staged set when we have one.
+        if (stagedRoute) {
+          setCl(stagedRoute);
+        } else {
+          fetchClassification("HEAD").then(setCl).catch(() => undefined);
+        }
         fetchConflicts(base).then(setConf).catch(() => undefined);
       })
       .catch((e) => setError(String(e)));
-  }, [user, stagedDiff]);
+  }, [user, stagedDiff, stagedRoute]);
 
   useEffect(load, [load]);
 

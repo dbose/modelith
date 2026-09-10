@@ -574,3 +574,312 @@ The PR comment format matters more than it sounds. Render added/dropped/type-cha
 - No warehouse-side execution beyond optional profiling for inference.
 - No LLM in the critical path. AI assists naming, term matching and description drafting; it never decides a relationship or writes to a catalog without a recorded human verdict.
 - No canvas before M5.
+
+---
+
+# Part II — Enterprise adoption (Principal-Architect / PM review)
+
+*Added on the `experimental` branch. Part I above is the build spec for the tool
+itself and is not changed by this part — where Part I is good it stays. This part
+adds only what enterprise adoption requires, sequenced so a solo user never pays for
+a feature only a shared deployment needs.*
+
+## 15. Where Modelith stands, and against whom
+
+The defensible wedge, confirmed by a competitive scan (erwin, ER/Studio, SqlDBM,
+Ellie.ai, Hackolade, Azimutt; dbt Canvas + Semantic Layer/MetricFlow, Cube; Collibra,
+Alation, Atlan, Purview, DataHub, OpenMetadata, Unity Catalog; TopBraid, Stardog,
+PoolParty; Stoplight, Backstage):
+
+> **An ontology-anchored logical/ER model held in git as plain YAML, that
+> forward-generates contract-enforced dbt, reverse-engineers dbt back, and classifies
+> the drift between them — a round-trip no single competitor offers.**
+
+Each pillar alone is contested. The combination is not. Two consequences shape
+priorities:
+
+- **The sharpest threat is dbt Canvas** (GA, dbt Enterprise-gated). It already nails
+  the visual-editor → *Commit → open a PR* workflow that Modelith pitches for the
+  steward persona, and it is bundled for teams already on dbt Cloud. Modelith must
+  lead with what Canvas lacks: a real **logical/ER + conceptual layer**, **ontology
+  alignment**, **reverse + drift classification**, and life **outside the dbt Cloud
+  walled garden** (any warehouse, any git host, self-hostable, offline-capable).
+- **"The model lives in git, every tool is a client" is now table stakes**, not a
+  differentiator — Stoplight (API specs), Backstage (`catalog-info.yaml`), and dbt
+  itself all do it. Modelith's git-nativeness is necessary, not sufficient; the
+  round-trip is the moat.
+
+**Do not chase** the things the platforms above own and a git-YAML design tool
+structurally cannot: automated estate-wide metadata crawling, column-level *runtime*
+lineage from query logs, and data-quality/observability. Modelith captures *intended
+design and contract relationships*; it should emit lineage (it already plans
+OpenLineage, §9.6) and let a governance platform sit above it, not try to become one.
+
+## 16. The enterprise-adoption gap, ranked
+
+The single hardest procurement blocker is **identity**. Modelith today has *no*
+authentication: the acting user is a self-asserted free-text string
+(`ProposeBody.user`, browser `localStorage["mdl.sme.user"]`) threaded into a git
+`Co-authored-by` trailer. Anyone can claim to be anyone. Every commercial competitor
+clears this bar; a solo user does not need it. That tension — enterprise needs
+verified identity, solo needs zero friction — is resolved in §17.
+
+Ranked, most-blocking first. Each is a *requirement* enterprises impose; the roadmap
+in §18 sequences them.
+
+1. **Verified identity (SSO-compatible).** Who authored a proposal must be
+   trustworthy, without Modelith implementing any IdP flow. → **§17, specified, build
+   now.**
+2. **Authorization / RBAC.** Not everyone may edit everything. Modelith's honest
+   answer is *git already does this* — branch protection + CODEOWNERS decide who
+   merges — but that must be documented as the RBAC story and surfaced, not left
+   implicit. → §18 M8.
+3. **Audit trail for administrative events.** Git history records *model* changes;
+   it does not record *who was let in, what config changed, who was denied*. A
+   thin append-only audit log of identity/permission/config events. → §18 M9.
+4. **SOC 2 Type II readiness.** Process/organizational, not code — but the code must
+   not block it (deterministic builds, no telemetry-by-default, documented data
+   flows). Called out so it is tracked, not built. → §18 M9.
+5. **Lineage emission enterprises can consume.** OpenLineage is already planned
+   (§9.6); ship it and integrate with Atlan/Collibra/DataHub rather than competing on
+   observed lineage. → existing M5, reaffirmed.
+
+## 17. Identity — a thin, IdP-agnostic seam
+
+**Principle: solo pays nothing.** With nothing configured, identity resolves to the
+user's own git config (exactly like a normal `git commit`), and if even that is
+absent, to anonymous. There is no login, no account, no server-side user store, ever
+(this restates and does not weaken §13.5 / §14: *state stays in git*).
+
+**Principle: trust the proxy, not the client.** The near-universal enterprise pattern
+is a reverse proxy (oauth2-proxy, Pomerium, cloudflared, nginx `auth_request`, Azure
+App Proxy) that authenticates against the org IdP — OIDC, SAML, whatever — and injects
+an identity header. Modelith trusts *that header* and implements **no** OAuth/OIDC/SAML
+flow itself. This makes every IdP "just work" and keeps Modelith out of token
+validation, key rotation, redirect URIs, and four provider code paths.
+
+### 17.1 Resolution
+
+A single module `mdl_server/identity.py`:
+
+```
+Identity(name, email, source)          source ∈ {"proxy", "git", "anonymous"}
+IdentityPolicy.from_env(os.environ)    resolved once at create_app time, immutable
+resolve_identity(headers, policy, model_dir) -> Identity
+```
+
+Precedence: **trusted header** (only if the operator opted in) → **git config** of the
+model dir → **anonymous**. A request with a raw `X-Forwarded-User` and no configured
+policy resolves to *anonymous*, never proxy — the safe default.
+
+### 17.2 Configuration (env vars, namespaced `MDL_AUTH_*`)
+
+| Env var | Purpose | Default |
+|---|---|---|
+| `MDL_AUTH_TRUSTED_USER_HEADER` | Header the trusted proxy sets with the user's email/id (e.g. `X-Auth-Request-Email`). **Its presence is the master switch that turns header auth ON.** | unset ⇒ OFF |
+| `MDL_AUTH_TRUSTED_NAME_HEADER` | Optional display-name header. | unset ⇒ derive from email local-part |
+| `MDL_AUTH_PROXY_SECRET_HEADER` | Optional header the proxy must present to prove it *is* the proxy. | unset |
+| `MDL_AUTH_PROXY_SECRET` | Expected value of that header (constant-time compared). If the secret *header* is set but this is empty ⇒ **fail closed** (header auth off). | unset |
+
+Config is deployment/environment data, so it lives in env vars read inside
+`create_app` — `serve()` and the CLI need no signature change. A separate hardening
+switch, `MDL_AUTH_REQUIRE=1` (truthy: `1`/`true`/`yes`/`on`/`require`), makes every
+*write* endpoint (`/propose`, `/commit`, `/discard`, `/api/command`,
+`/api/decisions/{k}/verdict`) refuse an anonymous identity with **403** rather than
+committing under a self-asserted name. Off by default, so a solo user with no git
+identity is never blocked. **Built** (see M8).
+
+### 17.3 Effects
+
+- `/api/model` gains an `identity` block `{name, email, source}`. The Studio app reads
+  it: when `source != "anonymous"` it shows "signed in as {name}" and stops asking for
+  a name / stops sending `user`.
+- **Propose author precedence** (`_effective_author`): `proxy` overrides any
+  client-supplied `user` (the whole enterprise point); `git` uses the git-config
+  identity (correct solo behavior); `anonymous` falls back to `body.user` (no
+  regression). The proposal branch name and the `Co-authored-by` trailer are built
+  from the *effective* author, not the self-asserted string.
+- **Reads are never gated by identity.** Identity is a write-time concern; a read-only
+  viewer (catalog browse, the week-3 gate) needs none. `/api/model` may still carry
+  the block so the UI can greet the viewer.
+
+### 17.4 Explicit non-goals for identity
+
+No OAuth/OIDC/SAML flow, no JWT/JWKS verification, no token vault, no user database,
+no roles table, no sessions/cookies/login page, and no change to *push credentials*
+(identity ≠ credentials — the server keeps pushing with its own git credentials, a
+deploy key the operator sets up). Authorization stays in git (branch protection +
+CODEOWNERS). Keeping the seam this thin is what preserves the solo promise.
+
+## 18. Roadmap deltas (append to §12 milestones)
+
+**M7, identity seam.** `identity.py`; `IdentityPolicy` from `MDL_AUTH_*`;
+`/api/model` `identity` block; propose author precedence; Studio "signed in as".
+*Accept:* a POST `/propose` carrying a trusted user header and a *different*
+self-asserted `user` produces a commit attributed to the header identity, not the
+spoofed string; with no policy configured, propose still attributes to git config and
+all existing tests stay green.
+
+**M8, authorization story.** Git-native RBAC is the model: branch protection +
+CODEOWNERS decide who MERGES; the `/api/git/classify` route already computes the
+review route, the real CODEOWNERS reviewers (`_codeowners_reviewers`), and the CI
+gates a proposal will face, surfaced in the propose dialog's route advice. **Done:**
+the `MDL_AUTH_REQUIRE` write gate — every write endpoint returns 403 for an anonymous
+identity when set (`write_denied_reason` in identity.py), verified anonymous→403 /
+proxy→200 in tests and against the running server.
+**Also done:** the Review screen and the route/reviewer panel now read the STAGED
+change set, not the working-tree diff. Previously a purely staged proposal showed "0
+changes / no route" and Submit was disabled — the steward could not propose at all.
+The Review screen diffs the combined tray via `/api/preview`; a new
+`POST /api/git/classify` previews the change set to learn which files it touches
+(`preview_changed_paths`) and routes those, so reviewers/gates are correct before
+anything is written. Verified end-to-end: a definition edit shows a real before/after
+diff, routes to A · Meaning · data-stewards, and submits to
+`sme/<identity>/…` authored by the resolved identity.
+
+**M9, audit + SOC 2 readiness.** Append-only audit log of write/administrative
+events (distinct from git model history); a documented data-flow / no-egress
+statement; deterministic-build evidence.
+*Accept:* every write endpoint emits an audit record `{ts, identity, source, op,
+target, outcome}`; the log is append-only and queryable; a security reviewer can
+trace any administrative event. **Built** — see §20.
+
+## 19. Anti-goals (append to §14)
+
+- **Modelith is not a data catalog or observability platform.** It emits lineage
+  (OpenLineage) and definitions for one; it does not crawl the estate, compute
+  runtime lineage, or run data-quality checks.
+- **Modelith implements no identity-provider protocol.** It trusts a proxy header or
+  git config. SSO is the proxy's job.
+- **No server-side user or permission store.** Identity is resolved per request;
+  authorization lives in git.
+
+## 20. Audit log
+
+### 20.1 Why, and what it is NOT
+
+Git already records every *model* change — who edited which YAML, when, in which
+commit. What git does **not** record is the *administrative* history a compliance
+reviewer asks for: who was let in, what a request tried to do and whether it was
+allowed or refused, a write that was rejected (so never became a commit), a decision
+verdict, a config-level action. SOC 2 Type II and regulated buyers require a
+queryable, append-only trail of exactly these events. That is the whole and only job
+of the audit log.
+
+Deliberately **not** the audit log's job: replacing git history (model diffs live in
+git), being a metrics/analytics pipeline, or capturing reads (a read is not an
+attributable change — capturing every `/api/model` would bury the signal and leak
+what someone merely *looked* at).
+
+### 20.2 OpenTelemetry-native
+
+An audit event IS an **OpenTelemetry log record** (the OTel *logs* signal). Modelith
+emits it once through the OTel SDK; where the events go is the operator's choice via
+standard OTel configuration, not a Modelith-specific one. This means an enterprise
+that already runs an OTLP collector (Splunk, Datadog, Grafana/Loki, Honeycomb, any
+OpenTelemetry Collector) gets Modelith's audit trail in the same place as everything
+else, with no bespoke integration — the whole reason to be OTel-compatible rather
+than inventing a format.
+
+Concretely, `mdl_server/audit.py` holds a `LoggerProvider` with:
+
+- an **OTLP log exporter** (`opentelemetry-exporter-otlp`) that activates when the
+  standard `OTEL_EXPORTER_OTLP_ENDPOINT` (or `…_LOGS_ENDPOINT`) env var is set —
+  Modelith honours the OTel spec's own variables (`OTEL_SERVICE_NAME`,
+  `OTEL_RESOURCE_ATTRIBUTES`, headers, protocol) rather than reinventing them; and
+- a **JSONL file exporter** — a tiny custom `LogRecordExporter` writing one line per
+  record — as the always-available local fallback and the CLI/`GET /api/audit`
+  source.
+
+Both are just exporters on the same provider: the event is constructed once, and each
+configured exporter receives it. `opentelemetry-sdk` + `opentelemetry-exporter-otlp`
+are the only new dependencies, optional-extra-gated (`modelith[audit]`) so the core
+CLI stays dependency-light; if the packages are absent, audit degrades to the JSONL
+file writer alone (no OTLP), never an import error.
+
+`resource` carries `service.name=modelith` and the model/project name, so records are
+attributable to a deployment in a multi-service backend. When a request already has
+trace context, the audit record is stamped with its `trace_id`/`span_id`, so an audit
+event ties back to the request span in the same trace view.
+
+### 20.3 The record
+
+Emitted as an OTel LogRecord: `Timestamp` (UTC, ns), `SeverityNumber`
+(`INFO` for `ok`, `WARN` for `denied`, `ERROR` for `error`), a stable `Body`
+(`"audit"`), and structured `Attributes` under an `mdl.audit.*` namespace. The JSONL
+exporter flattens the same fields to one line:
+
+```json
+{"ts":"2026-09-10T14:22:31.004Z","identity":"anita.hough@corp.com",
+ "source":"proxy","op":"propose","target":"sme/anita-hough-corp-com/proj-123",
+ "outcome":"ok","detail":"3 changes, route A",
+ "trace_id":"7b2e…","span_id":"a19c…"}
+```
+
+- `ts` — UTC, ISO-8601 in the file; OTel `Timestamp` on the record.
+- `identity` / `source` (`mdl.audit.identity` / `mdl.audit.source`) — the
+  SERVER-resolved identity and how it was established (`proxy` | `git` | `anonymous`),
+  the same values §17 already computes. This is why audit is built *after* identity:
+  an audit record is only as trustworthy as the identity on it.
+- `op` (`mdl.audit.op`) — the action: `command`, `propose`, `commit`, `discard`,
+  `verdict`.
+- `target` (`mdl.audit.target`) — what it acted on: the branch for a propose, the op
+  name for a command, the signal key for a verdict. Never the full payload (see 20.5).
+- `outcome` (`mdl.audit.outcome`) — `ok` | `denied` | `error`. **A denied or errored
+  write is recorded**, which is the point: git can only show writes that succeeded, so
+  the refusals — the events a security reviewer most wants — would otherwise be
+  invisible.
+- `detail` (`mdl.audit.detail`) — a short, non-sensitive human note (count of
+  changes, the route, the denial reason). Optional.
+
+### 20.4 Where it lives — outside the model tree
+
+The server never writes model files (§13.5), and state stays in git (§14). The JSONL
+fallback is *operational* state, not model state, so it must not land in the model dir
+(it would pollute the git working tree, trip the fingerprint cache, and risk being
+committed into a proposal). Configuration, in order:
+
+1. `OTEL_EXPORTER_OTLP_ENDPOINT` set ⇒ export to the collector (plus the JSONL file if
+   also configured). The enterprise answer — no Modelith-specific plumbing.
+2. `MDL_AUDIT_LOG=/var/log/modelith/audit.jsonl` ⇒ write the local JSONL file (with or
+   without OTLP). The directory is created if absent.
+3. Neither set ⇒ **audit is OFF**. Solo users get nothing to configure, no stray file,
+   no exporter — auditing a single-user laptop is noise.
+
+Export is best-effort and never fails a request: a full disk, an unreachable collector,
+or a permission error is logged to stderr, not surfaced to the user — an audit sink
+outage must not take down editing. (A deployment that needs *hard* "no write without a
+durable audit record" is a stricter mode noted as future work, not the default.)
+
+### 20.5 Append-only, and the read surface
+
+- The JSONL exporter only ever appends; it never rewrites or truncates. OTLP records
+  are append-only by nature. Tamper-*evidence* (an OS-level append-only file,
+  `chattr +a`, or the immutability guarantees of the SIEM the OTLP data lands in) is
+  the operator's to enforce — Modelith documents the contract and does not pretend to
+  guarantee immutability on a file it can also open.
+- `GET /api/audit?limit=&op=&identity=` returns the most recent records from the local
+  JSONL file (newest first), filterable — enough for "show me everything anon tried"
+  without shipping a query engine (the collector/SIEM is the real query surface when
+  OTLP is on). **This endpoint is admin-only**: served only when auditing is
+  configured, and gated behind the identity write-gate posture (`MDL_AUTH_REQUIRE`) so
+  a shared deployment does not expose its own audit trail to any anonymous viewer.
+  `mdl audit tail`/`mdl audit grep` read the same file for the CLI.
+
+### 20.6 Privacy
+
+The record names an action and its target, never its contents: no definitions, no
+attribute values, no payloads. So the log says *"anita proposed on branch X, 3
+changes, route A, allowed"* — never *what* the new definition said. The what is in
+git, readable by whoever already has repo access; the audit trail answers *who/when/
+allowed?* for people who may not. This keeps it shareable with a compliance function
+(or a shared telemetry backend) without widening who can read the model's content.
+
+### 20.7 Explicitly deferred
+
+Log rotation/retention (hand off to `logrotate`, the OTLP collector, or the SIEM),
+cryptographic signing / hash-chaining of records, a hard "refuse writes when the audit
+sink is down" mode, OTel *traces/metrics* for Modelith beyond the audit logs signal,
+and any UI beyond the raw tail. Each is a real enterprise feature; none is needed for
+the trail to exist, be OTel-exportable, and be queryable — the M9 bar.
+

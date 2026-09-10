@@ -146,6 +146,10 @@ export interface ModelDoc {
   fingerprint: string;
   read_only: boolean;
   domains: string[];
+  /** Who the server resolved this request to (spec §17). `source` is "proxy" (a
+   * trusted reverse-proxy header authenticated the user), "git" (the server's git
+   * config), or "anonymous" (nothing established — the client must ask for a name). */
+  identity?: { name: string; email: string; source: "proxy" | "git" | "anonymous" };
 }
 
 // --- ontology (E1) ---

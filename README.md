@@ -864,6 +864,40 @@ the published commit rather than resuming a previous session's branch — the
 checkout cache is disposable, and edits live in the browser's tray until you
 propose.
 
+**Identity on a shared server.** Solo, the acting user is whoever your git config
+says — zero setup. For a shared deployment, put a reverse proxy in front (oauth2-proxy,
+Pomerium, cloudflared, Azure App Proxy, nginx `auth_request`) that authenticates against
+your IdP — OIDC, SAML, anything — and injects an identity header. Modelith trusts that
+header and implements no OAuth flow itself, so SSO "just works":
+
+```bash
+export MDL_AUTH_TRUSTED_USER_HEADER=X-Auth-Request-Email   # turns header auth ON
+export MDL_AUTH_PROXY_SECRET_HEADER=X-Modelith-Proxy        # optional: prove it's the proxy
+export MDL_AUTH_PROXY_SECRET=…                              # (fails closed if unset)
+export MDL_AUTH_REQUIRE=1                                   # optional: refuse anonymous writes
+```
+
+The resolved identity — not a self-asserted name — becomes the commit author and the
+`sme/<identity>/…` branch. Safe by default: with none of this set, a raw
+`X-Forwarded-User` header is ignored, so an accidentally-exposed server never trusts a
+client-supplied identity. `/api/model` reports `identity: {name, email, source}` and
+Studio greets "Signed in as …" instead of asking for a name.
+
+**Audit log.** Point Modelith at your telemetry backend and every write — including the
+ones that were *refused* (which git can't show, since they never became a commit) — is
+recorded as an OpenTelemetry log record:
+
+```bash
+pip install 'modelith-dbt[audit]'                          # adds the OTLP exporter
+export OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318   # → Splunk/Datadog/Grafana/…
+export MDL_AUDIT_LOG=/var/log/modelith/audit.jsonl         # and/or a local JSONL file
+```
+
+Records are `{ts, identity, source, op, target, outcome}` — who did what, when, and
+whether it was allowed — never the model's *contents* (those live in git for whoever has
+repo access). Off entirely when neither variable is set. `GET /api/audit` tails the local
+file and is admin-gated under `MDL_AUTH_REQUIRE`.
+
 **Distributing it.** The app is a client over the API, so it can be hosted anywhere:
 
 ```bash
