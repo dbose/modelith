@@ -510,7 +510,7 @@ def unmanage(
     days = int(expires.rstrip("d") or "14")
     try:
         apply_command(model_dir, "set_unmanaged", {"id": le.id, "unmanaged": True})
-    except CommandError as e:
+    except (CommandError, FileNotFoundError) as e:
         typer.secho(str(e), fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from e
     entry = add_debt(model_dir, entity, reason, days)
@@ -679,7 +679,7 @@ def ontology_promote(
         raise typer.Exit(1)
     try:
         apply_command(model_dir, "promote_alignment", {"id": obj.id})
-    except CommandError as e:
+    except (CommandError, FileNotFoundError) as e:
         typer.secho(str(e), fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from e
     typer.secho(f"alignment on {name!r} promoted to accepted", fg=typer.colors.GREEN)
@@ -1227,7 +1227,7 @@ def delete_entity(
 
     try:
         apply_command(model_dir, "delete_entity", {"id": le.id, "cascade": cascade})
-    except CommandError as e:
+    except (CommandError, FileNotFoundError) as e:
         typer.secho(str(e), fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from e
     typer.secho(f"deleted entity {name!r}", fg=typer.colors.GREEN)
@@ -1250,7 +1250,9 @@ def new_entity(
             "create_entity",
             {"name": name, "subject_area": subject_area, "definition": definition, "layer": layer},
         )
-    except CommandError as e:
+    except (CommandError, FileNotFoundError) as e:
+        # FileNotFoundError carries the "no mdl-project.yaml … run from my-model/"
+        # guidance (issue #7); show it plainly, not as a traceback.
         typer.secho(str(e), fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from e
     typer.secho(f"created entity {name!r} ({result.created_id})", fg=typer.colors.GREEN)
@@ -1262,11 +1264,15 @@ def new_subject_area(
     model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
     definition: str = typer.Option(None, "--definition"),
 ) -> None:
-    from mdl_core.commands import apply_command
+    from mdl_core.commands import CommandError, apply_command
 
-    result = apply_command(
-        model_dir, "create_subject_area", {"name": name, "definition": definition}
-    )
+    try:
+        result = apply_command(
+            model_dir, "create_subject_area", {"name": name, "definition": definition}
+        )
+    except (CommandError, FileNotFoundError) as e:
+        typer.secho(str(e), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from e
     typer.secho(f"created subject area {name!r} ({result.created_id})", fg=typer.colors.GREEN)
 
 
@@ -1296,7 +1302,7 @@ def new_term(
                 "alignment": alignment,
             },
         )
-    except CommandError as e:
+    except (CommandError, FileNotFoundError) as e:
         typer.secho(str(e), fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from e
     typer.secho(f"created term {name!r} ({result.created_id})", fg=typer.colors.GREEN)
@@ -1980,7 +1986,7 @@ def gov_import(
             apply_command(model_dir, op, payload)
             applied += 1
             typer.echo(f"  {op} {payload.get('id', '')}")
-        except CommandError as e:
+        except (CommandError, FileNotFoundError) as e:
             typer.secho(f"skip {op}: {e}", fg=typer.colors.YELLOW)
 
     note = "" if sot == "collibra" else " (note: source_of_truth is git; this is a one-off import)"
