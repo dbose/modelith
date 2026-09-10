@@ -90,8 +90,24 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
 .attr-row {
   display: flex; align-items: center; gap: 6px;
   padding: 3px 12px; height: 26px; line-height: 20px;
+  position: relative; /* so the per-attribute handles anchor to THIS row (issue #5) */
 }
 .attr-row.empty { color: var(--text-dim); font-style: italic; }
+/* attribute-level relationship highlighting (issue #5): the rows an edge/attribute
+   hover touches brighten; the rest recede. */
+.attr-row.rel-hit { background: var(--accent-soft); }
+.attr-row.rel-dim { opacity: 0.35; }
+.attr-row.endpoint .attr-name { font-style: normal; }
+/* per-attribute connection ports: sit on the row's own edge, revealed on hover so
+   rows aren't peppered with dots at rest but afford a column→column link. */
+.attr-port {
+  width: 8px !important; height: 8px !important;
+  opacity: 0; top: 50% !important;
+}
+.attr-port.react-flow__handle-left { left: -5px !important; }
+.attr-port.react-flow__handle-right { right: -5px !important; }
+.entity-node:hover .attr-port { opacity: 0.5; }
+.attr-row:hover .attr-port { opacity: 1 !important; background: var(--accent) !important; }
 .attr-icon { width: 14px; text-align: center; font-size: 10px; flex: none; }
 .attr-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .attr-name.pk { color: var(--pk); font-weight: 600; }
