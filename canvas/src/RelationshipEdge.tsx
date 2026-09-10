@@ -5,6 +5,10 @@ import type { Relationship } from "./types";
 export interface RelationshipEdgeData {
   relationship: Relationship;
   dimmed: boolean;
+  /** number of paired columns; >1 means a composite key drawn as one line (issue #5) */
+  memberCount?: number;
+  /** hover the line -> the canvas highlights both endpoint attribute rows */
+  onHoverEdge?: (relId: string | null) => void;
 }
 
 /**
@@ -50,6 +54,8 @@ export const RelationshipEdge = memo(function RelationshipEdge({
   const tgtMany = cardinality === "one_to_many" || cardinality === "many_to_many";
 
   const cls = "rel-edge" + (selected ? " selected" : "") + (dimmed ? " dimmed" : "");
+  const composite = (data?.memberCount ?? 0) > 1;
+  const onHover = data?.onHoverEdge;
 
   return (
     <g className={cls}>
@@ -61,12 +67,20 @@ export const RelationshipEdge = memo(function RelationshipEdge({
         strokeDasharray={identifying ? undefined : "6 4"}
       />
       {/* wider invisible path for easier hover/click */}
-      <path d={path} fill="none" strokeWidth={14} stroke="transparent" />
+      <path
+        d={path}
+        fill="none"
+        strokeWidth={14}
+        stroke="transparent"
+        onMouseEnter={onHover ? () => onHover(rel!.id) : undefined}
+        onMouseLeave={onHover ? () => onHover(null) : undefined}
+      />
       <EndGlyph x={sourceX} y={sourceY} side={sourcePosition} many={srcMany} optional={optional} />
       <EndGlyph x={targetX} y={targetY} side={targetPosition} many={tgtMany} optional={false} />
-      {selected && rel && (
+      {(selected || composite) && rel && (
         <text className="rel-label" x={(sourceX + targetX) / 2} y={(sourceY + targetY) / 2 - 8}>
-          {rel.name}
+          {selected ? rel.name : ""}
+          {composite ? `${selected ? " " : ""}(${data!.memberCount})` : ""}
         </text>
       )}
     </g>

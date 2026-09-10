@@ -382,12 +382,18 @@ export function RelModal({
   doc,
   fromId,
   toId,
+  initialFromAttr,
+  initialToAttr,
   exec,
   onClose,
 }: {
   doc: ModelDoc;
   fromId: string;
   toId: string;
+  /** columns the user dragged between (issue #5); prefills the picker so a
+   *  column→column drag proposes the FK directly */
+  initialFromAttr?: string;
+  initialToAttr?: string;
   exec: Exec;
   onClose: () => void;
 }) {
@@ -397,8 +403,8 @@ export function RelModal({
     () => to?.attributes.find((a) => a.role === "business_key"),
     [to],
   );
-  const [fromAttr, setFromAttr] = useState("");
-  const [toAttr, setToAttr] = useState(toBk?.id ?? "");
+  const [fromAttr, setFromAttr] = useState(initialFromAttr ?? "");
+  const [toAttr, setToAttr] = useState(initialToAttr ?? toBk?.id ?? "");
   const [cardinality, setCardinality] = useState("many_to_one");
   const [optionality, setOptionality] = useState("mandatory");
   if (!from || !to) return null;
