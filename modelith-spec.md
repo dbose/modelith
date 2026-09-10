@@ -190,6 +190,8 @@ columns:
 
 `mdl validate` runs, in order: schema validation, referential integrity of ULIDs, naming standard lint, ontology alignment check (Section 3), pattern conformance, and semantic joinability (Section 6). Exit codes must distinguish error from warning so CI can gate on severity.
 
+**Key and foreign-key integrity** (issue #6). Primary and foreign keys are modelled structurally — a primary key is a `pk` KeyGroup with ordered `members` (composite-capable), a foreign key is a `Relationship` whose `from`/`to` ends carry paired attribute lists (multi-column-capable) — not as a per-attribute `role`. The validator enforces: at most one `pk` KeyGroup per entity (MDL-E108), members belong to their entity (MDL-E106), a warning when a PK member is `nullable: true` (MDL-W115), and an error when a foreign key's paired attributes have mismatched domains (MDL-E114). This is deliberately *not* a `role: primary_key`/`foreign_key` + `references:` attribute syntax: that would be a second, weaker source of truth for the same fact and could not express composite keys or multi-column FKs cleanly.
+
 **Naming standards are a first-class, enforceable config**, not documentation. erwin has this and every open-source competitor skips it. Support abbreviation dictionaries, casing rules per layer, prefix/suffix rules per pattern, and a `--fix` mode.
 
 ---

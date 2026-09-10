@@ -26,6 +26,7 @@ def validate(model: Model) -> DiagnosticSet:
     diags = DiagnosticSet()
     _check_referential_integrity(model, diags)
     _check_key_groups(model, diags)
+    _check_relationship_domains(model, diags)
     _check_subject_areas(model, diags)
     _check_categories(model, diags)
     _check_ontology_layers(model, diags)
@@ -285,6 +286,26 @@ def _check_key_groups(model: Model, diags: DiagnosticSet) -> None:
             )
         if kg.type == "pk":
             pk_count[kg.entity] = pk_count.get(kg.entity, 0) + 1
+            # A primary key identifies the row, so every PK column must be non-null.
+            # A nullable PK member is almost always an oversight (issue #6): warn
+            # rather than error, since the legacy `role: business_key` convention did
+            # not carry a nullability contract and we do not want to break old models.
+            attr_by_id = {a.id: a for a in le.attributes}
+            for m in kg.members:
+                a = attr_by_id.get(m)
+                if a is not None and a.nullable:
+                    diags.add(
+                        Diagnostic(
+                            code="MDL-W115",
+                            severity=Severity.warning,
+                            message=(
+                                f"primary-key attribute {a.name!r} of entity "
+                                f"{le.name!r} is nullable; a primary key must not be "
+                                f"null — set nullable: false"
+                            ),
+                            path=a.id,
+                        )
+                    )
 
     for entity_id, n in pk_count.items():
         if n > 1:
@@ -297,6 +318,55 @@ def _check_key_groups(model: Model, diags: DiagnosticSet) -> None:
                     path=entity_id,
                 )
             )
+
+
+def _attr_by_id(model: Model):
+    """ULID -> (Attribute, owning LogicalEntity) across the whole model, for
+    cross-entity attribute lookups (a relationship's ends live on two entities)."""
+    out = {}
+    for le in model.logical_entities.values():
+        for a in le.attributes:
+            out[a.id] = (a, le)
+    return out
+
+
+def _check_relationship_domains(model: Model, diags: DiagnosticSet) -> None:
+    """A foreign key must be type-compatible with what it references (issue #6): the
+    from-side and to-side attributes are paired positionally, and each pair must share
+    a domain. A mismatch means a join that will never work — an error, not a warning.
+
+    Only fires for pairs where BOTH attributes resolve and BOTH declare a domain;
+    missing attributes are already reported by the referential check (MDL-E103), and
+    an absent domain is a separate concern."""
+    idx = _attr_by_id(model)
+    for rel in model.relationships.values():
+        fa, ta = rel.from_.attributes, rel.to.attributes
+        # Only compare when the two ends are explicitly column-mapped 1:1. An
+        # unmapped or ragged end is a modelling choice, not a type error.
+        if not fa or not ta or len(fa) != len(ta):
+            continue
+        for fid, tid in zip(fa, ta, strict=True):  # equal length checked above
+            fe, te = idx.get(fid), idx.get(tid)
+            if fe is None or te is None:
+                continue  # MDL-E103 handles a dangling attribute ref
+            fattr, fent = fe
+            tattr, tent = te
+            if fattr.domain is None or tattr.domain is None:
+                continue
+            if fattr.domain != tattr.domain:
+                diags.add(
+                    Diagnostic(
+                        code="MDL-E114",
+                        severity=Severity.error,
+                        message=(
+                            f"foreign key {rel.name!r}: {fent.name}.{fattr.name} "
+                            f"(domain {fattr.domain!r}) references "
+                            f"{tent.name}.{tattr.name} (domain {tattr.domain!r}) — "
+                            f"the domains must match"
+                        ),
+                        path=rel.id,
+                    )
+                )
 
 
 def _check_categories(model: Model, diags: DiagnosticSet) -> None:
