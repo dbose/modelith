@@ -2,7 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ReactFlowProvider } from "reactflow";
 import "reactflow/dist/style.css";
 
-import { ApiError, fetchDiagnostics, fetchModel, gitStatus, sendCommand } from "./api";
+import {
+  ApiError,
+  applyImportBatch,
+  fetchDiagnostics,
+  fetchModel,
+  gitStatus,
+  sendCommand,
+} from "./api";
 import { directCapabilities } from "./exec";
 import { ModelCanvas, PALETTE, type ModelCanvasHandle } from "./ModelCanvas";
 import { SidePanel, type PanelTab } from "./SidePanel";
@@ -24,6 +31,17 @@ function Canvas() {
   // The graph, the inspector and the modals now live in <ModelCanvas>; the shell
   // reaches them through this handle for its toolbar and keyboard shortcuts.
   const canvasRef = useRef<ModelCanvasHandle | null>(null);
+  // The latest server fingerprint. exec() sends this and advances it from each
+  // command's response, so a rapid SEQUENCE of commands (an import batch, a
+  // create-then-edit) each carries a fresh fingerprint instead of the stale one from
+  // the last render — which otherwise 409s every op after the first. The poll and
+  // refresh keep it current, so a genuine external edit is still caught.
+  const fpRef = useRef<string>("");
+  // While a command (or a batch of them, e.g. an import) is applying, the 3s poll
+  // must not overwrite fpRef with an intermediate on-disk fingerprint — that would
+  // make the next command in the batch send a stale fingerprint and 409. exec holds
+  // this for the duration of each call.
+  const execInFlight = useRef(false);
 
   // TopBar renders the subject-area legend, so it needs the same colour map the
   // canvas uses — one palette, exported from ModelCanvas.
@@ -62,6 +80,8 @@ function Canvas() {
         .then((m) => {
           setDoc((cur) => {
             if (cur && m.fingerprint === cur.fingerprint) return cur; // unchanged
+            // don't clobber the batch's own fingerprint while a command is applying
+            if (!execInFlight.current) fpRef.current = m.fingerprint;
             if (!minimal) {
               fetchDiagnostics().then(setDiagnostics).catch(() => setDiagnostics(null));
               gitStatus()
@@ -77,13 +97,21 @@ function Canvas() {
     return () => clearInterval(id);
   }, [minimal]);
 
-  /** The single mutation path: send a command with the fingerprint we based our
-   * view on; refresh on success; surface stale-model and validation errors. */
+  // Keep the fingerprint ref in step with whatever the model currently reflects.
+  useEffect(() => {
+    if (doc?.fingerprint) fpRef.current = doc.fingerprint;
+  }, [doc]);
+
+  /** The single mutation path: send a command with the latest known fingerprint,
+   * advance the ref from the response so a following command in the same batch is
+   * valid, refresh on success, and surface stale-model and validation errors. */
   const exec = useCallback(
     async (op: string, payload: Record<string, unknown>) => {
       if (!doc) return;
+      execInFlight.current = true;
       try {
-        const r = await sendCommand(op, payload, doc.fingerprint);
+        const r = await sendCommand(op, payload, fpRef.current || doc.fingerprint);
+        if (r?.fingerprint) fpRef.current = r.fingerprint; // next op sees the new state
         refresh();
         return r;
       } catch (e) {
@@ -94,6 +122,8 @@ function Canvas() {
           setToast(e instanceof Error ? e.message : String(e));
         }
         throw e;
+      } finally {
+        execInFlight.current = false;
       }
     },
     [doc, refresh],
@@ -189,6 +219,9 @@ function Canvas() {
         panelTab={panelTab}
         onPanelTab={(t) => setPanelTab((cur) => (cur === t ? null : t))}
         onNewEntity={() => canvasRef.current?.newEntity()}
+        exec={exec}
+        onImported={refresh}
+        onImportBatch={applyImportBatch}
       />
       )}
       <div className="canvas-wrap">

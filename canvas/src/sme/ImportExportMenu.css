@@ -1,0 +1,141 @@
+/* Import / Export menu styles, imported by ImportExportMenu.tsx so the component is
+   self-contained and works in BOTH surfaces: the SME Studio Model tab (sme.css) and
+   the architect canvas (styles.css). Both define the CSS variables used here. The
+   button chrome itself comes from the host toolbar's button class (erd-action ghost
+   in Studio, tool-btn in the architect canvas), passed as buttonClass. */
+
+.ie-wrap {
+  position: relative;
+  display: inline-flex;
+  gap: 6px;
+}
+
+/* icon + caret inside a menu trigger button */
+.erd-ico {
+  font-size: 13px;
+  line-height: 1;
+  opacity: 0.85;
+  margin-right: 1px;
+}
+.ie-wrap button:hover .erd-ico,
+.ie-wrap button.on .erd-ico,
+.ie-wrap button.active .erd-ico {
+  opacity: 1;
+}
+.erd-caret {
+  opacity: 0.55;
+  margin-left: 1px;
+}
+
+.ie-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  min-width: 220px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 6px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ie-item {
+  display: block;
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 13px;
+  cursor: pointer;
+}
+.ie-item:hover {
+  background: rgba(94, 234, 212, 0.14);
+  color: var(--accent);
+}
+.ie-dialect {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.ie-dialect select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 6px;
+  font-size: 12px;
+}
+.ie-import {
+  width: 380px;
+  padding: 12px;
+  gap: 8px;
+}
+.ie-tabs {
+  display: flex;
+  gap: 4px;
+}
+.ie-tab {
+  flex: 1;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+.ie-tab.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(94, 234, 212, 0.1);
+}
+.ie-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin: 0;
+}
+.ie-textarea {
+  width: 100%;
+  font-family: var(--mono);
+  font-size: 12px;
+  resize: vertical;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+  box-sizing: border-box;
+}
+.ie-textarea:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+.ie-file {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.ie-warn {
+  font-size: 11px;
+  color: var(--pk);
+  margin: 0;
+}
+.ie-error {
+  font-size: 12px;
+  color: var(--err);
+  margin: 0;
+}
+.ie-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}

@@ -1,4 +1,6 @@
+import type { Exec } from "./exec";
 import type { PanelTab } from "./SidePanel";
+import { ImportExportMenu } from "./sme/ImportExportMenu";
 import type { DiagnosticsDoc, ModelDoc } from "./types";
 
 export function TopBar({
@@ -18,6 +20,9 @@ export function TopBar({
   panelTab,
   onPanelTab,
   onNewEntity,
+  exec,
+  onImported,
+  onImportBatch,
 }: {
   doc: ModelDoc;
   diagnostics: DiagnosticsDoc | null;
@@ -35,6 +40,12 @@ export function TopBar({
   panelTab: PanelTab | null;
   onPanelTab: (t: PanelTab) => void;
   onNewEntity: () => void;
+  /** the mutation seam, for the import/export menu (direct-write in this canvas) */
+  exec: Exec;
+  /** called after an import applies, so the shell can refresh from disk */
+  onImported?: (tables: number) => void;
+  /** batch applier for an import (avoids the per-op fingerprint race) */
+  onImportBatch?: (changes: { op: string; payload: Record<string, unknown> }[]) => Promise<unknown>;
 }) {
   const errors = diagnostics?.items.filter((d) => d.severity === "error").length ?? 0;
   const warnings = diagnostics?.items.filter((d) => d.severity === "warning").length ?? 0;
@@ -123,6 +134,18 @@ export function TopBar({
         <button className="tool-btn" onClick={onFitView} title="Fit view">
           {"⛶"}
         </button>
+        <span className="divider" />
+        {/* Interchange: export the model / import SQL DDL, Mermaid, JSON Schema.
+            Direct-write here (the engineer canvas has no review screen), so the
+            import applies to the working tree and the shell refreshes. */}
+        <ImportExportMenu
+          exec={exec}
+          canEdit={!readOnly}
+          onImported={onImported}
+          submitLabel="Import"
+          buttonClass="tool-btn"
+          applyBatch={onImportBatch}
+        />
       </div>
     </header>
   );
