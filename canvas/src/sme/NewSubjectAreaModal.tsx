@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { expandSubjectArea, fetchSubjectArea, fetchSubjectAreas } from "../api";
+import { expandSubjectArea, fetchSubjectAreas } from "../api";
 import type { ClosureHop, GlossaryTerm } from "../types";
 import { Pane } from "./SubjectAreaEditor";
 
@@ -10,16 +10,21 @@ import { Pane } from "./SubjectAreaEditor";
  * intention. This is the same Available/Included picker the Subject areas tab
  * uses, with the expansion preview, wrapped around the create. */
 export function NewSubjectAreaModal({
+  objects,
   onCreate,
   onClose,
 }: {
+  /** every conceptual object in the model — the pool the two panes partition. Passed
+   *  in from the projected model so the picker is populated even when the model has
+   *  NO subject areas yet (creating the first one must still list its objects). */
+  objects: GlossaryTerm[];
   /** name plus the members to seed it with; both staged as one proposal */
   onCreate: (name: string, definition: string, members: string[]) => void;
   onClose: () => void;
 }) {
   const [name, setName] = useState("");
   const [definition, setDefinition] = useState("");
-  const [all, setAll] = useState<GlossaryTerm[]>([]);
+  const [all] = useState<GlossaryTerm[]>(objects);
   const [members, setMembers] = useState<string[]>([]);
   const [picked, setPicked] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState("");
@@ -30,20 +35,19 @@ export function NewSubjectAreaModal({
   const [seedAreaId, setSeedAreaId] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
 
-  // Every conceptual object in the model, from any existing area's detail — the
-  // two panes are a partition of that set. Expansion needs a real area id to POST
-  // against, so borrow the first one; it only reads the graph.
+  // The object pool comes from `objects` (the projected model), so the picker is
+  // populated with no network call and works when the model has zero areas. The only
+  // thing that needs an existing area is the "add related objects" EXPANSION, which
+  // POSTs against a saved area's graph — borrow any one for that; if there are none,
+  // expansion is simply unavailable (a brand-new, unsaved area has no graph to walk).
   useEffect(() => {
     fetchSubjectAreas()
       .then((d) => {
-        const first = d.subject_areas[0];
-        if (!first) return;
-        setSeedAreaId(first.id);
-        return fetchSubjectArea(first.id).then((detail) =>
-          setAll([...detail.included, ...detail.available]),
-        );
+        if (d.subject_areas[0]) setSeedAreaId(d.subject_areas[0].id);
       })
-      .catch((e) => setError(String(e)));
+      .catch(() => {
+        /* no area to seed expansion from; the picker still works from `objects` */
+      });
   }, []);
 
   const memberSet = useMemo(() => new Set(members), [members]);
@@ -201,7 +205,16 @@ export function NewSubjectAreaModal({
                 onChange={(e) => setLevels(Math.max(1, Math.min(10, Number(e.target.value))))}
               />
             </label>
-            <button className="sme-secondary" onClick={runExpand}>
+            <button
+              className="sme-secondary"
+              onClick={runExpand}
+              disabled={!seedAreaId}
+              title={
+                seedAreaId
+                  ? "Preview related objects to add"
+                  : "Available once the model has at least one saved subject area to walk the graph from"
+              }
+            >
               Preview
             </button>
           </div>

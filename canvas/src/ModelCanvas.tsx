@@ -182,22 +182,34 @@ export function ModelCanvas({
     // flags below rather than a parallel highlight system.
     const relsForAttr = new Set<string>(); // relationship ids touching hoveredAttr
     const entsForAttr = new Set<string>(); // entities on those relationships
+    // The attribute rows to emphasise at BOTH ends, keyed by entity. Populated for a
+    // hovered edge (both its paired columns) and for a hovered attribute (that column
+    // plus the columns it joins to at the other end), so hovering one data element
+    // lights up the data element it links to on the far side.
+    const hitAttrsByEntity = new Map<string, Set<string>>();
+    const mark = (entity: string, attrs: string[]) => {
+      if (!attrs.length) return;
+      const s = hitAttrsByEntity.get(entity) ?? new Set<string>();
+      attrs.forEach((a) => s.add(a));
+      hitAttrsByEntity.set(entity, s);
+    };
     if (hoveredAttr) {
       for (const r of doc.relationships) {
         if (r.from.attributes.includes(hoveredAttr) || r.to.attributes.includes(hoveredAttr)) {
           relsForAttr.add(r.id);
           entsForAttr.add(r.from.entity);
           entsForAttr.add(r.to.entity);
+          // light up the joined columns on BOTH sides of this relationship
+          mark(r.from.entity, r.from.attributes);
+          mark(r.to.entity, r.to.attributes);
         }
       }
     }
-    // attribute rows to emphasise, keyed by entity, when an edge is hovered
-    const hitAttrsByEntity = new Map<string, Set<string>>();
     if (hoveredEdge) {
       const r = doc.relationships.find((x) => x.id === hoveredEdge);
       if (r) {
-        hitAttrsByEntity.set(r.from.entity, new Set(r.from.attributes));
-        hitAttrsByEntity.set(r.to.entity, new Set(r.to.attributes));
+        mark(r.from.entity, r.from.attributes);
+        mark(r.to.entity, r.to.attributes);
       }
     }
 

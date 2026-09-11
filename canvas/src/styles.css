@@ -95,7 +95,10 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
 .attr-row.empty { color: var(--text-dim); font-style: italic; }
 /* attribute-level relationship highlighting (issue #5): the rows an edge/attribute
    hover touches brighten; the rest recede. */
-.attr-row.rel-hit { background: var(--accent-soft); }
+/* a joined column at either end of the hovered relationship: accent wash + a left
+   marker + brighter name, so the linked data elements read as a pair across cards. */
+.attr-row.rel-hit { background: var(--accent-soft); box-shadow: inset 2px 0 0 var(--accent); }
+.attr-row.rel-hit .attr-name { color: var(--accent); font-weight: 600; }
 .attr-row.rel-dim { opacity: 0.35; }
 .attr-row.endpoint .attr-name { font-style: normal; }
 /* per-attribute connection ports: sit on the row's own edge, revealed on hover so

@@ -153,6 +153,13 @@ The inspector above shows one entity carrying an enumerated domain (`asset_class
 a named primary key and a unique key, user-defined properties, and its relationships,
 all first-class in the model.
 
+Relationship lines anchor to the exact columns that join, not to the entity headers, so
+with composite keys or several relationships between the same pair the diagram still says
+which columns join which; hovering an attribute highlights the relationships it takes part
+in and dims the rest.
+
+![The ER canvas with a relationship line running from one entity's foreign-key attribute row to the referenced entity's primary-key row, with crow's-foot cardinality](docs/assets/canvas.png)
+
 ## In VS Code
 
 Install the extension from `vscode/modelith-vscode-0.1.0.vsix`:
@@ -207,8 +214,8 @@ Modelith represents the core data-modeling taxonomy as first-class, git-tracked 
 |---|---|
 | Conceptual / logical / physical layers | Separate object kinds, referenced by immutable ULID |
 | Entities and attributes | Name, domain, role (business key / surrogate / attribute / measure), nullability |
-| Relationships | Four cardinalities, identifying vs non-identifying, optionality, crow's-foot rendering |
-| Named keys | Primary, alternate, unique, and index key groups with ordered, composite members |
+| Relationships | Four cardinalities, identifying vs non-identifying, optionality, crow's-foot rendering; lines anchor to the concrete attribute rows on both sides, not the entity box |
+| Named keys | Primary, alternate, unique, and index key groups with ordered, composite members; validated (one primary key per entity, a warning on a nullable PK column, and an error when a foreign key's domains don't match) |
 | Domains and reference data | Reusable domains, inline enumerations, and shared code sets that emit dbt `accepted_values` tests |
 | Subtypes and supertypes | Category clusters with a discriminator and a physical materialization strategy (single-table or table-per-subtype) |
 | User-defined properties | Extensible metadata on any object, flowing through to dbt `meta` |
@@ -235,6 +242,10 @@ deterministically from the one definition:
 | Semantic layer | `mdl emit semantic` | MetricFlow semantic models and metrics, or OSI |
 | Ontology | `mdl export rdf` / `shacl` | RDF/OWL with SKOS alignments, and SHACL shapes |
 | Knowledge graph | `mdl export r2rml` | A W3C R2RML mapping: the deterministic term-map from warehouse rows to typed, ontology-aligned graph nodes; fails loud on any unmapped entity unless `--allow-unmapped` |
+| SQL DDL | `mdl export sql --dialect …` | `CREATE TABLE` with primary keys, foreign-key `REFERENCES`, `UNIQUE`, and `NOT NULL`, in a chosen dialect (postgres/snowflake/duckdb/…) — the universal interchange target |
+| Mermaid | `mdl export mermaid` | A Mermaid `erDiagram` with PK/FK/UK markers and crow's-foot cardinality, rendering natively in GitHub, GitLab, and most markdown |
+| DBML | `mdl export dbml` | Database Markup Language that opens directly in dbdiagram.io, dbdocs, and ChartDB |
+| CSV | `mdl export csv` | A flat attributes sheet (entity, attribute, type, PK/FK, nullable) for spreadsheets and BI tools |
 
 `mdl generate --emit-contract` (also `--emit-pydantic`, `--emit-graph`, `--emit-r2rml`)
 turns Modelith into a contract factory: on every regeneration it drops a fresh, valid
@@ -268,6 +279,14 @@ misclassification on non-standard naming is visible immediately, not discovered 
 time; the conventions it keys off are overridable via `mdl reverse --naming <file.yaml>`
 (medallion `gold_`, `f_`/`d_`, non-English). See [Reverse engineering a real warehouse](#reverse-engineering-a-real-warehouse) below.
 
+**Import & interchange.** Bring a model in from the wider toolset and hand it back out.
+Import **SQL DDL** (parsed with a real SQL AST, so dialects, quoting, composite keys, and
+inline vs table-level constraints all work), a **Mermaid `erDiagram`**, or a **JSON
+Schema** — each parsed into entities, attributes, keys, and relationships that stage as a
+normal proposal. Export **SQL DDL, Mermaid, DBML, CSV** (alongside the compile targets
+above). All of it is a menu in the Model tab's toolbar, and on the CLI as `mdl import
+sql|mermaid|json-schema` and `mdl export sql|mermaid|dbml|csv`.
+
 **Drift detection.** `mdl drift` compares the committed model to a compiled warehouse and
 classifies each difference as breaking, additive, or cosmetic, with a CI gate mode and a
 reconcile mode. A 400-model breaking change classifies in under thirty seconds.
@@ -281,6 +300,19 @@ below.
 **Governance sync.** A neutral governance graph maps to an external catalog through a
 customer-owned Jinja profile. A Collibra adapter ships, along with OpenLineage emission
 and a conformance kit that validates a bespoke mapping in CI.
+
+### Import and export, from the Model tab
+
+The Model tab's toolbar has **Export** and **Import** menus. Export downloads the model
+in any interchange format; import parses SQL DDL, a Mermaid diagram, or a JSON Schema and
+stages it as a proposal you review before it lands.
+
+![The Export menu open in the Model-tab toolbar: a SQL dialect selector and download items for SQL DDL, Mermaid erDiagram, DBML, CSV, an ODCS data contract, and Neo4j Cypher](docs/assets/export-menu.png)
+
+![The Import panel on its SQL DDL tab, with a dialect selector, a paste area, and a file picker; tabs switch to Mermaid erDiagram and JSON Schema](docs/assets/import-panel.png)
+
+An imported model is visible on the canvas immediately as a staged preview — nothing
+touches disk or git until you submit the proposal.
 
 ## Reverse engineering a real warehouse
 
@@ -795,6 +827,15 @@ lists your open proposal branches. Stage an edit and the tray takes you to
 - a **Diagram** tab drawing the same diff *on the model* — changed entities tinted
   by severity, everything else dimmed to context. Erwin's Complete Compare is a
   tree and structurally cannot do this.
+
+![The Review screen: a Counterparty entity marked modified, a before/after definition diff with the added words highlighted, and a footer showing the review route (Governance), the reviewers, the CI gates, and that it merges cleanly onto main](docs/assets/review-screen.png)
+
+Submitting opens one dialog that carries the whole git handoff — a word-level diff of
+each change, who the proposal is attributed to (the resolved identity, not a
+self-asserted name), an editable branch name, the route-advice callout when a change
+spans review routes, and the branch and reviewers it will land on.
+
+![The Submit-for-review dialog: the definition diff, "Signed in as Debasish Bose", an editable title and branch name, a callout explaining the change spans routes A and E so it takes the stricter Governance review, and the target branch sme/debasish-bose/update-definition with its reviewers](docs/assets/propose-dialog.png)
 
 A banner states the git reality plainly. There is no lock file and no "claim this
 area" button: the branch **is** the lock, so the banner says which branch you are
