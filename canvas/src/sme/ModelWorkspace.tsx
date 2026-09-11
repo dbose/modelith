@@ -196,6 +196,20 @@ export function ModelWorkspace({
           <span className="erd-hint">drag between entities to relate them</span>
           <span className="erd-panels">
             <button
+              className="erd-action ghost"
+              onClick={() => canvasRef.current?.relayout()}
+              title="Auto-arrange the diagram"
+            >
+              Re-layout
+            </button>
+            <button
+              className="erd-action ghost"
+              onClick={() => canvasRef.current?.fitView()}
+              title="Fit the whole model in view"
+            >
+              Fit
+            </button>
+            <button
               className={"erd-action ghost" + (panel === "ontology" ? " on" : "")}
               onClick={() => setPanel((p) => (p === "ontology" ? null : "ontology"))}
             >
