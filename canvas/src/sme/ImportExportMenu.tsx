@@ -47,14 +47,20 @@ export function ImportExportMenu({
         className={"erd-action ghost" + (open === "export" ? " on" : "")}
         onClick={() => setOpen(open === "export" ? null : "export")}
       >
-        Export ▾
+        <span className="erd-ico" aria-hidden="true">
+          ↧
+        </span>
+        Export <span className="erd-caret">▾</span>
       </button>
       {canEdit && (
         <button
           className={"erd-action ghost" + (open === "import" ? " on" : "")}
           onClick={() => setOpen(open === "import" ? null : "import")}
         >
-          Import ▾
+          <span className="erd-ico" aria-hidden="true">
+            ↥
+          </span>
+          Import <span className="erd-caret">▾</span>
         </button>
       )}
 

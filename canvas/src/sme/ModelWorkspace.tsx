@@ -194,12 +194,17 @@ export function ModelWorkspace({
             </button>
           )}
           <span className="erd-hint">drag between entities to relate them</span>
-          <span className="erd-panels">
+
+          {/* View controls: operate on the diagram itself (arrange / frame). */}
+          <span className="erd-group">
             <button
               className="erd-action ghost"
               onClick={() => canvasRef.current?.relayout()}
               title="Auto-arrange the diagram"
             >
+              <span className="erd-ico" aria-hidden="true">
+                ⟲
+              </span>
               Re-layout
             </button>
             <button
@@ -207,8 +212,17 @@ export function ModelWorkspace({
               onClick={() => canvasRef.current?.fitView()}
               title="Fit the whole model in view"
             >
+              <span className="erd-ico" aria-hidden="true">
+                ⛶
+              </span>
               Fit
             </button>
+          </span>
+
+          <span className="erd-sep" aria-hidden="true" />
+
+          {/* Reference panels: toggle the ontology / layers side panels. */}
+          <span className="erd-group">
             <button
               className={"erd-action ghost" + (panel === "ontology" ? " on" : "")}
               onClick={() => setPanel((p) => (p === "ontology" ? null : "ontology"))}
@@ -221,8 +235,12 @@ export function ModelWorkspace({
             >
               Layers
             </button>
-            <ImportExportMenu exec={exec} canEdit={canEdit} onImported={onImported} />
           </span>
+
+          <span className="erd-sep" aria-hidden="true" />
+
+          {/* Interchange: move the model in and out of other formats. */}
+          <ImportExportMenu exec={exec} canEdit={canEdit} onImported={onImported} />
           {busy && <span className="erd-busy">updating…</span>}
           {!canEdit && <span className="sme-chip">read-only</span>}
           {error && <span className="erd-error">{error}</span>}
