@@ -54,6 +54,7 @@ export function ModelWorkspace({
   direct = false,
   onSelectEntity,
   onImported,
+  query = "",
   busy,
 }: {
   /** the PREVIEWED model when anything is staged, otherwise the model on disk */
@@ -66,13 +67,14 @@ export function ModelWorkspace({
   onSelectEntity?: (id: string) => void;
   /** after an import stages its changes, jump the shell to the review screen */
   onImported?: (tables: number) => void;
+  /** the top-bar search text — highlights matching entities and dims the rest */
+  query?: string;
   busy?: boolean;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [panel, setPanel] = useState<ReadOnlyPanelTab | null>(null);
   const [creatingArea, setCreatingArea] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [query] = useState("");
   const canvasRef = useRef<ModelCanvasHandle | null>(null);
 
   const caps: Capabilities = useMemo(
