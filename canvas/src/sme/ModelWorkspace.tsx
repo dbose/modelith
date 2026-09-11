@@ -140,6 +140,25 @@ export function ModelWorkspace({
 
       {creatingArea && (
         <NewSubjectAreaModal
+          objects={doc.entities.flatMap((e) =>
+            e.conceptual
+              ? [
+                  {
+                    id: e.conceptual.id,
+                    kind: "conceptual_entity" as const,
+                    name: e.conceptual.name,
+                    definition: e.conceptual.definition ?? null,
+                    synonyms: [],
+                    subject_area: e.conceptual.subject_area ?? null,
+                    // the picker only reads id/name/definition; the rest of the
+                    // GlossaryTerm shape is filled with empties to satisfy the type.
+                    stewardship: null,
+                    ontology: null,
+                    where_used: [],
+                  },
+                ]
+              : [],
+          )}
           onClose={() => setCreatingArea(false)}
           onCreate={(name, definition, members) => {
             // Client-minted so the area keeps its identity from preview to PR, and
