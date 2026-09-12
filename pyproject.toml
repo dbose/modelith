@@ -27,6 +27,7 @@ dependencies = [
     "python-multipart>=0.0.18",
     "pygls>=2.0",
     "sqlglot>=25",
+    "mcp>=1.2,<2",
 ]
 
 # Optional OpenTelemetry export for the audit log (spec §20). `pip install
@@ -70,6 +71,7 @@ dev-mode-dirs = [
     "packages/catalog/src",
     "packages/server/src",
     "packages/lsp/src",
+    "packages/mcp/src",
     "packages/adapters/collibra/src",
 ]
 

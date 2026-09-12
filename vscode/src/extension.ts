@@ -2,7 +2,9 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import type { LanguageClient } from "vscode-languageclient/node";
 import { CanvasManager } from "./canvasPanel";
+import { registerChatParticipant } from "./chatParticipant";
 import { executeLspCommand, startLsp } from "./lspClient";
+import { registerMcpProvider } from "./mcpProvider";
 import {
   findDbtProjectDir,
   findManifestPath,
@@ -28,6 +30,12 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
 
   canvas = new CanvasManager(out);
   ctx.subscriptions.push({ dispose: () => canvas.dispose() });
+
+  // AI surfaces: the bundled MCP server (Copilot Chat agent mode) and the
+  // `@modelith` chat participant (ask mode). Both are internally guarded against
+  // hosts that lack their API, so a failure here never blocks the LSP or canvas.
+  registerMcpProvider(ctx);
+  registerChatParticipant(ctx);
 
   // After a window reload VS Code restores our webview panels, but the `mdl serve`
   // child died with the old extension host, so the restored iframe points at a

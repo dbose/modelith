@@ -43,6 +43,27 @@ embeds the live canvas, so whatever the CLI understands, the editor shows.
   locations. A standard `uv tool install modelith-dbt` needs no configuration. If nothing
   matches, run `which mdl` in the integrated terminal and set that as `modelith.mdlPath`.
 
+## AI assistance (Copilot Chat)
+
+Modelith registers two AI integrations, one per Copilot Chat mode. Both use the same
+`mdl` engine already detected for everything else — no `mcp.json` to write, no separate
+install.
+
+- **Agent mode — Modelith MCP tools.** In Copilot Chat's *Agent* mode the model is available
+  as tools: `list_entities`, `get_entity`, `search_ontology`, `get_model_context`, `validate`,
+  and the write tools `create_entity` / `update_entity`. The agent can ground itself in what
+  already exists, search the ontology for an alignment, and write validated entities straight
+  into your checkout (direct-write — you review the git diff, the same trust boundary as the
+  CLI). The tools **only run in Agent mode**: tool invocation needs the plan/act/observe loop
+  that Ask mode does not have. The server is the `mdl mcp` subcommand, registered automatically
+  on activation and scoped to your workspace model. Requires VS Code 1.99+ (older hosts keep
+  every other feature; only the tools are absent).
+- **Ask mode — `@modelith`.** In *Ask* mode, where MCP tools cannot run, type `@modelith` and
+  ask about the model: name an entity for its attributes / ontology alignment / relationships,
+  `@modelith /list` for the entity list, `@modelith /explain <entity>` for one in full, or a
+  general question for a model summary. It reads the model through the same query layer the MCP
+  tools use, so the two modes answer consistently.
+
 ## Devcontainers
 
 The extension declares `"extensionKind": ["workspace"]`, so in a devcontainer it runs inside

@@ -39,6 +39,7 @@ FORCE_INCLUDE = {
     "packages/catalog/src/mdl_catalog": "mdl_catalog",
     "packages/server/src/mdl_server": "mdl_server",
     "packages/lsp/src/mdl_lsp": "mdl_lsp",
+    "packages/mcp/src/mdl_mcp": "mdl_mcp",
     "packages/adapters/collibra/src/mdl_adapter_collibra": "mdl_adapter_collibra",
 }
 

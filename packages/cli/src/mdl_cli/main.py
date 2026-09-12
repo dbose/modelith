@@ -1677,6 +1677,67 @@ def lsp() -> None:
     lsp_main()
 
 
+model_app = typer.Typer(
+    help="Read the model as JSON (the shared query layer behind the AI surfaces)."
+)
+app.add_typer(model_app, name="model")
+
+
+@model_app.command("context")
+def model_context(model_dir: Path = typer.Option(Path("."), "--model-dir", "-m")) -> None:
+    """Print a condensed model summary (project, counts, subject areas, relationships)
+    as JSON — sized for a chat context window. Backs `@modelith` in VS Code Ask mode
+    and the MCP `get_model_context` tool."""
+    from mdl_core.query import get_model_context
+
+    typer.echo(json.dumps(get_model_context(_load(model_dir).model), default=str))
+
+
+@model_app.command("entities")
+def model_entities(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    subject_area: str = typer.Option(None, "--subject-area", help="Scope by area name or ULID"),
+) -> None:
+    """List logical entities (name, definition, attribute count, subject area) as JSON."""
+    from mdl_core.query import list_entities
+
+    typer.echo(json.dumps(list_entities(_load(model_dir).model, subject_area), default=str))
+
+
+@model_app.command("entity")
+def model_entity(
+    name: str = typer.Argument(..., help="Entity name or ULID"),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+) -> None:
+    """Print one entity's full detail (attributes, conceptual layer, relationships) as
+    JSON. Exits 1 with an error object if no entity matches."""
+    from mdl_core.query import get_entity
+
+    hit = get_entity(_load(model_dir).model, name)
+    if hit is None:
+        typer.echo(json.dumps({"error": f"no entity named {name!r}"}))
+        raise typer.Exit(1)
+    typer.echo(json.dumps(hit, default=str))
+
+
+@app.command()
+def mcp(
+    repo: Path = typer.Option(
+        Path("."), "--repo", "-m", help="Model repo directory (contains mdl-project.yaml)"
+    ),
+) -> None:
+    """Start the Modelith MCP server (stdio) — model + ontology tools for an AI
+    agent (VS Code Copilot Chat in agent mode, Claude Desktop, Cursor).
+
+    Reads (list_entities, get_entity, search_ontology, get_model_context, validate)
+    and writes (create_entity, update_entity) share the same core query + command
+    engine as the CLI and canvas. Writes go straight to this checkout — the
+    engineer's own trust boundary, not the SME propose-as-PR flow."""
+    from mdl_mcp.server import run as mcp_run
+
+    mcp_run(repo)
+
+
 @app.command()
 def serve(
     model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),

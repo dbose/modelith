@@ -42,9 +42,34 @@
     "workspace"
   ],
   "activationEvents": [
-    "workspaceContains:**/mdl-project.yaml"
+    "workspaceContains:**/mdl-project.yaml",
+    "onChatParticipant:modelith.chat"
   ],
   "contributes": {
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "modelith.mcp",
+        "label": "Modelith"
+      }
+    ],
+    "chatParticipants": [
+      {
+        "id": "modelith.chat",
+        "name": "modelith",
+        "fullName": "Modelith",
+        "description": "Ask about entities, relationships, and ontology alignment in this model.",
+        "commands": [
+          {
+            "name": "explain",
+            "description": "Explain one entity: its attributes, ontology alignment, and relationships."
+          },
+          {
+            "name": "list",
+            "description": "List the model's entities."
+          }
+        ]
+      }
+    ],
     "commands": [
       {
         "command": "modelith.validate",
