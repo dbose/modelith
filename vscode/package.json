@@ -71,6 +71,10 @@
         "title": "Modelith: Open Canvas"
       },
       {
+        "command": "modelith.import",
+        "title": "Modelith: Import to Model"
+      },
+      {
         "command": "modelith.stopServer",
         "title": "Modelith: Stop Canvas Server"
       },
@@ -157,6 +161,11 @@
           "group": "modelith"
         },
         {
+          "command": "modelith.import",
+          "when": "resourceExtname == .sql || resourceExtname == .mmd",
+          "group": "modelith"
+        },
+        {
           "command": "modelith.openPreview",
           "when": "resourceExtname == .sql || resourceExtname == .yaml",
           "group": "modelith"
@@ -166,6 +175,11 @@
         {
           "command": "modelith.liftModel",
           "when": "resourceExtname == .sql",
+          "group": "modelith"
+        },
+        {
+          "command": "modelith.import",
+          "when": "resourceExtname == .sql || resourceExtname == .mmd",
           "group": "modelith"
         },
         {

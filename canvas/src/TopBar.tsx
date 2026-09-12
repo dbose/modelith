@@ -23,6 +23,7 @@ export function TopBar({
   exec,
   onImported,
   onImportBatch,
+  openImport,
 }: {
   doc: ModelDoc;
   diagnostics: DiagnosticsDoc | null;
@@ -46,6 +47,8 @@ export function TopBar({
   onImported?: (tables: number) => void;
   /** batch applier for an import (avoids the per-op fingerprint race) */
   onImportBatch?: (changes: { op: string; payload: Record<string, unknown> }[]) => Promise<unknown>;
+  /** open the Import wizard immediately (VS Code "Import to Model" via `?import=1`) */
+  openImport?: boolean;
 }) {
   const errors = diagnostics?.items.filter((d) => d.severity === "error").length ?? 0;
   const warnings = diagnostics?.items.filter((d) => d.severity === "warning").length ?? 0;
@@ -145,6 +148,7 @@ export function TopBar({
           submitLabel="Import"
           buttonClass="tool-btn"
           applyBatch={onImportBatch}
+          openImport={openImport}
         />
       </div>
     </header>

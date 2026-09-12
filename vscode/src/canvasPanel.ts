@@ -19,19 +19,28 @@ export class CanvasManager {
 
   constructor(private out: vscode.OutputChannel) {}
 
-  async open(modelDir: string): Promise<void> {
+  /** Open (or reveal) the canvas. `query` (e.g. "import=1") is appended to the
+   * canvas URL — the "Import to Model" command passes it so the same Import
+   * wizard the toolbar button opens is already up when the panel appears. When a
+   * query is given we rewrite the iframe even on an already-open panel, so the
+   * wizard opens whether or not the canvas was already showing. */
+  async open(modelDir: string, query?: string): Promise<void> {
     const cfg = vscode.workspace.getConfiguration("modelith");
     await this.ensureServer(modelDir);
     const local = vscode.Uri.parse(`http://127.0.0.1:${this.port}/`);
     const external = await vscode.env.asExternalUri(local);
+    const url = external.toString().replace(/\/$/, "") + "/" + (query ? `?${query}` : "");
 
     if (cfg.get<string>("canvas.display") === "external") {
-      await vscode.env.openExternal(external);
-      vscode.window.setStatusBarMessage(`Modelith canvas: ${external.toString()}`, 5000);
+      await vscode.env.openExternal(vscode.Uri.parse(url));
+      vscode.window.setStatusBarMessage(`Modelith canvas: ${url}`, 5000);
       return;
     }
 
     if (this.panel) {
+      // Re-point the iframe when a query asks for a specific view (e.g. import);
+      // a plain re-open just reveals what is already there.
+      if (query) this.panel.webview.html = this.html(url);
       this.panel.reveal();
       return;
     }
@@ -42,7 +51,7 @@ export class CanvasManager {
       { enableScripts: true, retainContextWhenHidden: true },
     );
     this.panel.iconPath = undefined;
-    this.panel.webview.html = this.html(external.toString());
+    this.panel.webview.html = this.html(url);
     this.panel.onDidDispose(() => (this.panel = undefined));
   }
 

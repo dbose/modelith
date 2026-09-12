@@ -16,6 +16,7 @@ export function ImportExportMenu({
   submitLabel = "Import & review",
   buttonClass = "erd-action ghost",
   applyBatch,
+  openImport = false,
 }: {
   exec: Exec;
   canEdit: boolean;
@@ -31,8 +32,14 @@ export function ImportExportMenu({
    *  to avoid the per-command fingerprint race; when absent, changes go one at a time
    *  through the staging exec, which is already batch-safe. */
   applyBatch?: (changes: { op: string; payload: Record<string, unknown> }[]) => Promise<unknown>;
+  /** pop the Import panel open on mount — the VS Code "Import to Model" command
+   *  reveals the canvas with `?import=1`, so the same wizard the toolbar button
+   *  opens is already up when the panel appears. */
+  openImport?: boolean;
 }) {
-  const [open, setOpen] = useState<"export" | "import" | null>(null);
+  const [open, setOpen] = useState<"export" | "import" | null>(
+    openImport && canEdit ? "import" : null,
+  );
   const [formats, setFormats] = useState<ExportFormat[]>([]);
   const [dialect, setDialect] = useState("postgres");
   const wrapRef = useRef<HTMLDivElement | null>(null);

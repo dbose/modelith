@@ -57,6 +57,9 @@ function Canvas() {
   const caps = useMemo(() => directCapabilities(readOnly), [readOnly]);
   const urlParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const minimal = urlParams.get("minimal") === "1";
+  // The VS Code "Modelith: Import to Model" command reveals the canvas with
+  // `?import=1`, so the Import wizard is already open when the panel appears.
+  const openImport = urlParams.get("import") === "1";
   const initialFocusDone = useRef(false);
 
   const refresh = useCallback(() => {
@@ -222,6 +225,7 @@ function Canvas() {
         exec={exec}
         onImported={refresh}
         onImportBatch={applyImportBatch}
+        openImport={openImport}
       />
       )}
       <div className="canvas-wrap">
