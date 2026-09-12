@@ -5,10 +5,15 @@ import { findMdl, findModelDir, runMdl } from "./mdl";
  * structurally cannot run (no agentic loop to invoke them from). It answers about
  * the model itself: entities, relationships, ontology alignment.
  *
- * The handler is solely responsible for the response, so it does basic intent
- * routing here rather than expecting the model to pick sub-tasks. It reaches the
- * model through the SAME query layer the MCP server exposes, via `mdl model …`
- * JSON reads — one query layer in `packages/core`, two frontends, no drift. */
+ * Intent handling is LLM-backed. The chat-participant API hands us `request.model`
+ * — the user's own already-authenticated Copilot model — so for free-text asks we
+ * GROUND with the real model facts (fetched through the same `mdl model` query
+ * layer the MCP server uses) and let that model compose the answer, pinned to the
+ * facts so it can't invent entities. Exact `/list` and `/explain <name>` keep a
+ * fast deterministic template; anything else — a question, a typo'd name, a
+ * multi-part ask — goes through the model. If no model is available (rare in
+ * Copilot Chat), a heuristic name match is the fallback, so the participant still
+ * works. One query layer in `packages/core`, two frontends, no drift. */
 
 interface ModelContext {
   project: string;
@@ -18,13 +23,28 @@ interface ModelContext {
   relationships: { name: string; from: string; to: string }[];
 }
 
+interface EntityRow {
+  name: string;
+  definition: string | null;
+  attribute_count: number;
+  subject_area: string | null;
+}
+
+interface EntityDetail {
+  name: string;
+  definition: string | null;
+  pattern: string | null;
+  conceptual: { name: string; ontology: string | null; ontology_layer: string | null } | null;
+  attributes: { name: string; domain: string | null; nullable: boolean; ontology: string | null }[];
+  relationships: { name: string; from: string; to: string }[];
+}
+
 /** Run an `mdl model …` read and parse its JSON stdout. Throws with the CLI's own
  * message on a non-zero exit so the handler can surface it. */
 async function readModel<T>(dir: string, args: string[]): Promise<T> {
   const bin = await findMdl(dir);
   const r = await runMdl(bin, [...args, "-m", dir], dir);
   if (r.code !== 0) {
-    // read commands print an {error} object on stdout, else the message is on stderr
     try {
       const obj = JSON.parse(r.stdout);
       if (obj?.error) throw new Error(obj.error);
@@ -52,7 +72,7 @@ export function registerChatParticipant(ctx: vscode.ExtensionContext): void {
   // crashes on an older host that lacks it (as the MCP guard does for 1.99+).
   if (!vscode.chat?.createChatParticipant) return;
 
-  const handler: vscode.ChatRequestHandler = async (request, _context, stream, _token) => {
+  const handler: vscode.ChatRequestHandler = async (request, _context, stream, token) => {
     const dir = await findModelDir();
     if (!dir) {
       stream.markdown(
@@ -63,20 +83,38 @@ export function registerChatParticipant(ctx: vscode.ExtensionContext): void {
     }
 
     try {
-      if (request.command === "explain") {
-        await explainEntity(dir, request.prompt.trim(), stream);
-        return;
-      }
       if (request.command === "list") {
-        await listEntities(dir, stream);
+        await renderList(dir, stream);
         return;
       }
-      // No slash command: infer intent from the prompt. A single entity name that
-      // matches the model is treated as "explain it"; otherwise summarise + point
-      // at the commands. Kept deliberately simple — Ask mode has no tool loop.
-      const named = request.prompt.trim();
-      if (named && (await tryExplain(dir, named, stream))) return;
-      await summarise(dir, request.prompt, stream);
+
+      const prompt = request.prompt.trim();
+      const rows = await readModel<EntityRow[]>(dir, ["model", "entities"]);
+      const names = rows.map((r) => r.name);
+
+      // Fast path: the prompt (after an optional /explain) IS an exact entity name.
+      // Render the deterministic card without an LLM round-trip.
+      const exact = names.find((n) => n.toLowerCase() === prompt.toLowerCase());
+      if (exact) {
+        await renderEntity(dir, exact, stream);
+        return;
+      }
+
+      // Everything else — a question, a name buried in a sentence, a typo — is
+      // resolved by the user's Copilot model, grounded in the real model facts.
+      if (request.model) {
+        await answerWithModel(dir, request, rows, stream, token);
+        return;
+      }
+
+      // No language model available: fall back to a heuristic name match, then a
+      // structural summary, so the participant still does something useful.
+      const guessed = guessEntity(prompt, names);
+      if (guessed) {
+        await renderEntity(dir, guessed, stream);
+        return;
+      }
+      await renderSummary(dir, stream);
     } catch (e) {
       stream.markdown(`\n\n⚠️ ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -87,40 +125,92 @@ export function registerChatParticipant(ctx: vscode.ExtensionContext): void {
   ctx.subscriptions.push(participant);
 }
 
-async function explainEntity(
+/** Ground the user's Copilot model with the model's facts and stream its answer.
+ *
+ * We assemble a compact fact sheet — the entity roster, the condensed model
+ * context, and (when the question clearly concerns specific entities) their full
+ * detail — and instruct the model to answer ONLY from it. Deterministic data,
+ * natural-language reasoning: it handles "what connects to instrument?", "which
+ * entities have no ontology alignment?", and a fuzzy "explain the instrument
+ * entity, everything about it" alike. */
+async function answerWithModel(
+  dir: string,
+  request: vscode.ChatRequest,
+  rows: EntityRow[],
+  stream: vscode.ChatResponseStream,
+  token: vscode.CancellationToken,
+): Promise<void> {
+  const names = rows.map((r) => r.name);
+  const context = await readModel<ModelContext>(dir, ["model", "context"]);
+
+  // Pull detail for any entity the prompt names, so the model can answer about
+  // attributes/relationships without guessing. Bounded to keep the prompt small.
+  const mentioned = names
+    .filter((n) => request.prompt.toLowerCase().includes(n.toLowerCase()))
+    .slice(0, 4);
+  const details: EntityDetail[] = [];
+  for (const n of mentioned) {
+    try {
+      details.push(await readModel<EntityDetail>(dir, ["model", "entity", n]));
+    } catch {
+      /* skip an entity that vanished between the list and the read */
+    }
+  }
+
+  const facts = JSON.stringify(
+    { entities: names, context, detail: details },
+    null,
+    2,
+  );
+
+  const system =
+    "You are Modelith, a data-modeling assistant answering about ONE specific model " +
+    "inside VS Code. Answer the user's question using ONLY the JSON facts provided — " +
+    "the model's entities, subject areas, relationships, and any entity detail. Do not " +
+    "invent entities, attributes, or alignments that are not in the facts; if the answer " +
+    "is not derivable from them, say so and suggest `@modelith /list`. Be concise, use " +
+    "Markdown, and prefer the model's own names verbatim. This is read-only: for editing, " +
+    "point the user to Copilot Agent mode where the Modelith tools run.";
+
+  const messages = [
+    vscode.LanguageModelChatMessage.User(`${system}\n\nMODEL FACTS:\n${facts}`),
+    vscode.LanguageModelChatMessage.User(request.prompt),
+  ];
+
+  try {
+    const res = await request.model.sendRequest(messages, {}, token);
+    for await (const chunk of res.text) stream.markdown(chunk);
+  } catch (e) {
+    // The model call can fail (consent not granted, quota, offline). Fall back to
+    // the heuristic so the user still gets an answer, not a dead end.
+    const guessed = guessEntity(request.prompt, names);
+    if (guessed) {
+      await renderEntity(dir, guessed, stream);
+      return;
+    }
+    await renderSummary(dir, stream);
+    stream.markdown(
+      `\n\n_(Couldn't reach a language model — ${e instanceof Error ? e.message : String(e)} — ` +
+        "so I answered from the model's structure directly.)_",
+    );
+  }
+}
+
+/** Heuristic entity pick for the no-LLM fallback: the longest entity name that
+ * appears as a word-ish substring of the prompt. Deliberately simple. */
+function guessEntity(prompt: string, names: string[]): string | undefined {
+  const p = prompt.toLowerCase();
+  return names
+    .filter((n) => p.includes(n.toLowerCase()))
+    .sort((a, b) => b.length - a.length)[0];
+}
+
+async function renderEntity(
   dir: string,
   name: string,
   stream: vscode.ChatResponseStream,
 ): Promise<void> {
-  if (!name) {
-    stream.markdown("Usage: `@modelith /explain <entity name>`");
-    return;
-  }
-  if (!(await tryExplain(dir, name, stream))) {
-    stream.markdown(`No entity named **${name}** in the model. Try \`@modelith /list\`.`);
-  }
-}
-
-/** Render one entity if it exists; return false if it does not. */
-async function tryExplain(
-  dir: string,
-  name: string,
-  stream: vscode.ChatResponseStream,
-): Promise<boolean> {
-  interface Entity {
-    name: string;
-    definition: string | null;
-    pattern: string | null;
-    conceptual: { name: string; ontology: string | null; ontology_layer: string | null } | null;
-    attributes: { name: string; domain: string | null; nullable: boolean; ontology: string | null }[];
-    relationships: { name: string; from: string; to: string }[];
-  }
-  let e: Entity;
-  try {
-    e = await readModel<Entity>(dir, ["model", "entity", name]);
-  } catch {
-    return false; // unknown entity → let the caller decide the message
-  }
+  const e = await readModel<EntityDetail>(dir, ["model", "entity", name]);
   stream.markdown(`### ${e.name}\n`);
   if (e.definition) stream.markdown(`${e.definition}\n\n`);
   if (e.conceptual?.ontology) {
@@ -141,17 +231,10 @@ async function tryExplain(
     stream.markdown("**Relationships**\n");
     for (const r of e.relationships) stream.markdown(`- ${r.from} → ${r.to} (${r.name})\n`);
   }
-  return true;
 }
 
-async function listEntities(dir: string, stream: vscode.ChatResponseStream): Promise<void> {
-  interface Row {
-    name: string;
-    definition: string | null;
-    attribute_count: number;
-    subject_area: string | null;
-  }
-  const rows = await readModel<Row[]>(dir, ["model", "entities"]);
+async function renderList(dir: string, stream: vscode.ChatResponseStream): Promise<void> {
+  const rows = await readModel<EntityRow[]>(dir, ["model", "entities"]);
   if (!rows.length) {
     stream.markdown("The model has no entities yet.");
     return;
@@ -163,11 +246,7 @@ async function listEntities(dir: string, stream: vscode.ChatResponseStream): Pro
   }
 }
 
-async function summarise(
-  dir: string,
-  prompt: string,
-  stream: vscode.ChatResponseStream,
-): Promise<void> {
+async function renderSummary(dir: string, stream: vscode.ChatResponseStream): Promise<void> {
   const ctx = await readModel<ModelContext>(dir, ["model", "context"]);
   stream.markdown(
     `**${ctx.project}** — ${ctx.counts.entities} entities, ` +
@@ -188,7 +267,4 @@ async function summarise(
       "`@modelith /list`. For editing, switch Copilot Chat to **Agent mode** — the " +
       "Modelith tools (create/update entities, ontology search) run there.",
   );
-  if (prompt.trim()) {
-    stream.markdown(`\n\n_(I answer from the model directly, so I focused on its structure.)_`);
-  }
 }
