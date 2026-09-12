@@ -6,6 +6,7 @@ import { registerChatParticipant } from "./chatParticipant";
 import { DriftCodeActionProvider, DriftManager } from "./driftDiagnostics";
 import { DriftTreeProvider } from "./driftView";
 import { executeLspCommand, startLsp } from "./lspClient";
+import { type Decision, ReverseReviewProvider } from "./reverseView";
 import { registerMcpProvider } from "./mcpProvider";
 import {
   findDbtProjectDir,
@@ -21,6 +22,14 @@ import { registerSchemas } from "./schemas";
 
 let canvas: CanvasManager;
 let client: LanguageClient | undefined;
+
+/** Extract the Decision from a Reverse-tree node passed to an inline command. */
+function decisionOf(node: unknown): Decision | undefined {
+  if (node && typeof node === "object" && "decision" in node) {
+    return (node as { decision: Decision }).decision;
+  }
+  return undefined;
+}
 
 export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   const out = vscode.window.createOutputChannel("Modelith");
@@ -75,6 +84,12 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
       driftStatus.show();
     }),
   );
+
+  // Reverse Review: the decision-ledger proposals from `mdl reverse`, in a tree with
+  // Accept/Reject actions — the editor form of `mdl reverse --interactive`.
+  const reverse = new ReverseReviewProvider(out);
+  ctx.subscriptions.push(vscode.window.registerTreeDataProvider("modelithReverse", reverse));
+  void reverse.refresh();
 
   // After a window reload VS Code restores our webview panels, but the `mdl serve`
   // child died with the old extension host, so the restored iframe points at a
@@ -366,6 +381,72 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   cmd("modelith.driftFocusView", () =>
     vscode.commands.executeCommand("modelithDrift.focus"),
   );
+
+  // --- reverse engineering -----------------------------------------------------
+
+  cmd("modelith.reverse", () =>
+    withModelDir(async (dir) => {
+      const source = await vscode.window.showQuickPick(
+        [
+          { label: "$(package) dbt project", detail: "manifest.json or an emitted schema.yml", id: "dbt" },
+          { label: "$(file-code) SQL DDL file", detail: "a CREATE TABLE … script", id: "ddl" },
+          { label: "$(database) Live database connection", detail: "coming soon (Phase 2)", id: "live" },
+        ],
+        { placeHolder: "Reverse-engineer from which source?" },
+      );
+      if (!source) return;
+      if (source.id === "live") {
+        void vscode.window.showInformationMessage(
+          "Live-database reverse (via a dbt profile) is coming in a later release. For now, reverse from a dbt project or a SQL DDL file.",
+        );
+        return;
+      }
+      const picked = await vscode.window.showOpenDialog({
+        canSelectMany: false,
+        openLabel: source.id === "ddl" ? "Reverse this DDL" : "Reverse this dbt artifact",
+        filters:
+          source.id === "ddl"
+            ? { "SQL DDL": ["sql"] }
+            : { "dbt artifacts": ["json", "yml", "yaml"] },
+      });
+      if (!picked || picked.length === 0) return;
+      const src = picked[0].fsPath;
+      const bin = await findMdl(dir);
+      const args =
+        source.id === "ddl"
+          ? ["reverse", "--ddl", src, "-o", ".", "--no-review"]
+          : ["reverse", "--project", src, "-o", ".", "--no-review"];
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: "Modelith: reverse-engineering…" },
+        async () => {
+          const r = await runMdl(bin, args, dir);
+          out.appendLine(r.stdout + r.stderr);
+          if (r.code !== 0) {
+            void vscode.window
+              .showErrorMessage("Modelith: reverse failed.", "Show Output")
+              .then((a) => a && out.show());
+            return;
+          }
+          const summary = r.stdout.split("\n").find((l) => l.includes("reversed")) ?? "reverse complete";
+          void vscode.window.showInformationMessage(`Modelith: ${summary.trim()}`);
+        },
+      );
+      await reverse.refresh();
+      void vscode.commands.executeCommand("modelithReverse.focus");
+    }),
+  );
+
+  cmd("modelith.reverseRefresh", () => reverse.refresh());
+
+  cmd("modelith.reverseAccept", (node: unknown) => {
+    const d = decisionOf(node);
+    if (d) void reverse.setVerdict(d.signal_key, "accept");
+  });
+
+  cmd("modelith.reverseReject", (node: unknown) => {
+    const d = decisionOf(node);
+    if (d) void reverse.setVerdict(d.signal_key, "reject");
+  });
 
   cmd("modelith.lintFix", () =>
     withModelDir(async (dir) => {

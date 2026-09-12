@@ -1366,9 +1366,31 @@ app.add_typer(decisions_app, name="decisions")
 def decisions_list(
     model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
     pending: bool = typer.Option(False, "--pending", help="Only unreviewed proposals"),
+    fmt: str = typer.Option(
+        "text", "--format", help="text|json (json feeds the VS Code review UI)"
+    ),
 ) -> None:
     ledger = DecisionLedger.load(model_dir)
     items = ledger.pending() if pending else list(ledger.decisions.values())
+    if fmt == "json":
+        typer.echo(
+            json.dumps(
+                [
+                    {
+                        "signal_key": d.signal_key,
+                        "kind": d.kind,
+                        "signal": d.signal,
+                        "confidence": d.confidence.value,
+                        "verdict": d.verdict.value,
+                        "subject": d.subject,
+                        "evidence": d.evidence,
+                    }
+                    for d in items
+                ],
+                default=str,
+            )
+        )
+        return
     for d in items:
         mark = {"accepted": "✓", "rejected": "✗", "proposed": "?"}[d.verdict.value]
         typer.echo(f"  {mark} [{d.confidence.value:11}] {d.signal_key}  {d.subject}")
