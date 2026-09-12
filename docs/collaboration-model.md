@@ -1,6 +1,6 @@
 # Modelith: Collaboration Model
 
-**Spec addendum to `modelith-spec.md`.**
+**Spec addendum to [`specs/modelith-spec.md`](../specs/modelith-spec.md).**
 
 > **Implementation status.** Mechanics shipped: `mdl classify` (routes A–E, §4),
 > semantic merge driver + `mdl init --git-hooks` (§6.1, verified against real

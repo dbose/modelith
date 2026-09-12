@@ -1119,7 +1119,7 @@ cd vscode && npm install && npm run build && npm run package   # produces the .v
   team from an empty repo to a working practice (platform, then SMEs, architects, engineers).
 - [`docs/collaboration-model.md`](docs/collaboration-model.md): the operating model, review
   routes, and the merge driver.
-- [`modelith-spec.md`](modelith-spec.md): the full build specification.
+- [`modelith-spec.md`](specs/modelith-spec.md): the full build specification.
 
 ## License
 
