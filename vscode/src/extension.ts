@@ -3,6 +3,8 @@ import * as vscode from "vscode";
 import type { LanguageClient } from "vscode-languageclient/node";
 import { CanvasManager } from "./canvasPanel";
 import { registerChatParticipant } from "./chatParticipant";
+import { DriftCodeActionProvider, DriftManager } from "./driftDiagnostics";
+import { DriftTreeProvider } from "./driftView";
 import { executeLspCommand, startLsp } from "./lspClient";
 import { registerMcpProvider } from "./mcpProvider";
 import {
@@ -38,6 +40,41 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   // hosts that lack their API, so a failure here never blocks the LSP or canvas.
   registerMcpProvider(ctx);
   registerChatParticipant(ctx);
+
+  // Drift surfacing: one DriftManager owns the drift diagnostics + the last report;
+  // the tree view and code-action provider read from it. A status-bar item reflects
+  // the drift state and reveals the view.
+  const drift = new DriftManager(out);
+  ctx.subscriptions.push({ dispose: () => drift.dispose() });
+  const driftStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 89);
+  driftStatus.command = "modelith.driftFocusView";
+  ctx.subscriptions.push(driftStatus);
+  const driftTree = new DriftTreeProvider(drift, findModelDir);
+  ctx.subscriptions.push(
+    vscode.window.registerTreeDataProvider("modelithDrift", driftTree),
+    vscode.languages.registerCodeActionsProvider(
+      [
+        { scheme: "file", language: "yaml" },
+        { scheme: "file", pattern: "**/*.yaml" },
+      ],
+      new DriftCodeActionProvider(drift),
+      { providedCodeActionKinds: DriftCodeActionProvider.kinds },
+    ),
+    drift.onDidChange((report) => {
+      if (!report || report.items.length === 0) {
+        driftStatus.text = "$(check) Drift: clean";
+        driftStatus.tooltip = "No drift vs the dbt manifest";
+      } else {
+        const b = report.breaking_count;
+        const safe = report.safe_count;
+        driftStatus.text = b
+          ? `$(error) Drift: ${b} breaking`
+          : `$(warning) Drift: ${safe} safe`;
+        driftStatus.tooltip = `${b} breaking, ${safe} safe to reconcile — click to view`;
+      }
+      driftStatus.show();
+    }),
+  );
 
   // After a window reload VS Code restores our webview panels, but the `mdl serve`
   // child died with the old extension host, so the restored iframe points at a
@@ -269,29 +306,65 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
 
   cmd("modelith.driftCheck", () =>
     withModelDir(async (dir) => {
-      const manifest = await findManifestPath();
-      if (!manifest) {
-        void vscode.window.showWarningMessage(
-          "Modelith: no manifest.json found — run `dbt parse` (or set modelith.manifestPath).",
+      // Populate the Problems panel + the Drift tree + the status bar from one
+      // `mdl drift --explain --format json` run (in DriftManager), replacing the old
+      // text-dump-to-output behaviour.
+      const report = await drift.check(dir);
+      if (!report) return;
+      if (report.items.length === 0) {
+        void vscode.window.setStatusBarMessage("Modelith: no drift ✓", 4000);
+      } else {
+        void vscode.commands.executeCommand("modelithDrift.focus");
+      }
+    }),
+  );
+
+  cmd("modelith.driftReconcile", () =>
+    withModelDir(async (dir) => {
+      const report = drift.report;
+      const safe = report?.safe_count ?? 0;
+      if (safe === 0) {
+        void vscode.window.showInformationMessage(
+          "Modelith: no safe (additive/cosmetic) drift to reconcile. Breaking drift needs a human decision.",
         );
         return;
       }
+      const ok = await vscode.window.showWarningMessage(
+        `Reconcile ${safe} safe drift change(s) into the model? Breaking changes are left untouched.`,
+        { modal: true },
+        "Reconcile",
+      );
+      if (ok !== "Reconcile") return;
+      const manifest = await findManifestPath();
+      if (!manifest) return;
       const bin = await findMdl(dir);
-      const r = await runMdl(bin, ["drift", "--manifest", manifest, "-m", ".", "--check"], dir);
+      const r = await runMdl(
+        bin,
+        ["drift", "--manifest", manifest, "-m", ".", "--reconcile"],
+        dir,
+      );
       out.appendLine(r.stdout + r.stderr);
-      if (r.code === 2) {
+      if (r.code === 0 || r.code === 2) {
+        void vscode.window.setStatusBarMessage("Modelith: reconciled safe drift ✓", 4000);
+        await drift.check(dir); // refresh diagnostics + tree from the new state
+      } else {
         void vscode.window
-          .showErrorMessage("Modelith: BREAKING drift vs dbt manifest.", "Show Report")
+          .showErrorMessage("Modelith: reconcile failed.", "Show Output")
           .then((a) => a && out.show());
-      } else if (r.code === 0) {
-        const clean = r.stdout.includes("no drift detected");
-        void vscode.window.setStatusBarMessage(
-          clean ? "Modelith: no drift ✓" : "Modelith: non-breaking drift (see output)",
-          5000,
-        );
-        if (!clean) out.show(true);
       }
     }),
+  );
+
+  cmd("modelith.driftExplain", (...args: unknown[]) => {
+    // Hand off to the @modelith chat participant, optionally scoped to one model.
+    const model = typeof args[0] === "string" ? ` ${args[0]}` : "";
+    void vscode.commands.executeCommand("workbench.action.chat.open", {
+      query: `@modelith /drift${model}`,
+    });
+  });
+
+  cmd("modelith.driftFocusView", () =>
+    vscode.commands.executeCommand("modelithDrift.focus"),
   );
 
   cmd("modelith.lintFix", () =>

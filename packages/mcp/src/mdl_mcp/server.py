@@ -109,6 +109,41 @@ def build_server(repo_dir: Path) -> FastMCP:
             }
         )
 
+    @mcp.tool()
+    def explain_drift(manifest: str | None = None, target: str | None = None) -> str:
+        """Compare the committed model to a compiled dbt manifest and return the drift,
+        annotated per item with whether it is safely reconcilable and the concrete
+        action. Severity (breaking / additive / cosmetic) is authoritative — it comes
+        from the engine, not from you; never re-derive it. Breaking items are never
+        auto-reconcilable and need a human decision.
+
+        `manifest` defaults to <repo>/target/manifest.json; `target` defaults to the
+        project's dbt_target. Returns an error object if no manifest is found."""
+        from mdl_reverse.drift import compute_drift
+        from mdl_reverse.explain import explain_report
+        from mdl_reverse.manifest import read_manifest
+        from mdl_reverse.reconcile import model_name_to_ulid
+
+        repo = ModelRepo.load(repo_dir)
+        tgt = target or repo.model.config.dbt_target or "duckdb_dev"
+        man_path = Path(manifest) if manifest else repo_dir / "target" / "manifest.json"
+        if not man_path.is_absolute():
+            man_path = repo_dir / man_path
+        try:
+            proj = read_manifest(man_path)
+        except FileNotFoundError:
+            return _json(
+                {"error": f"no dbt manifest at {man_path} — run `dbt compile` first"}
+            )
+        report = compute_drift(repo.model, proj, tgt)
+        name_to_le = model_name_to_ulid(repo, tgt)
+
+        def _file_for(model_name: str) -> str | None:
+            le_id = name_to_le.get(model_name)
+            return repo.path_for_ulid(le_id) if le_id else None
+
+        return _json(explain_report(report, _file_for))
+
     # --- writes (validated + fingerprint-guarded via apply_command) -------------
 
     @mcp.tool()

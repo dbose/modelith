@@ -1125,6 +1125,7 @@ dependencies = [
     { name = "mcp" },
     { name = "modelith-core" },
     { name = "modelith-ontology" },
+    { name = "modelith-reverse" },
 ]
 
 [package.metadata]
@@ -1132,6 +1133,7 @@ requires-dist = [
     { name = "mcp", specifier = ">=1.2,<2" },
     { name = "modelith-core", editable = "packages/core" },
     { name = "modelith-ontology", editable = "packages/ontology" },
+    { name = "modelith-reverse", editable = "packages/reverse" },
 ]
 
 [[package]]

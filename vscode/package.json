@@ -67,10 +67,33 @@
           {
             "name": "list",
             "description": "List the model's entities."
+          },
+          {
+            "name": "drift",
+            "description": "Explain drift vs the dbt manifest and recommend fixes. Optionally name a model."
           }
         ]
       }
     ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "modelith",
+          "title": "Modelith",
+          "icon": "$(git-compare)"
+        }
+      ]
+    },
+    "views": {
+      "modelith": [
+        {
+          "id": "modelithDrift",
+          "name": "Drift",
+          "icon": "$(git-compare)",
+          "contextualTitle": "Modelith Drift"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "modelith.validate",
@@ -82,7 +105,21 @@
       },
       {
         "command": "modelith.driftCheck",
-        "title": "Modelith: Check Drift vs dbt Manifest"
+        "title": "Modelith: Check Drift vs dbt Manifest",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "modelith.driftReconcile",
+        "title": "Modelith: Reconcile Safe Drift",
+        "icon": "$(check)"
+      },
+      {
+        "command": "modelith.driftExplain",
+        "title": "Modelith: Explain Drift (@modelith)"
+      },
+      {
+        "command": "modelith.driftFocusView",
+        "title": "Modelith: Show Drift View"
       },
       {
         "command": "modelith.lintFix",
@@ -212,6 +249,18 @@
           "command": "modelith.openPreview",
           "when": "resourceExtname == .sql || resourceExtname == .yaml",
           "group": "modelith"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "modelith.driftCheck",
+          "when": "view == modelithDrift",
+          "group": "navigation@1"
+        },
+        {
+          "command": "modelith.driftReconcile",
+          "when": "view == modelithDrift",
+          "group": "navigation@2"
         }
       ]
     }
