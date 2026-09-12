@@ -7,6 +7,7 @@ license = { text = "Apache-2.0" }
 dependencies = [
     "modelith-core",
     "modelith-ontology",
+    "modelith-reverse",
     # v1 FastMCP API. mcp 2.x renamed FastMCP -> MCPServer and is still very new;
     # editor MCP clients (VS Code, Claude Desktop, Cursor) target the v1 stdio
     # server today, so pin below 2 until the ecosystem moves.
@@ -23,3 +24,4 @@ packages = ["src/mdl_mcp"]
 [tool.uv.sources]
 modelith-core = { workspace = true }
 modelith-ontology = { workspace = true }
+modelith-reverse = { workspace = true }

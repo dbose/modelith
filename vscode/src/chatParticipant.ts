@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
-import { findMdl, findModelDir, runMdl } from "./mdl";
+import type { DriftItem, DriftReport } from "./driftDiagnostics";
+import { findManifestPath, findMdl, findModelDir, runMdl } from "./mdl";
 
 /** The `@modelith` chat participant, for Copilot Chat's ASK mode — where MCP tools
  * structurally cannot run (no agentic loop to invoke them from). It answers about
@@ -115,6 +116,10 @@ export function registerChatParticipant(ctx: vscode.ExtensionContext): void {
     try {
       if (request.command === "list") {
         await renderList(dir, stream);
+        return;
+      }
+      if (request.command === "drift") {
+        await driftCommand(dir, request, stream, token);
         return;
       }
 
@@ -323,4 +328,120 @@ async function renderSummary(dir: string, stream: vscode.ChatResponseStream): Pr
       "`@modelith /list`. For editing, switch Copilot Chat to **Agent mode** — the " +
       "Modelith tools (create/update entities, ontology search) run there.",
   );
+}
+
+/** `@modelith /drift [model]` — explain drift vs the dbt manifest.
+ *
+ * Runs `mdl drift --explain --format json` (the same shape the Problems panel and MCP
+ * tool consume), grounds the user's Copilot model on it (severity is authoritative —
+ * the model never re-derives it), and adds a "Reconcile safe changes" button plus a
+ * file reference per affected model. Falls back to a deterministic render when no
+ * language model is available or the drift run has no manifest. */
+async function driftCommand(
+  dir: string,
+  request: vscode.ChatRequest,
+  stream: vscode.ChatResponseStream,
+  token: vscode.CancellationToken,
+): Promise<void> {
+  const manifest = await findManifestPath();
+  if (!manifest) {
+    stream.markdown(
+      "No dbt manifest found. Run `dbt compile` / `dbt parse` (or set " +
+        "`modelith.manifestPath`), then ask again.",
+    );
+    return;
+  }
+  const bin = await findMdl(dir);
+  const r = await runMdl(
+    bin,
+    ["drift", "--manifest", manifest, "-m", ".", "--explain", "--format", "json"],
+    dir,
+  );
+  let report: DriftReport;
+  try {
+    report = JSON.parse(r.stdout) as DriftReport;
+  } catch {
+    stream.markdown(`⚠️ Could not read the drift report. ${r.stderr.trim()}`);
+    return;
+  }
+
+  const scope = request.prompt.trim().toLowerCase();
+  const items = scope
+    ? report.items.filter((i) => i.model.toLowerCase() === scope)
+    : report.items;
+
+  if (items.length === 0) {
+    stream.markdown(
+      scope
+        ? `No drift on **${scope}** vs target \`${report.target}\`.`
+        : `✅ No drift vs target \`${report.target}\` — the model matches the warehouse.`,
+    );
+    return;
+  }
+
+  const facts = JSON.stringify({ ...report, items }, null, 2);
+  const system =
+    "You are Modelith, explaining schema drift between a data model and its compiled " +
+    "dbt warehouse. Use ONLY the JSON drift facts. `severity` (breaking/additive/cosmetic) " +
+    "is authoritative — never re-derive or dispute it. For each breaking item, explain the " +
+    "impact and the recommended remediation from its `reconcile_action` or `payload`, and " +
+    "state plainly that breaking changes need a human decision (they are never " +
+    "auto-reconciled). Additive/cosmetic items are safe to reconcile. Be concise, group by " +
+    "severity, use the model's own names, and use Markdown.";
+
+  if (request.model) {
+    try {
+      const messages = [
+        vscode.LanguageModelChatMessage.User(`${system}\n\nDRIFT FACTS:\n${facts}`),
+        vscode.LanguageModelChatMessage.User(request.prompt || "Explain the drift."),
+      ];
+      const res = await request.model.sendRequest(messages, {}, token);
+      for await (const chunk of res.text) stream.markdown(chunk);
+    } catch {
+      renderDriftFallback(report, items, stream);
+    }
+  } else {
+    renderDriftFallback(report, items, stream);
+  }
+
+  // Actionable trailer: a reconcile button (safe changes only) + file references.
+  if (report.safe_count > 0) {
+    stream.button({
+      command: "modelith.driftReconcile",
+      title: `Reconcile ${report.safe_count} safe change(s)`,
+    });
+  }
+  const files = [...new Set(items.map((i) => i.file).filter((f): f is string => !!f))];
+  for (const f of files) {
+    stream.reference(vscode.Uri.file(`${dir}/${f}`));
+  }
+  if (report.breaking_count > 0) {
+    stream.markdown(
+      `\n\n_${report.breaking_count} breaking change(s) need a human decision — not auto-reconciled._`,
+    );
+  }
+}
+
+/** Deterministic drift narrative when no language model is available. */
+function renderDriftFallback(
+  report: DriftReport,
+  items: DriftItem[],
+  stream: vscode.ChatResponseStream,
+): void {
+  stream.markdown(
+    `**Drift vs \`${report.target}\`** — 🔴 ${report.breaking_count} breaking, ` +
+      `🟢 ${report.safe_count} safe to reconcile.\n\n`,
+  );
+  for (const sev of ["breaking", "additive", "cosmetic", "unmanaged"] as const) {
+    const group = items.filter((i) => i.severity === sev);
+    if (group.length === 0) continue;
+    stream.markdown(`**${sev}** (${group.length})\n`);
+    for (const i of group) {
+      const where = i.column ? `${i.model}.${i.column}` : i.model;
+      stream.markdown(`- \`${where}\` — ${i.detail}`);
+      if (i.reconcile_action) stream.markdown(` _(fix: ${i.reconcile_action})_`);
+      stream.markdown("\n");
+    }
+    stream.markdown("\n");
+  }
 }

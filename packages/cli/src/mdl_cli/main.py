@@ -556,6 +556,13 @@ def drift(
     reconcile_: bool = typer.Option(
         False, "--reconcile", help="Apply additive/cosmetic deltas to the model"
     ),
+    explain: bool = typer.Option(
+        False,
+        "--explain",
+        help="Annotate each item with its reconcile action (safe vs human-gated). "
+        "With --format json emits the structured shape the AI surfaces consume; "
+        "otherwise a deterministic narrative.",
+    ),
     fmt: str = typer.Option("text", "--format", help="text|json|mermaid"),
 ) -> None:
     """Compare the committed model to a compiled dbt manifest (spec §5.4)."""
@@ -587,7 +594,24 @@ def drift(
             )
         )
 
-    if fmt == "json":
+    if explain:
+        # The explained shape carries, per item, whether --reconcile would fold it,
+        # the concrete action, and the owning YAML file — the single structure the
+        # CLI, MCP tool and VS Code drift UI all consume (mdl_reverse.explain).
+        from mdl_reverse.explain import explain_report, render_explain_text
+        from mdl_reverse.reconcile import model_name_to_ulid
+
+        name_to_le = model_name_to_ulid(repo, tgt)
+
+        def _file_for(model_name: str) -> str | None:
+            le_id = name_to_le.get(model_name)
+            return repo.path_for_ulid(le_id) if le_id else None
+
+        if fmt == "json":
+            typer.echo(json.dumps(explain_report(report, _file_for), indent=2, sort_keys=True))
+        else:
+            typer.echo(render_explain_text(report))
+    elif fmt == "json":
         typer.echo(render_json(report))
     elif fmt == "mermaid":
         typer.echo(render_markdown(report))

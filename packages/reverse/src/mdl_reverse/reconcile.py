@@ -46,17 +46,27 @@ def _base_for(sql_type: str | None) -> str:
     return _SQL_TO_BASE.get(sql_type.upper(), "string")
 
 
-def reconcile(repo: ModelRepo, report: DriftReport, target: str) -> ReconcileResult:
-    """Apply additive/cosmetic deltas to repo's raw nodes. Caller then saves."""
-    # Map model_name -> logical entity ULID, so we know which file to edit.
-    name_to_le: dict[str, str] = {}
+def model_name_to_ulid(repo: ModelRepo, target: str) -> dict[str, str]:
+    """Map a drift item's `model` name -> the logical entity's ULID for `target`.
+
+    A drift item names the physical/dbt model; that maps back to the logical entity
+    (via its physical table for the target, else the logical name). Shared so reconcile
+    and the explain/UI layers resolve "which entity/file is this drift about?" the same
+    way rather than each re-deriving it."""
     pt_by_logical = {
         pt.realises: pt for pt in repo.model.physical_tables.values() if pt.target == target
     }
+    name_to_le: dict[str, str] = {}
     for le in repo.model.logical_entities.values():
         pt = pt_by_logical.get(le.id)
         name = pt.name.lower() if pt else le.name
         name_to_le[name] = le.id
+    return name_to_le
+
+
+def reconcile(repo: ModelRepo, report: DriftReport, target: str) -> ReconcileResult:
+    """Apply additive/cosmetic deltas to repo's raw nodes. Caller then saves."""
+    name_to_le = model_name_to_ulid(repo, target)
 
     applied: list[str] = []
     skipped_breaking = 0
