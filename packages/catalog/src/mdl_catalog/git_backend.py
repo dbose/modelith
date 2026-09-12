@@ -187,6 +187,12 @@ class GitBackend:
             raise MaterializeNotSupported(
                 f"could not create branch {branch} in {entry.model}: {out.strip()[:200]}"
             )
+        # A fresh clone inherits no commit identity; on a host without a global
+        # git config (CI, a container) a commit into this checkout would fail with
+        # exit 128. The docstring promises it's "ready to propose from", so make it
+        # so — set a local identity, matching the one publish() commits under.
+        self.runner.run(["config", "user.name", self.author_name], repo_root)
+        self.runner.run(["config", "user.email", self.author_email], repo_root)
         return model_dir
 
     def materialize(self, entry: CatalogEntry, *, refresh: bool = False) -> Path:
