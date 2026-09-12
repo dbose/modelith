@@ -191,6 +191,12 @@ What the extension adds on top of the canvas:
 
 - **Diagnostics on save.** `mdl validate` runs when you save a model YAML and surfaces
   `MDL-*` findings in the Problems panel, mapped to the file that declares the issue.
+- **Drift, surfaced.** *Modelith: Check Drift* compares the model to the compiled dbt
+  manifest and turns the report into first-class VS Code: each finding is a diagnostic on
+  the model file it affects (breaking → error, additive → warning), grouped in a **Drift
+  view** by severity, with a status-bar count. A quick-fix reconciles additive/cosmetic
+  changes; breaking drift is only ever explained, never auto-applied — the same safety
+  boundary the CLI's `--reconcile` enforces.
 - **Language server.** `mdl lsp` drives drift and contract diagnostics on the generated
   dbt files, hover cards (glossary term, ontology IRI, owner), and code actions (adopt a
   column, lift a model, unmanage, declare a relationship).
@@ -233,13 +239,23 @@ relationships — and reasons from the entity's meaning:
 
 ![The @modelith chat participant proposing a composite key (portfolio_code, instrument_id, as_of_date) for the position entity, noting all three are currently nullable so should be non-null for a primary key, and that the model doesn't confirm uniqueness so the business rule needs validating — with a pointer to Agent mode for the edit](docs/assets/chat-participant-keys.png)
 
-There are slash commands for the common asks — `@modelith /list` for the entity list and
-`@modelith /explain <entity>` for one entity in full — but free text works just as well.
+There are slash commands for the common asks — `@modelith /list` for the entity list,
+`@modelith /explain <entity>` for one entity in full, and `@modelith /drift` to explain
+drift vs the dbt warehouse — but free text works just as well.
+
+**Explaining drift.** `@modelith /drift` reads the same drift report the Problems panel
+does and, grounded on it, explains what changed and why it matters. Severity is
+authoritative — it comes from the engine, so the answer never disputes it — and each
+breaking change gets an impact and a recommended remediation, with the explicit note that
+breaking changes need a human decision and are never auto-reconciled. The answer carries a
+"Reconcile safe changes" button and a link to each affected model file.
+
+![The @modelith /drift command answering "Drift summary for price" — a Breaking section (price.price_id dropped from the dbt project, with impact and recommended remediation, noting breaking changes need a human decision and are never auto-reconciled) and an Additive section (price.loyalty_tier exists in dbt but not the model), with a manifest.json reference, beside the model canvas](docs/assets/chat-participant-drift.png)
 
 **Modelith tools in Agent mode.** Switch Copilot Chat to Agent mode and the model is
 available as tools the agent can call in its plan/act loop: `list_entities`, `get_entity`,
-`search_ontology`, `get_model_context`, `validate`, and the write tools `create_entity`
-and `update_entity`. The agent can ground itself in what exists, search the ontology for
+`search_ontology`, `get_model_context`, `validate`, `explain_drift`, and the write tools
+`create_entity` and `update_entity`. The agent can ground itself in what exists, search the ontology for
 an alignment, and write validated entities straight into your checkout — direct-write, so
 you review the git diff, the same trust boundary as the CLI. The server is the `mdl mcp`
 subcommand, registered automatically and scoped to your workspace model (needs VS Code
@@ -331,7 +347,10 @@ sql|mermaid|json-schema` and `mdl export sql|mermaid|dbml|csv`.
 
 **Drift detection.** `mdl drift` compares the committed model to a compiled warehouse and
 classifies each difference as breaking, additive, or cosmetic, with a CI gate mode and a
-reconcile mode. A 400-model breaking change classifies in under thirty seconds.
+reconcile mode. A 400-model breaking change classifies in under thirty seconds. In VS Code
+the same report becomes first-class: findings land in the Problems panel and a Drift view,
+safe changes get a one-click reconcile, and `@modelith /drift` explains what changed — see
+[In VS Code](#in-vs-code) and [Copilot Chat](#ask-the-model-in-copilot-chat).
 
 **Ontology anchoring.** Bind your entities and attributes to industry and enterprise
 ontology terms, browse and search those ontologies from the canvas or your editor, pin
@@ -1049,6 +1068,7 @@ mdl lint [--fix]                                  naming-standards lint
 mdl generate [--target] [--emit-contract] [...]   emit the dbt project (+ optional targets)
 mdl reverse --project <manifest|schema.yml> [--naming <f>]  lift a dbt project into a model
 mdl drift --manifest <m> [--check|--reconcile]    compare model to compiled warehouse
+mdl drift --manifest <m> --explain [--format json]  annotate each drift with its reconcile action
 mdl diff [--base <ref>] [--format json|markdown]  semantic model diff (exit 2 on breaking)
 mdl subject-area list|show|add|remove             scoped views of the model
 mdl subject-area expand [--direction] [--levels]  add related objects (preview by default)
