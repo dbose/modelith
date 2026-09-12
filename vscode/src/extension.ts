@@ -2,14 +2,18 @@ import * as path from "node:path";
 import * as vscode from "vscode";
 import type { LanguageClient } from "vscode-languageclient/node";
 import { CanvasManager } from "./canvasPanel";
+import { registerChatParticipant } from "./chatParticipant";
 import { executeLspCommand, startLsp } from "./lspClient";
+import { registerMcpProvider } from "./mcpProvider";
 import {
   findDbtProjectDir,
   findManifestPath,
   findMdl,
   findModelDir,
+  hasAiCommands,
   resetMdlCache,
   runMdl,
+  upgradeHint,
 } from "./mdl";
 import { registerSchemas } from "./schemas";
 
@@ -28,6 +32,12 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
 
   canvas = new CanvasManager(out);
   ctx.subscriptions.push({ dispose: () => canvas.dispose() });
+
+  // AI surfaces: the bundled MCP server (Copilot Chat agent mode) and the
+  // `@modelith` chat participant (ask mode). Both are internally guarded against
+  // hosts that lack their API, so a failure here never blocks the LSP or canvas.
+  registerMcpProvider(ctx);
+  registerChatParticipant(ctx);
 
   // After a window reload VS Code restores our webview panels, but the `mdl serve`
   // child died with the old extension host, so the restored iframe points at a
@@ -99,6 +109,24 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
         ctx.environmentVariableCollection.description =
           "Adds the Modelith `mdl` CLI to integrated terminals";
       }
+      // Version-skew handshake. The extension and the `mdl` CLI install separately,
+      // so a stale CLI can lack commands the AI surfaces (chat participant, MCP
+      // server) call. Probe once; if it's too old, tell the user how to upgrade
+      // THEIR install (inferred from the resolved path) — once, dismissibly, and
+      // without blocking anything. The per-call guards remain the backstop.
+      void hasAiCommands(bin, root).then((ok) => {
+        if (ok) return;
+        out.appendLine(`[mdl] ${bin.label} is missing the 'model'/'mcp' commands (out of date)`);
+        void vscode.window.showWarningMessage(
+          `Your Modelith CLI (${bin.label}) is out of date — it lacks commands the ` +
+            `chat and MCP features need. To fix, ${upgradeHint(bin)}, then reload VS Code.`,
+          "Reload Window",
+        ).then((pick) => {
+          if (pick === "Reload Window") {
+            void vscode.commands.executeCommand("workbench.action.reloadWindow");
+          }
+        });
+      });
     } catch (e) {
       out.appendLine(`[mdl] detection failed: ${e}`);
     }

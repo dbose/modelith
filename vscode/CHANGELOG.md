@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **AI assistance.** Two Copilot Chat integrations backed by the same `mdl` engine:
+  a bundled MCP server (`mdl mcp`) exposing model + ontology tools in Agent mode
+  (`list_entities`, `get_entity`, `search_ontology`, `get_model_context`, `validate`,
+  `create_entity`, `update_entity`), and an `@modelith` chat participant for Ask mode
+  (`/list`, `/explain <entity>`). Registered automatically; no `mcp.json` to write.
+- **Import.** *Modelith: Import to Model* — right-click a `.sql`/`.mmd` file (or the
+  command palette) to open the Import wizard on the embedded canvas.
+
 ## 0.1.0
 
 First release.

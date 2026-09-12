@@ -24,6 +24,17 @@ export async function findMdl(root: string): Promise<MdlBin> {
   if (explicit) candidates.push({ cmd: explicit, args: [], label: explicit });
   const venv = path.join(root, ".venv", "bin", "mdl");
   if (fs.existsSync(venv)) candidates.push({ cmd: venv, args: [], label: ".venv/bin/mdl" });
+  // A `.venv/bin/mdl` in a workspace folder, ranked ABOVE the global PATH install.
+  // This is what lets someone developing Modelith itself use their working-tree
+  // (editable) mdl instead of a stale `uv tool` global — the model dir is usually a
+  // demo/ subfolder with no venv, so the model-dir probe above misses the repo-root
+  // editable install. For a normal user (no workspace .venv) this adds nothing.
+  for (const folder of vscode.workspace.workspaceFolders ?? []) {
+    const wsVenv = path.join(folder.uri.fsPath, ".venv", "bin", "mdl");
+    if (wsVenv !== venv && fs.existsSync(wsVenv)) {
+      candidates.push({ cmd: wsVenv, args: [], label: `${folder.name}/.venv/bin/mdl` });
+    }
+  }
   candidates.push({ cmd: "mdl", args: [], label: "mdl (PATH)" });
   // GUI-launched VS Code on macOS/Linux has a minimal PATH that excludes the
   // per-user install locations a shell profile would add, so `mdl (PATH)` misses
@@ -90,6 +101,39 @@ export function runMdl(bin: MdlBin, args: string[], cwd: string): Promise<RunRes
     p.on("error", (e) => res({ code: -1, stdout, stderr: String(e) }));
     p.on("exit", (code) => res({ code: code ?? -1, stdout, stderr }));
   });
+}
+
+// --- CLI capability handshake (version skew) -----------------------------------
+
+/** Suggest the upgrade command that matches HOW this `mdl` was installed. The
+ * extension and the CLI are versioned independently (Marketplace .vsix vs a
+ * separate `mdl` install), so a stale CLI lacks commands the extension calls; we
+ * can only advise, never assume a package manager. Inferred from the resolved
+ * binary path — uv tool, pipx, a project .venv, or an unknown location. */
+export function upgradeHint(bin: MdlBin): string {
+  const c = `${bin.cmd} ${bin.args.join(" ")}`.toLowerCase();
+  if (c.includes("uv") && bin.args.includes("run")) {
+    return "run `uv sync` in the model repo (this is the workspace's own mdl)";
+  }
+  if (c.includes("/uv/tools/") || c.includes(".local/bin")) {
+    return "run `uv tool install --force modelith-dbt` (or `pipx upgrade modelith-dbt`)";
+  }
+  if (c.includes(".venv")) {
+    return "upgrade mdl in that virtualenv, e.g. `uv sync` or `pip install -U modelith-dbt`";
+  }
+  return (
+    "upgrade your mdl install — `uv tool install --force modelith-dbt`, " +
+    "`pipx upgrade modelith-dbt`, or `pip install -U modelith-dbt`"
+  );
+}
+
+/** Probe once that the resolved `mdl` has the commands the extension's AI surfaces
+ * (chat participant, MCP server) call. `mdl model` is the proxy: it shipped in the
+ * same release as `mdl mcp`, so its presence means the CLI is new enough. Returns
+ * true when capable; false when `mdl` is missing the command (stale) or unusable. */
+export async function hasAiCommands(bin: MdlBin, cwd: string): Promise<boolean> {
+  const r = await runMdl(bin, ["model", "--help"], cwd);
+  return r.code === 0;
 }
 
 // --- workspace discovery -------------------------------------------------------

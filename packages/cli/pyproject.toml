@@ -18,6 +18,7 @@ dependencies = [
     "modelith-adapter-collibra",
     "modelith-server",
     "modelith-lsp",
+    "modelith-mcp",
     "typer>=0.12",
 ]
 
@@ -45,3 +46,4 @@ modelith-catalog = { workspace = true }
 modelith-adapter-collibra = { workspace = true }
 modelith-server = { workspace = true }
 modelith-lsp = { workspace = true }
+modelith-mcp = { workspace = true }

@@ -30,7 +30,8 @@
     "theme": "dark"
   },
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.85.0",
+    "node": ">=18"
   },
   "categories": [
     "Data Science",
@@ -42,9 +43,34 @@
     "workspace"
   ],
   "activationEvents": [
-    "workspaceContains:**/mdl-project.yaml"
+    "workspaceContains:**/mdl-project.yaml",
+    "onChatParticipant:modelith.chat"
   ],
   "contributes": {
+    "mcpServerDefinitionProviders": [
+      {
+        "id": "modelith.mcp",
+        "label": "Modelith"
+      }
+    ],
+    "chatParticipants": [
+      {
+        "id": "modelith.chat",
+        "name": "modelith",
+        "fullName": "Modelith",
+        "description": "Ask about entities, relationships, and ontology alignment in this model.",
+        "commands": [
+          {
+            "name": "explain",
+            "description": "Explain one entity: its attributes, ontology alignment, and relationships."
+          },
+          {
+            "name": "list",
+            "description": "List the model's entities."
+          }
+        ]
+      }
+    ],
     "commands": [
       {
         "command": "modelith.validate",
@@ -191,12 +217,13 @@
     }
   },
   "scripts": {
+    "check-node": "node -e \"if(+process.versions.node.split('.')[0]<18){console.error('\\n  Node '+process.versions.node+' is too old for the build toolchain (vsce/esbuild need Node 18+).\\n  Use Node 20:  nvm use 20   (or: export NVM_DIR=$HOME/.nvm; . $NVM_DIR/nvm.sh; nvm use 20)\\n');process.exit(1)}\"",
     "vscode:prepublish": "npm run build -- --minify",
-    "build": "tsc --noEmit && node esbuild.mjs",
+    "build": "npm run check-node && tsc --noEmit && node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
     "typecheck": "tsc --noEmit",
-    "package": "npx @vscode/vsce package --no-dependencies",
-    "publish": "npx @vscode/vsce publish --no-dependencies"
+    "package": "npm run check-node && npx @vscode/vsce package --no-dependencies",
+    "publish": "npm run check-node && npx @vscode/vsce publish --no-dependencies"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
