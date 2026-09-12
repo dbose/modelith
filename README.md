@@ -206,6 +206,48 @@ Detection resolves `mdl` in order: an explicit `modelith.mdlPath` setting, a pro
 `.venv`, `mdl` on PATH, the active conda or virtualenv, then the common per-user install
 locations. A standard `uv tool install modelith-dbt` needs no configuration.
 
+## Ask the model, in Copilot Chat
+
+The extension wires Modelith into GitHub Copilot Chat, one integration per mode. Both
+speak to the model through the same `mdl` query layer the canvas and LSP use, so the
+answers are grounded in the committed model, not guessed — and neither needs an API key
+or a `mcp.json`.
+
+**`@modelith` in Ask mode.** Type `@modelith` and ask about the model in plain English.
+Intent is parsed by your own Copilot model and grounded with the real facts — entities,
+attributes, keys, relationships, ontology alignments — so it answers the question you
+actually asked and refuses to invent structure that isn't there.
+
+Ask a model-wide question and it grounds on every entity. Here it works through
+normalization entity by entity, reasoning from each candidate key, and is honest about
+the one thing the model doesn't yet capture — arbitrary functional dependencies:
+
+> `@modelith are all models in BCNF? Answer entity by entity`
+
+![The @modelith chat participant answering a BCNF question with a per-entity table: benchmark, counterparty, portfolio, price, transaction each "Appears BCNF" on their single key, instrument under its recorded pk/unique keys, position "cannot assess: no key defined", closing that a definitive determination needs the full set of functional dependencies — the pension_ibor canvas beside it](docs/assets/chat-participant-bcnf.png)
+
+Ask a targeted question and it grounds on that entity in full — attributes, nullability,
+relationships — and reasons from the entity's meaning:
+
+> `@modelith how would you define keys for the position entity?`
+
+![The @modelith chat participant proposing a composite key (portfolio_code, instrument_id, as_of_date) for the position entity, noting all three are currently nullable so should be non-null for a primary key, and that the model doesn't confirm uniqueness so the business rule needs validating — with a pointer to Agent mode for the edit](docs/assets/chat-participant-keys.png)
+
+There are slash commands for the common asks — `@modelith /list` for the entity list and
+`@modelith /explain <entity>` for one entity in full — but free text works just as well.
+
+**Modelith tools in Agent mode.** Switch Copilot Chat to Agent mode and the model is
+available as tools the agent can call in its plan/act loop: `list_entities`, `get_entity`,
+`search_ontology`, `get_model_context`, `validate`, and the write tools `create_entity`
+and `update_entity`. The agent can ground itself in what exists, search the ontology for
+an alignment, and write validated entities straight into your checkout — direct-write, so
+you review the git diff, the same trust boundary as the CLI. The server is the `mdl mcp`
+subcommand, registered automatically and scoped to your workspace model (needs VS Code
+1.99+; older hosts keep every other feature).
+
+The same query layer is on the CLI too: `mdl model context | entities | entity <name> |
+detail` print the model as JSON.
+
 ## What it models
 
 Modelith represents the core data-modeling taxonomy as first-class, git-tracked objects:
@@ -990,8 +1032,10 @@ catalog.
 |---|---|
 | Studio | `mdl studio` — the model in a browser, in two modes. Default: a **modeler** stages edits and proposes them as one pull request, never seeing git. `--direct`: an **engineer** writes the working tree and commits themselves. Terms, the ERD (scoped by subject area), the subject-area picker, a semantic diff and the proposal flow. Distributable on its own with `--export`. |
 | VS Code extension | Where engineers actually live: the canvas beside your YAML, following the active editor, plus diagnostics on save and generate / drift / lint commands. See [In VS Code](#in-vs-code). |
-| `mdl` CLI | The full command set: init, validate, lint, generate, reverse, drift, diff, studio, subject-area, ontology, emit, export, import, gov, catalog, and more |
+| Copilot Chat | `@modelith` answers about the model in Ask mode; Modelith tools (`mdl mcp`) let the agent read and write the model in Agent mode. Grounded in the committed model. See [Ask the model, in Copilot Chat](#ask-the-model-in-copilot-chat). |
+| `mdl` CLI | The full command set: init, validate, lint, generate, reverse, drift, diff, model, studio, subject-area, ontology, emit, export, import, gov, catalog, and more |
 | Language server | `mdl lsp` (one server for VS Code, Cursor, Windsurf, JetBrains, and CI): drift and contract diagnostics on the dbt files, hover cards, code actions |
+| MCP server | `mdl mcp` — the model as tools for any MCP client (Copilot agent mode, Claude Desktop, Cursor) |
 | Architect canvas | `mdl serve` — the ER editor the VS Code extension embeds. `mdl studio --direct` is the same editing model with Studio's chrome. |
 
 ## CLI reference
@@ -1013,6 +1057,8 @@ mdl studio --direct                               engineer mode: edits write the
 mdl studio --catalog                              browse published models, open one to edit
 mdl studio --export <dir>                         write its static files, to host anywhere
 mdl serve [--read-only] [?subject_area=<ulid>]    architect ER canvas + read API (VS Code embeds this)
+mdl model context|entities|entity <name>|detail   read the model as JSON (the AI surfaces' query layer)
+mdl mcp [--repo <dir>]                            MCP server (stdio): model tools for an AI agent
 mdl ontology search|check                         browse; layer rules + coverage report
 mdl ontology lock|fetch|add                       pin a source, fetch+verify, vendor a file
 mdl ontology align|promote                        propose alignments (§2), accept them
@@ -1042,6 +1088,7 @@ packages/
     collibra/     Collibra governance adapter
   server/         read API (FastAPI) + hosts the canvas build
   lsp/            language server (pygls)
+  mcp/            MCP server (mdl mcp): model + ontology tools for AI agents
   cli/            mdl
 canvas/           web canvas source (Vite + React + React Flow)
 vscode/           VS Code extension (TypeScript + esbuild)
