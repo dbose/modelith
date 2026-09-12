@@ -29,9 +29,20 @@ async function readModel<T>(dir: string, args: string[]): Promise<T> {
       const obj = JSON.parse(r.stdout);
       if (obj?.error) throw new Error(obj.error);
     } catch {
-      /* fall through */
+      /* not a JSON error object — fall through */
     }
-    throw new Error(r.stderr.trim() || `mdl ${args.join(" ")} failed`);
+    // A too-old `mdl` (a stale global install predating these commands) doesn't
+    // know `mdl model …` and prints Typer's usage dump. Turn that into an
+    // actionable message instead of leaking the raw usage text to chat.
+    const blob = (r.stdout + r.stderr).toLowerCase();
+    if (blob.includes("no such command") || blob.includes("usage: mdl")) {
+      throw new Error(
+        "Your installed `mdl` is out of date — it doesn't have the `model` command " +
+          "these features need. Upgrade it (`uv tool install --force modelith-dbt`, or " +
+          "reinstall from your working tree), then reload VS Code.",
+      );
+    }
+    throw new Error(r.stderr.trim() || r.stdout.trim() || `mdl ${args.join(" ")} failed`);
   }
   return JSON.parse(r.stdout) as T;
 }
