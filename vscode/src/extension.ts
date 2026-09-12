@@ -10,8 +10,10 @@ import {
   findManifestPath,
   findMdl,
   findModelDir,
+  hasAiCommands,
   resetMdlCache,
   runMdl,
+  upgradeHint,
 } from "./mdl";
 import { registerSchemas } from "./schemas";
 
@@ -107,6 +109,24 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
         ctx.environmentVariableCollection.description =
           "Adds the Modelith `mdl` CLI to integrated terminals";
       }
+      // Version-skew handshake. The extension and the `mdl` CLI install separately,
+      // so a stale CLI can lack commands the AI surfaces (chat participant, MCP
+      // server) call. Probe once; if it's too old, tell the user how to upgrade
+      // THEIR install (inferred from the resolved path) — once, dismissibly, and
+      // without blocking anything. The per-call guards remain the backstop.
+      void hasAiCommands(bin, root).then((ok) => {
+        if (ok) return;
+        out.appendLine(`[mdl] ${bin.label} is missing the 'model'/'mcp' commands (out of date)`);
+        void vscode.window.showWarningMessage(
+          `Your Modelith CLI (${bin.label}) is out of date — it lacks commands the ` +
+            `chat and MCP features need. To fix, ${upgradeHint(bin)}, then reload VS Code.`,
+          "Reload Window",
+        ).then((pick) => {
+          if (pick === "Reload Window") {
+            void vscode.commands.executeCommand("workbench.action.reloadWindow");
+          }
+        });
+      });
     } catch (e) {
       out.appendLine(`[mdl] detection failed: ${e}`);
     }

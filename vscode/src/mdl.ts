@@ -92,6 +92,39 @@ export function runMdl(bin: MdlBin, args: string[], cwd: string): Promise<RunRes
   });
 }
 
+// --- CLI capability handshake (version skew) -----------------------------------
+
+/** Suggest the upgrade command that matches HOW this `mdl` was installed. The
+ * extension and the CLI are versioned independently (Marketplace .vsix vs a
+ * separate `mdl` install), so a stale CLI lacks commands the extension calls; we
+ * can only advise, never assume a package manager. Inferred from the resolved
+ * binary path — uv tool, pipx, a project .venv, or an unknown location. */
+export function upgradeHint(bin: MdlBin): string {
+  const c = `${bin.cmd} ${bin.args.join(" ")}`.toLowerCase();
+  if (c.includes("uv") && bin.args.includes("run")) {
+    return "run `uv sync` in the model repo (this is the workspace's own mdl)";
+  }
+  if (c.includes("/uv/tools/") || c.includes(".local/bin")) {
+    return "run `uv tool install --force modelith-dbt` (or `pipx upgrade modelith-dbt`)";
+  }
+  if (c.includes(".venv")) {
+    return "upgrade mdl in that virtualenv, e.g. `uv sync` or `pip install -U modelith-dbt`";
+  }
+  return (
+    "upgrade your mdl install — `uv tool install --force modelith-dbt`, " +
+    "`pipx upgrade modelith-dbt`, or `pip install -U modelith-dbt`"
+  );
+}
+
+/** Probe once that the resolved `mdl` has the commands the extension's AI surfaces
+ * (chat participant, MCP server) call. `mdl model` is the proxy: it shipped in the
+ * same release as `mdl mcp`, so its presence means the CLI is new enough. Returns
+ * true when capable; false when `mdl` is missing the command (stale) or unusable. */
+export async function hasAiCommands(bin: MdlBin, cwd: string): Promise<boolean> {
+  const r = await runMdl(bin, ["model", "--help"], cwd);
+  return r.code === 0;
+}
+
 // --- workspace discovery -------------------------------------------------------
 
 /** The model repo dir (contains mdl-project.yaml). Setting wins; else first hit. */
