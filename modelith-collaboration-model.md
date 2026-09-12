@@ -1,6 +1,6 @@
 # Modelith: Collaboration Model
 
-**Spec addendum to `modelith-spec.md`. Target path in repo: `docs/collaboration-model.md`.**
+**Spec addendum to [`specs/modelith-spec.md`](specs/modelith-spec.md). Target path in repo: `docs/collaboration-model.md`.**
 
 Three personas, one git repo, one truth. This document defines repo topology, ownership, change routes, merge mechanics and the escape hatches that stop the gate becoming a blocker.
 
