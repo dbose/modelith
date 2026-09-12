@@ -1162,12 +1162,14 @@ source = { editable = "packages/reverse" }
 dependencies = [
     { name = "dbt-artifacts-parser" },
     { name = "modelith-core" },
+    { name = "modelith-emit-erd" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "dbt-artifacts-parser", specifier = ">=0.5" },
     { name = "modelith-core", editable = "packages/core" },
+    { name = "modelith-emit-erd", editable = "packages/emit-erd" },
 ]
 
 [[package]]

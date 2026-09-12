@@ -228,10 +228,23 @@ def _lift_entity(
 
     scd_tracking = {c.lower() for c in scd.tracking_cols}
     col_types = {cn: c.data_type for cn, c in mm.columns.items() if c.data_type}
-    bks = {
-        c.lower()
-        for c in lifting.business_key_candidates(name, col_names, col_types, naming)
+    # An explicitly declared primary key (DDL, or a future information_schema read) is
+    # authoritative and wins over the name heuristic — this is what lets a composite
+    # table-level PRIMARY KEY (...) become the business key. Surrogate-key PK columns are
+    # still stripped below, so a `_sk` PK doesn't survive as a business key. The dbt
+    # manifest carries no PK, so `declared_pk` is empty there and we fall back as before.
+    declared_pk = {
+        cn.lower()
+        for cn, c in mm.columns.items()
+        if isinstance(c.meta, dict) and c.meta.get("pk")
     }
+    if declared_pk:
+        bks = declared_pk
+    else:
+        bks = {
+            c.lower()
+            for c in lifting.business_key_candidates(name, col_names, col_types, naming)
+        }
 
     attributes: list[Attribute] = []
     for col_name, col in mm.columns.items():
@@ -249,13 +262,18 @@ def _lift_entity(
 
         attr_ulid = col.meta.get("mdl_ulid") if isinstance(col.meta, dict) else None
         role = "business_key" if cl in bks else "attribute"
+        # Nullability: honour the source when it actually knows (DDL's NOT NULL/PK carry
+        # `nullable` in meta; a future information_schema read will too). The dbt-manifest
+        # path cannot recover nullability and leaves it absent, so it keeps the historical
+        # default of True — unchanged, so the round-trip's documented-lossy set holds.
+        nullable = col.meta.get("nullable") if isinstance(col.meta, dict) else None
         attributes.append(
             Attribute(
                 id=attr_ulid or new_ulid(),
                 name=col_name,
                 domain=_base_for(col.data_type),
                 role=role,
-                nullable=True,
+                nullable=True if nullable is None else bool(nullable),
             )
         )
 
