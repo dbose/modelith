@@ -24,6 +24,17 @@ export async function findMdl(root: string): Promise<MdlBin> {
   if (explicit) candidates.push({ cmd: explicit, args: [], label: explicit });
   const venv = path.join(root, ".venv", "bin", "mdl");
   if (fs.existsSync(venv)) candidates.push({ cmd: venv, args: [], label: ".venv/bin/mdl" });
+  // A `.venv/bin/mdl` in a workspace folder, ranked ABOVE the global PATH install.
+  // This is what lets someone developing Modelith itself use their working-tree
+  // (editable) mdl instead of a stale `uv tool` global — the model dir is usually a
+  // demo/ subfolder with no venv, so the model-dir probe above misses the repo-root
+  // editable install. For a normal user (no workspace .venv) this adds nothing.
+  for (const folder of vscode.workspace.workspaceFolders ?? []) {
+    const wsVenv = path.join(folder.uri.fsPath, ".venv", "bin", "mdl");
+    if (wsVenv !== venv && fs.existsSync(wsVenv)) {
+      candidates.push({ cmd: wsVenv, args: [], label: `${folder.name}/.venv/bin/mdl` });
+    }
+  }
   candidates.push({ cmd: "mdl", args: [], label: "mdl (PATH)" });
   // GUI-launched VS Code on macOS/Linux has a minimal PATH that excludes the
   // per-user install locations a shell profile would add, so `mdl (PATH)` misses
