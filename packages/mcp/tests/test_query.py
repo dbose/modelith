@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from mdl_core.query import get_entity, get_model_context, list_entities
+from mdl_core.query import entities_detail, get_entity, get_model_context, list_entities
 from mdl_core.repo import ModelRepo
 
 
@@ -43,6 +43,34 @@ def test_get_entity_accepts_a_ulid(model_dir):
     model = _model(model_dir)
     le = next(e for e in model.logical_entities.values() if e.name == "trade")
     assert get_entity(model, le.id)["name"] == "trade"
+
+
+def test_get_entity_includes_keys_field(model_dir):
+    # The builder uses the legacy role:business_key convention (no KeyGroup objects),
+    # so `keys` is an empty list here — but the field must be present and a list, so
+    # a caller (and the LLM grounding) can always rely on its shape.
+    e = get_entity(_model(model_dir), "counterparty")
+    assert isinstance(e["keys"], list)
+
+
+def test_entities_detail_is_compact_and_complete(model_dir):
+    d = entities_detail(_model(model_dir))
+    assert d["total"] == 2
+    assert d["truncated"] is False
+    names = {e["name"] for e in d["entities"]}
+    assert {"counterparty", "trade"} == names
+    cp = next(e for e in d["entities"] if e["name"] == "counterparty")
+    # attributes are compact "name:domain[?]" strings
+    assert any(a.startswith("counterparty_id:") for a in cp["attributes"])
+    assert isinstance(cp["keys"], list)
+
+
+def test_entities_detail_truncates_at_limit(model_dir):
+    d = entities_detail(_model(model_dir), limit=1)
+    assert d["total"] == 2
+    assert d["shown"] == 1
+    assert d["truncated"] is True
+    assert len(d["entities"]) == 1
 
 
 def test_get_model_context_summary(model_dir):

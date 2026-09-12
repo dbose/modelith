@@ -76,10 +76,29 @@ def list_entities(model: Model, subject_area: str | None = None) -> list[dict]:
     return out
 
 
+def _keys_for(model: Model, le: LogicalEntity) -> list[dict]:
+    """The entity's key groups (erwin Key Groups) — pk / unique / alternate / index —
+    with member attribute names in key order. This is what lets a caller reason about
+    normalization (candidate keys, functional dependencies) and identity."""
+    attr_name = {a.id: a.name for a in le.attributes}
+    keys: list[dict] = []
+    for kg in sorted(model.key_groups.values(), key=lambda k: (k.type, k.name)):
+        if kg.entity != le.id:
+            continue
+        keys.append(
+            {
+                "name": kg.name,
+                "type": kg.type,
+                "columns": [attr_name.get(m, m) for m in kg.members],
+            }
+        )
+    return keys
+
+
 def get_entity(model: Model, name: str) -> dict | None:
     """Full detail for one entity by name or ULID: attributes (with types + ontology
-    alignment), the conceptual layer, and the relationships it participates in.
-    Returns None when no entity matches."""
+    alignment), key groups (pk/unique/alternate), the conceptual layer, and the
+    relationships it participates in. Returns None when no entity matches."""
     le = _entity_by_name(model, name)
     if le is None:
         return None
@@ -95,6 +114,7 @@ def get_entity(model: Model, name: str) -> dict | None:
         }
         for a in le.attributes
     ]
+    keys = _keys_for(model, le)
 
     rels: list[dict] = []
     for r in sorted(model.relationships.values(), key=lambda x: x.name):
@@ -127,6 +147,7 @@ def get_entity(model: Model, name: str) -> dict | None:
             if ce
             else None
         ),
+        "keys": keys,
         "attributes": attributes,
         "relationships": rels,
     }
@@ -177,6 +198,59 @@ def get_model_context(model: Model) -> dict:
         "subject_areas": areas,
         "unassigned_entities": unhomed,
         "relationships": relationships,
+    }
+
+
+def entities_detail(model: Model, limit: int = 40) -> dict:
+    """Compact detail for EVERY entity — attributes (name:domain, nullability), key
+    groups, and relationship names — for grounding a model-wide question ("are all
+    entities in BCNF?", "which lack a primary key?"). Deliberately terse: a real
+    model can have 150+ entities, so each is one small record, not the full nested
+    `get_entity` shape, keeping the whole thing within a chat context window.
+
+    Capped at `limit` entities (alphabetical). `truncated` is True when the model has
+    more, with `total` and `shown` so the caller can tell the user the answer covers
+    only the first N and to narrow the question."""
+    all_le = sorted(model.logical_entities.values(), key=lambda e: e.name)
+    shown = all_le[:limit]
+    ce_by_id = model.conceptual_entities
+
+    # relationship names per entity, one pass
+    rels_by_entity: dict[str, list[str]] = {}
+    for r in model.relationships.values():
+        from_e = model.logical_entities.get(r.from_.entity)
+        to_e = model.logical_entities.get(r.to.entity)
+        label = f"{from_e.name if from_e else '?'}→{to_e.name if to_e else '?'}"
+        for end in (r.from_.entity, r.to.entity):
+            rels_by_entity.setdefault(end, []).append(label)
+
+    records = []
+    for le in shown:
+        ce = ce_by_id.get(le.realises) if le.realises else None
+        records.append(
+            {
+                "name": le.name,
+                # "col:domain" (+ "?" when nullable) — enough to reason about
+                # attributes and dependencies without the full attribute objects.
+                "attributes": [
+                    f"{a.name}:{a.domain or '?'}{'?' if a.nullable else ''}"
+                    for a in le.attributes
+                ],
+                "keys": [
+                    {"type": kg["type"], "columns": kg["columns"]}
+                    for kg in _keys_for(model, le)
+                ],
+                "relationships": sorted(set(rels_by_entity.get(le.id, []))),
+                "ontology": _ontology_summary(ce) if ce else None,
+            }
+        )
+
+    return {
+        "project": model.config.name,
+        "total": len(all_le),
+        "shown": len(shown),
+        "truncated": len(all_le) > limit,
+        "entities": records,
     }
 
 

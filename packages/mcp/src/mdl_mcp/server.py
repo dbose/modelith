@@ -54,8 +54,9 @@ def build_server(repo_dir: Path) -> FastMCP:
     @mcp.tool()
     def get_entity(name: str) -> str:
         """Full detail for one entity by name (or ULID): its attributes with types
-        and ontology alignment, the conceptual layer, and the relationships it takes
-        part in. Returns an error object if no entity matches."""
+        and ontology alignment, its key groups (pk / unique / alternate), the
+        conceptual layer, and the relationships it takes part in. Returns an error
+        object if no entity matches."""
         hit = query.get_entity(_model(), name)
         if hit is None:
             return _json({"error": f"no entity named {name!r}"})

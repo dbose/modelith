@@ -35,8 +35,38 @@ interface EntityDetail {
   definition: string | null;
   pattern: string | null;
   conceptual: { name: string; ontology: string | null; ontology_layer: string | null } | null;
+  keys: { name: string; type: string; columns: string[] }[];
   attributes: { name: string; domain: string | null; nullable: boolean; ontology: string | null }[];
   relationships: { name: string; from: string; to: string }[];
+}
+
+interface EntitiesDetail {
+  project: string;
+  total: number;
+  shown: number;
+  truncated: boolean;
+  entities: {
+    name: string;
+    attributes: string[];
+    keys: { type: string; columns: string[] }[];
+    relationships: string[];
+    ontology: string | null;
+  }[];
+}
+
+/** A model-WIDE question needs every entity's attributes + keys, not just named
+ * ones — normalization ("BCNF", "3NF", "normalis"), coverage ("which entities",
+ * "any entity", "all"/"every"/"each"), or simply a question that names no entity at
+ * all. Everything else is targeted and grounds on the mentioned entities. */
+function isModelWide(prompt: string, mentioned: string[]): boolean {
+  const p = prompt.toLowerCase();
+  if (/\b(bcnf|[1-6]nf|normal(is|iz)|denormal)/.test(p)) return true;
+  if (/\b(which|any|all|every|each|no)\b.*\b(entit|model|table|key|attribute)/.test(p)) return true;
+  return mentioned.length === 0;
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /** Run an `mdl model …` read and parse its JSON stdout. Throws with the CLI's own
@@ -143,34 +173,48 @@ async function answerWithModel(
   const names = rows.map((r) => r.name);
   const context = await readModel<ModelContext>(dir, ["model", "context"]);
 
-  // Pull detail for any entity the prompt names, so the model can answer about
-  // attributes/relationships without guessing. Bounded to keep the prompt small.
-  const mentioned = names
-    .filter((n) => request.prompt.toLowerCase().includes(n.toLowerCase()))
-    .slice(0, 4);
-  const details: EntityDetail[] = [];
-  for (const n of mentioned) {
-    try {
-      details.push(await readModel<EntityDetail>(dir, ["model", "entity", n]));
-    } catch {
-      /* skip an entity that vanished between the list and the read */
-    }
-  }
-
-  const facts = JSON.stringify(
-    { entities: names, context, detail: details },
-    null,
-    2,
+  // Two grounding strategies, chosen by scope. A model-wide question (normalization,
+  // "which entities…", "all/every…") needs every entity's attributes + keys; a
+  // targeted one needs only the named entities in full. We never dump the whole
+  // model at full fidelity — `mdl model detail` is compact and capped, so a 150-
+  // entity model stays inside the context window (with a truncation notice).
+  const mentioned = names.filter((n) =>
+    new RegExp(`\\b${escapeRegExp(n)}\\b`, "i").test(request.prompt),
   );
+  let facts: string;
+  let truncationNote = "";
+  if (isModelWide(request.prompt, mentioned)) {
+    const detail = await readModel<EntitiesDetail>(dir, ["model", "detail", "--limit", "120"]);
+    if (detail.truncated) {
+      truncationNote =
+        `\n\n_(This model has ${detail.total} entities; I grounded on the first ` +
+        `${detail.shown}. For a complete answer, ask about a subject area or specific ` +
+        "entities.)_";
+    }
+    facts = JSON.stringify({ context, entities_detail: detail }, null, 2);
+  } else {
+    const details: EntityDetail[] = [];
+    for (const n of mentioned.slice(0, 6)) {
+      try {
+        details.push(await readModel<EntityDetail>(dir, ["model", "entity", n]));
+      } catch {
+        /* skip an entity that vanished between the list and the read */
+      }
+    }
+    facts = JSON.stringify({ entities: names, context, detail: details }, null, 2);
+  }
 
   const system =
     "You are Modelith, a data-modeling assistant answering about ONE specific model " +
     "inside VS Code. Answer the user's question using ONLY the JSON facts provided — " +
-    "the model's entities, subject areas, relationships, and any entity detail. Do not " +
-    "invent entities, attributes, or alignments that are not in the facts; if the answer " +
-    "is not derivable from them, say so and suggest `@modelith /list`. Be concise, use " +
-    "Markdown, and prefer the model's own names verbatim. This is read-only: for editing, " +
-    "point the user to Copilot Agent mode where the Modelith tools run.";
+    "the model's entities, subject areas, relationships, attributes and keys. Attribute " +
+    "strings are `name:domain` with a trailing `?` for nullable. Keys list pk / unique / " +
+    "alternate key groups. Do not invent entities, attributes, keys, or alignments that " +
+    "are not in the facts. If the facts genuinely lack what the question needs (e.g. no " +
+    "attributes were provided for an entity), say precisely what is missing rather than " +
+    "guessing. Be concise, use Markdown, and prefer the model's own names verbatim. This " +
+    "is read-only: for editing, point the user to Copilot Agent mode where the Modelith " +
+    "tools run.";
 
   const messages = [
     vscode.LanguageModelChatMessage.User(`${system}\n\nMODEL FACTS:\n${facts}`),
@@ -180,6 +224,7 @@ async function answerWithModel(
   try {
     const res = await request.model.sendRequest(messages, {}, token);
     for await (const chunk of res.text) stream.markdown(chunk);
+    if (truncationNote) stream.markdown(truncationNote);
   } catch (e) {
     // The model call can fail (consent not granted, quota, offline). Fall back to
     // the heuristic so the user still gets an answer, not a dead end.
@@ -217,6 +262,13 @@ async function renderEntity(
     stream.markdown(`**Aligned to** \`${e.conceptual.ontology}\``);
     if (e.conceptual.ontology_layer) stream.markdown(` _(${e.conceptual.ontology_layer} layer)_`);
     stream.markdown("\n\n");
+  }
+  if (e.keys?.length) {
+    stream.markdown("**Keys**\n");
+    for (const k of e.keys) {
+      stream.markdown(`- ${k.type}: ${k.columns.join(", ") || "—"} (${k.name})\n`);
+    }
+    stream.markdown("\n");
   }
   if (e.attributes.length) {
     stream.markdown("**Attributes**\n");

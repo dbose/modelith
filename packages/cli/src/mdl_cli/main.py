@@ -1709,8 +1709,8 @@ def model_entity(
     name: str = typer.Argument(..., help="Entity name or ULID"),
     model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
 ) -> None:
-    """Print one entity's full detail (attributes, conceptual layer, relationships) as
-    JSON. Exits 1 with an error object if no entity matches."""
+    """Print one entity's full detail (attributes, keys, conceptual layer,
+    relationships) as JSON. Exits 1 with an error object if no entity matches."""
     from mdl_core.query import get_entity
 
     hit = get_entity(_load(model_dir).model, name)
@@ -1718,6 +1718,19 @@ def model_entity(
         typer.echo(json.dumps({"error": f"no entity named {name!r}"}))
         raise typer.Exit(1)
     typer.echo(json.dumps(hit, default=str))
+
+
+@model_app.command("detail")
+def model_detail(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    limit: int = typer.Option(40, "--limit", help="Max entities (alphabetical) to include"),
+) -> None:
+    """Print compact detail for EVERY entity (attributes, keys, relationships) as JSON,
+    for grounding a model-wide question. Terse by design and capped at --limit, with a
+    `truncated` flag so a large model doesn't overflow a chat context window."""
+    from mdl_core.query import entities_detail
+
+    typer.echo(json.dumps(entities_detail(_load(model_dir).model, limit=limit), default=str))
 
 
 @app.command()
