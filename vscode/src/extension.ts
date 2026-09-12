@@ -197,6 +197,24 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     }),
   );
 
+  cmd("modelith.import", () =>
+    withModelDir(async (dir) => {
+      if (vscode.workspace.getConfiguration("modelith").get<boolean>("canvas.readOnly")) {
+        void vscode.window.showWarningMessage(
+          "Modelith: the canvas is in read-only mode — turn off modelith.canvas.readOnly to import.",
+        );
+        return;
+      }
+      try {
+        // Reveal the canvas with the Import wizard open. Import writes to the
+        // working tree (direct-write, like the CLI) — you review the git diff.
+        await canvas.open(dir, "import=1");
+      } catch (e) {
+        void vscode.window.showErrorMessage(`Modelith canvas: ${e}`);
+      }
+    }),
+  );
+
   cmd("modelith.stopServer", () => canvas.stop());
 
   cmd("modelith.generate", () =>

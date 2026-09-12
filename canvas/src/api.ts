@@ -82,8 +82,16 @@ export const ontologyStack = () => get<StackDoc>("/api/ontology/stack");
 export const ontologyCoverage = () => get<CoverageDoc>("/api/ontology/coverage");
 
 // mutation (E2)
-export const sendCommand = (op: string, payload: Record<string, unknown>, fingerprint: string) =>
-  post<CommandResponse>("/api/command", { op, payload, fingerprint });
+export const sendCommand = (
+  op: string,
+  payload: Record<string, unknown>,
+  fingerprint?: string,
+) =>
+  // An empty/omitted fingerprint skips the server's stale-model check — correct for a
+  // programmatic batch (e.g. import) that applies its own commands in sequence; the
+  // concurrency guard exists to catch an EXTERNAL edit between a human's view and
+  // their action, not to serialise a machine's own batch.
+  post<CommandResponse>("/api/command", { op, payload, fingerprint: fingerprint ?? "" });
 
 // git panel
 export const gitStatus = () => get<GitStatus>("/api/git/status");
@@ -176,6 +184,18 @@ export interface ImportResult {
 
 export const importModel = (format: string, content: string, dialect?: string) =>
   post<ImportResult>("/api/import", { format, content, dialect });
+
+/** Apply an imported change list to the working tree as one batch (direct-write
+ *  canvas). Each command is sent WITHOUT a fingerprint so the server's stale-model
+ *  check is skipped: the guard exists to catch an external edit between a human's
+ *  view and their action, not to serialise a machine applying its own batch. */
+export const applyImportBatch = async (
+  changes: { op: string; payload: Record<string, unknown> }[],
+) => {
+  for (const c of changes) {
+    await sendCommand(c.op, c.payload); // no fingerprint -> no stale-check
+  }
+};
 
 export const previewChanges = (
   changes: { op: string; payload: Record<string, unknown> }[],

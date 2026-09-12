@@ -1,6 +1,6 @@
-import { build } from "esbuild";
+import { build, context } from "esbuild";
 
-await build({
+const opts = {
   entryPoints: ["src/extension.ts"],
   bundle: true,
   outfile: "dist/extension.js",
@@ -10,5 +10,15 @@ await build({
   target: "node18",
   sourcemap: true,
   minify: process.argv.includes("--minify"),
-});
-console.log("built dist/extension.js");
+};
+
+if (process.argv.includes("--watch")) {
+  // Local iteration: rebuild on save. Reload the Extension Development Host
+  // (Cmd+R in that window) to pick up each rebuild.
+  const ctx = await context(opts);
+  await ctx.watch();
+  console.log("watching src/ — rebuilding dist/extension.js on change");
+} else {
+  await build(opts);
+  console.log("built dist/extension.js");
+}

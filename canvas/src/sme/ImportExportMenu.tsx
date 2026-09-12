@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { type ExportFormat, exportUrl, fetchExportFormats, importModel } from "../api";
 import type { Exec } from "../exec";
+import "./ImportExportMenu.css";
 
 /** Model-tab Import / Export (issue: interchange with a wide toolset).
  *
@@ -12,13 +13,33 @@ export function ImportExportMenu({
   exec,
   canEdit,
   onImported,
+  submitLabel = "Import & review",
+  buttonClass = "erd-action ghost",
+  applyBatch,
+  openImport = false,
 }: {
   exec: Exec;
   canEdit: boolean;
   /** called after a successful import so the shell can jump to the review screen */
   onImported?: (tables: number) => void;
+  /** the import button's label — "Import & review" in the staged (SME) app, plain
+   *  "Import" in the direct-write architect canvas where there is no review screen */
+  submitLabel?: string;
+  /** the host toolbar's button class, so the trigger buttons match their toolbar
+   *  (erd-action ghost in Studio, tool-btn in the architect canvas) */
+  buttonClass?: string;
+  /** apply the whole parsed change list at once. The direct-write canvas passes this
+   *  to avoid the per-command fingerprint race; when absent, changes go one at a time
+   *  through the staging exec, which is already batch-safe. */
+  applyBatch?: (changes: { op: string; payload: Record<string, unknown> }[]) => Promise<unknown>;
+  /** pop the Import panel open on mount — the VS Code "Import to Model" command
+   *  reveals the canvas with `?import=1`, so the same wizard the toolbar button
+   *  opens is already up when the panel appears. */
+  openImport?: boolean;
 }) {
-  const [open, setOpen] = useState<"export" | "import" | null>(null);
+  const [open, setOpen] = useState<"export" | "import" | null>(
+    openImport && canEdit ? "import" : null,
+  );
   const [formats, setFormats] = useState<ExportFormat[]>([]);
   const [dialect, setDialect] = useState("postgres");
   const wrapRef = useRef<HTMLDivElement | null>(null);
@@ -44,17 +65,23 @@ export function ImportExportMenu({
   return (
     <div className="ie-wrap" ref={wrapRef}>
       <button
-        className={"erd-action ghost" + (open === "export" ? " on" : "")}
+        className={buttonClass + (open === "export" ? " on" : "")}
         onClick={() => setOpen(open === "export" ? null : "export")}
       >
-        Export ▾
+        <span className="erd-ico" aria-hidden="true">
+          ↧
+        </span>
+        Export <span className="erd-caret">▾</span>
       </button>
       {canEdit && (
         <button
-          className={"erd-action ghost" + (open === "import" ? " on" : "")}
+          className={buttonClass + (open === "import" ? " on" : "")}
           onClick={() => setOpen(open === "import" ? null : "import")}
         >
-          Import ▾
+          <span className="erd-ico" aria-hidden="true">
+            ↥
+          </span>
+          Import <span className="erd-caret">▾</span>
         </button>
       )}
 
@@ -91,6 +118,9 @@ export function ImportExportMenu({
       {open === "import" && (
         <ImportPanel
           exec={exec}
+          submitLabel={submitLabel}
+          buttonClass={buttonClass}
+          applyBatch={applyBatch}
           onClose={() => setOpen(null)}
           onImported={(n) => {
             setOpen(null);
@@ -110,10 +140,16 @@ const IMPORT_FORMATS = [
 
 function ImportPanel({
   exec,
+  submitLabel,
+  buttonClass,
+  applyBatch,
   onClose,
   onImported,
 }: {
   exec: Exec;
+  submitLabel: string;
+  buttonClass: string;
+  applyBatch?: (changes: { op: string; payload: Record<string, unknown> }[]) => Promise<unknown>;
   onClose: () => void;
   onImported: (tables: number) => void;
 }) {
@@ -140,10 +176,16 @@ function ImportPanel({
         setBusy(false);
         return;
       }
-      // Stage every parsed change through the exec seam. The client mints no ids —
-      // the server already did — so preview and propose replay them intact.
-      for (const c of res.changes) {
-        await exec(c.op, c.payload as Record<string, unknown>);
+      // Apply the parsed change list. The client mints no ids — the server already
+      // did — so preview/propose (staging) or a direct batch replay them intact.
+      // A dedicated batch applier avoids the per-op fingerprint race in the
+      // direct-write canvas; without one, the staging exec batches safely anyway.
+      if (applyBatch) {
+        await applyBatch(res.changes);
+      } else {
+        for (const c of res.changes) {
+          await exec(c.op, c.payload as Record<string, unknown>);
+        }
       }
       setWarnings(res.warnings);
       onImported(res.tables);
@@ -204,11 +246,11 @@ function ImportPanel({
       ))}
       {error && <p className="ie-error">{error}</p>}
       <div className="ie-foot">
-        <button className="erd-action ghost" onClick={onClose}>
+        <button className={buttonClass} onClick={onClose}>
           Cancel
         </button>
-        <button className="erd-action" disabled={busy || !content.trim()} onClick={run}>
-          {busy ? "Importing…" : "Import & review"}
+        <button className={buttonClass} disabled={busy || !content.trim()} onClick={run}>
+          {busy ? "Importing…" : submitLabel}
         </button>
       </div>
     </div>

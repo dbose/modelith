@@ -1,4 +1,31 @@
-# Publishing the Modelith VS Code extension
+# Building, testing, and publishing the Modelith VS Code extension
+
+`dist/extension.js` is build output (esbuild bundles `src/*.ts` into it) and is
+gitignored — source is committed, the bundle is built on demand. Neither local
+testing nor the marketplace needs the bundle in git: `vscode:prepublish` rebuilds it
+(minified) whenever `vsce package`/`publish` runs, so a `.vsix` is always fresh.
+
+## Test locally
+
+All commands run from the `vscode/` directory with Node 20 on PATH.
+
+**F5 debug (recommended).** Open the `vscode/` folder in VS Code and press F5 — the
+"Run Extension" launch config builds (`preLaunchTask: npm: build`) and opens an
+Extension Development Host window with the extension loaded. Edit `src/`, then either
+re-press F5 or run `npm run watch` in a terminal and hit Cmd+R in the host window to
+reload after each rebuild.
+
+**Install the packaged build into your real VS Code.** To exercise the extension
+exactly as a marketplace install (right-click menus, activation, packaging):
+
+```bash
+npm run package                                   # builds + produces modelith-vscode-<version>.vsix
+code --install-extension modelith-vscode-0.1.0.vsix
+# reload VS Code; uninstall a test build with:
+#   code --uninstall-extension modelith.modelith-vscode
+```
+
+## Publish to the marketplaces
 
 There are two marketplaces. Publish to both so the extension is discoverable in VS Code
 and in the open-source forks (VSCodium, Cursor, Windsurf, Gitpod, code-server).
@@ -48,24 +75,18 @@ All commands below run from the `vscode/` directory with Node 20 on PATH.
 
 ## Publish
 
-Build and package first (also runs the typecheck):
+`vsce package` and `vsce publish` both run `vscode:prepublish` first, which builds a
+fresh minified bundle — so you never publish a stale `dist/`. `npm install` once, then:
 
 ```bash
-npm install
-npm run build
-npm run package        # produces modelith-vscode-<version>.vsix
-```
-
-Then publish to each marketplace:
-
-```bash
-# Visual Studio Marketplace
-npx @vscode/vsce publish
+# Visual Studio Marketplace (builds via vscode:prepublish, then uploads)
+npm run publish
 #   or bump the version at the same time:
 #   npx @vscode/vsce publish patch        # 0.1.0 -> 0.1.1
 #   npx @vscode/vsce publish minor        # 0.1.0 -> 0.2.0
 
-# Open VSX
+# Open VSX — package first, then upload that .vsix
+npm run package
 ovsx publish modelith-vscode-<version>.vsix -p <open-vsx-token>
 ```
 

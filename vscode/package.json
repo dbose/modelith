@@ -71,6 +71,10 @@
         "title": "Modelith: Open Canvas"
       },
       {
+        "command": "modelith.import",
+        "title": "Modelith: Import to Model"
+      },
+      {
         "command": "modelith.stopServer",
         "title": "Modelith: Stop Canvas Server"
       },
@@ -157,6 +161,11 @@
           "group": "modelith"
         },
         {
+          "command": "modelith.import",
+          "when": "resourceExtname == .sql || resourceExtname == .mmd",
+          "group": "modelith"
+        },
+        {
           "command": "modelith.openPreview",
           "when": "resourceExtname == .sql || resourceExtname == .yaml",
           "group": "modelith"
@@ -169,6 +178,11 @@
           "group": "modelith"
         },
         {
+          "command": "modelith.import",
+          "when": "resourceExtname == .sql || resourceExtname == .mmd",
+          "group": "modelith"
+        },
+        {
           "command": "modelith.openPreview",
           "when": "resourceExtname == .sql || resourceExtname == .yaml",
           "group": "modelith"
@@ -177,9 +191,12 @@
     }
   },
   "scripts": {
+    "vscode:prepublish": "npm run build -- --minify",
     "build": "tsc --noEmit && node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
     "typecheck": "tsc --noEmit",
-    "package": "npx @vscode/vsce package --no-dependencies"
+    "package": "npx @vscode/vsce package --no-dependencies",
+    "publish": "npx @vscode/vsce publish --no-dependencies"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

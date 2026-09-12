@@ -4,6 +4,7 @@ import ReactFlow, {
   BackgroundVariant,
   Controls,
   MiniMap,
+  getRectOfNodes,
   useReactFlow,
   type Connection,
   type Edge,
@@ -102,7 +103,7 @@ export function ModelCanvas({
   onError,
   handleRef,
 }: ModelCanvasProps) {
-  const { fitView } = useReactFlow();
+  const { fitView, fitBounds, getNodes } = useReactFlow();
   const [nodes, setNodes] = useState<Node<EntityNodeData>[]>([]);
   const [edges, setEdges] = useState<Edge<RelationshipEdgeData>[]>([]);
   const layoutedRef = useRef(false);
@@ -291,6 +292,39 @@ export function ModelCanvas({
     hoveredEdge,
     fitView,
   ]);
+
+  // Frame the matches. In a large model the entities a search hits may be off-screen,
+  // so highlighting alone is not enough — pan/zoom to the matched nodes (like Fit, but
+  // scoped to the hits). Fires only on a query change, so it doesn't fight the main
+  // derivation effect's own fitView on structural edits.
+  //
+  // We compute the bounds from the matched nodes' POSITIONS (getRectOfNodes) and call
+  // setViewport via fitBounds, rather than fitView({nodes}): with
+  // onlyRenderVisibleElements an off-screen node has no measured size, so fitView
+  // can't bound it — reading positions works regardless of what is currently rendered.
+  useEffect(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return;
+    const hitIds = new Set<string>();
+    for (const e of doc.entities) {
+      const hay =
+        e.name.toLowerCase() +
+        " " +
+        (e.conceptual?.name.toLowerCase() ?? "") +
+        " " +
+        e.attributes.map((a) => a.name.toLowerCase()).join(" ");
+      if (hay.includes(q)) hitIds.add(e.id);
+    }
+    if (!hitIds.size) return;
+    const raf = requestAnimationFrame(() => {
+      const hitNodes = getNodes().filter((n) => hitIds.has(n.id));
+      if (!hitNodes.length) return;
+      const rect = getRectOfNodes(hitNodes);
+      // clamp the zoom so a single small entity doesn't fill the whole viewport
+      fitBounds(rect, { padding: 0.35, duration: 400 });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [query, doc, getNodes, fitBounds]);
 
   const relayout = useCallback(() => {
     setNodes((prev) => layoutGraph(prev, edges, entityIndex));

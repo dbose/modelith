@@ -386,6 +386,7 @@ export function SmeApp() {
             canEdit={canEdit}
             direct={direct}
             onImported={() => goto("review")}
+            query={query}
             busy={staging.busy}
           />
         ) : (

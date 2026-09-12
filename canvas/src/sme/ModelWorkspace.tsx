@@ -54,6 +54,7 @@ export function ModelWorkspace({
   direct = false,
   onSelectEntity,
   onImported,
+  query = "",
   busy,
 }: {
   /** the PREVIEWED model when anything is staged, otherwise the model on disk */
@@ -66,13 +67,14 @@ export function ModelWorkspace({
   onSelectEntity?: (id: string) => void;
   /** after an import stages its changes, jump the shell to the review screen */
   onImported?: (tables: number) => void;
+  /** the top-bar search text — highlights matching entities and dims the rest */
+  query?: string;
   busy?: boolean;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [panel, setPanel] = useState<ReadOnlyPanelTab | null>(null);
   const [creatingArea, setCreatingArea] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [query] = useState("");
   const canvasRef = useRef<ModelCanvasHandle | null>(null);
 
   const caps: Capabilities = useMemo(
@@ -194,12 +196,17 @@ export function ModelWorkspace({
             </button>
           )}
           <span className="erd-hint">drag between entities to relate them</span>
-          <span className="erd-panels">
+
+          {/* View controls: operate on the diagram itself (arrange / frame). */}
+          <span className="erd-group">
             <button
               className="erd-action ghost"
               onClick={() => canvasRef.current?.relayout()}
               title="Auto-arrange the diagram"
             >
+              <span className="erd-ico" aria-hidden="true">
+                ⟲
+              </span>
               Re-layout
             </button>
             <button
@@ -207,8 +214,17 @@ export function ModelWorkspace({
               onClick={() => canvasRef.current?.fitView()}
               title="Fit the whole model in view"
             >
+              <span className="erd-ico" aria-hidden="true">
+                ⛶
+              </span>
               Fit
             </button>
+          </span>
+
+          <span className="erd-sep" aria-hidden="true" />
+
+          {/* Reference panels: toggle the ontology / layers side panels. */}
+          <span className="erd-group">
             <button
               className={"erd-action ghost" + (panel === "ontology" ? " on" : "")}
               onClick={() => setPanel((p) => (p === "ontology" ? null : "ontology"))}
@@ -221,8 +237,12 @@ export function ModelWorkspace({
             >
               Layers
             </button>
-            <ImportExportMenu exec={exec} canEdit={canEdit} onImported={onImported} />
           </span>
+
+          <span className="erd-sep" aria-hidden="true" />
+
+          {/* Interchange: move the model in and out of other formats. */}
+          <ImportExportMenu exec={exec} canEdit={canEdit} onImported={onImported} />
           {busy && <span className="erd-busy">updating…</span>}
           {!canEdit && <span className="sme-chip">read-only</span>}
           {error && <span className="erd-error">{error}</span>}
