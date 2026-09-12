@@ -209,12 +209,16 @@ async function answerWithModel(
     "inside VS Code. Answer the user's question using ONLY the JSON facts provided — " +
     "the model's entities, subject areas, relationships, attributes and keys. Attribute " +
     "strings are `name:domain` with a trailing `?` for nullable. Keys list pk / unique / " +
-    "alternate key groups. Do not invent entities, attributes, keys, or alignments that " +
-    "are not in the facts. If the facts genuinely lack what the question needs (e.g. no " +
-    "attributes were provided for an entity), say precisely what is missing rather than " +
-    "guessing. Be concise, use Markdown, and prefer the model's own names verbatim. This " +
-    "is read-only: for editing, point the user to Copilot Agent mode where the Modelith " +
-    "tools run.";
+    "alternate key groups; a pk marked inferred came from the legacy business_key " +
+    "convention but is still the entity's primary key. For normalization questions: you " +
+    "can reason from candidate keys (e.g. an entity whose only key is a single attribute, " +
+    "with all other attributes dependent on it, is trivially in BCNF for key-determined " +
+    "dependencies), but the model does NOT capture arbitrary functional dependencies — so " +
+    "say plainly that a full BCNF/3NF proof needs FDs the model doesn't record, and give " +
+    "the key-based assessment you can. Do not invent entities, attributes, keys, or " +
+    "alignments that are not in the facts. Be concise, use Markdown, and prefer the " +
+    "model's own names verbatim. This is read-only: for editing, point the user to " +
+    "Copilot Agent mode where the Modelith tools run.";
 
   const messages = [
     vscode.LanguageModelChatMessage.User(`${system}\n\nMODEL FACTS:\n${facts}`),

@@ -45,12 +45,16 @@ def test_get_entity_accepts_a_ulid(model_dir):
     assert get_entity(model, le.id)["name"] == "trade"
 
 
-def test_get_entity_includes_keys_field(model_dir):
-    # The builder uses the legacy role:business_key convention (no KeyGroup objects),
-    # so `keys` is an empty list here — but the field must be present and a list, so
-    # a caller (and the LLM grounding) can always rely on its shape.
+def test_get_entity_infers_pk_from_business_key(model_dir):
+    # The builder uses the legacy role:business_key convention (no KeyGroup objects).
+    # _keys_for should synthesise an inferred pk from it, so normalization questions
+    # can reason about the key even without a declared KeyGroup.
     e = get_entity(_model(model_dir), "counterparty")
     assert isinstance(e["keys"], list)
+    pk = next((k for k in e["keys"] if k["type"] == "pk"), None)
+    assert pk is not None
+    assert pk["inferred"] is True
+    assert pk["columns"] == ["counterparty_id"]
 
 
 def test_entities_detail_is_compact_and_complete(model_dir):

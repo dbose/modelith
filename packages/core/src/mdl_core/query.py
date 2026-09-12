@@ -79,7 +79,12 @@ def list_entities(model: Model, subject_area: str | None = None) -> list[dict]:
 def _keys_for(model: Model, le: LogicalEntity) -> list[dict]:
     """The entity's key groups (erwin Key Groups) — pk / unique / alternate / index —
     with member attribute names in key order. This is what lets a caller reason about
-    normalization (candidate keys, functional dependencies) and identity."""
+    normalization (candidate keys, functional dependencies) and identity.
+
+    When no explicit `pk` KeyGroup is present, fall back to the legacy per-attribute
+    `role: business_key` convention (which the IR documents as still supported): the
+    business-key attributes form an inferred primary key, flagged `inferred: True` so
+    a caller knows it came from the convention, not a declared KeyGroup."""
     attr_name = {a.id: a.name for a in le.attributes}
     keys: list[dict] = []
     for kg in sorted(model.key_groups.values(), key=lambda k: (k.type, k.name)):
@@ -92,6 +97,12 @@ def _keys_for(model: Model, le: LogicalEntity) -> list[dict]:
                 "columns": [attr_name.get(m, m) for m in kg.members],
             }
         )
+    # Legacy fallback: no declared pk KeyGroup, but business_key attributes exist.
+    if not any(k["type"] == "pk" for k in keys):
+        bk = [a.name for a in le.attributes if a.role == "business_key"]
+        if bk:
+            keys.insert(0, {"name": "pk (from business_key)", "type": "pk",
+                            "columns": bk, "inferred": True})
     return keys
 
 
