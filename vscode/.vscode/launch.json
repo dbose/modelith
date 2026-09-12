@@ -2,12 +2,12 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Run Extension (IBoR workspace)",
+      "name": "Run Extension (IBoR demo model)",
       "type": "extensionHost",
       "request": "launch",
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}",
-        "/tmp/pension-ibor"
+        "${workspaceFolder}/../demo/ibor/model"
       ],
       "outFiles": ["${workspaceFolder}/dist/**/*.js"],
       "preLaunchTask": "npm: build"

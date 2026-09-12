@@ -191,9 +191,12 @@
     }
   },
   "scripts": {
+    "vscode:prepublish": "npm run build -- --minify",
     "build": "tsc --noEmit && node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
     "typecheck": "tsc --noEmit",
-    "package": "npx @vscode/vsce package --no-dependencies"
+    "package": "npx @vscode/vsce package --no-dependencies",
+    "publish": "npx @vscode/vsce publish --no-dependencies"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

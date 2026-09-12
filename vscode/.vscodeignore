@@ -2,6 +2,8 @@ src/**
 tsconfig.json
 esbuild.mjs
 node_modules/**
-*.map
+**/*.map
 icon.svg
 *.vsix
+.vscode/**
+PUBLISHING.md
