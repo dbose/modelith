@@ -12,10 +12,13 @@ import datetime as _dt
 import subprocess
 from pathlib import Path
 
-from mdl_core.routes import Classification, classify_paths
+# _ROUTE_META (the route → {name, reviewers, gates} table) is re-exported here too:
+# `classify`'s default text output reads it, and it looks for it on this module (the
+# CLI-facing collab surface), consistent with Classification/classify_paths above.
+from mdl_core.routes import _ROUTE_META, Classification, classify_paths
 from mdl_core.yaml_io import dump_str, load_str
 
-__all__ = ["Classification", "classify_paths"]
+__all__ = ["Classification", "classify_paths", "_ROUTE_META"]
 
 # §4 change routes now live in mdl_core.routes so the server can reach them
 # (modelith-cli depends on modelith-server, so the reverse import is a cycle).

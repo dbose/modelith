@@ -5,6 +5,8 @@ from __future__ import annotations
 import datetime as dt
 from pathlib import Path
 
+from typer.testing import CliRunner
+
 from mdl_cli.collab import (
     add_debt,
     classify_paths,
@@ -12,6 +14,34 @@ from mdl_cli.collab import (
     expired_debt,
     load_debt,
 )
+from mdl_cli.main import app
+
+runner = CliRunner()
+
+
+def test_classify_cli_text_output_on_a_route():
+    """The `mdl classify` DEFAULT text output must render, not crash. It reads the
+    route table (_ROUTE_META) — a regression guard for the import that once pointed at
+    the wrong module and raised ImportError on every route-matching change (the JSON
+    path masked it; only the text path hit the bad import)."""
+    r = runner.invoke(app, ["classify", "--files", "model/logical/entities/trade.yaml"])
+    assert r.exit_code == 0, r.output
+    assert "routes:" in r.output
+    assert "Structure" in r.output  # route B's human name, straight from _ROUTE_META
+    assert "@analytics-engineers" in r.output
+
+
+def test_classify_cli_text_output_no_route():
+    r = runner.invoke(app, ["classify", "--files", "README.md"])
+    assert r.exit_code == 0, r.output
+    assert "no route-relevant changes" in r.output
+
+
+def test_classify_cli_json_matches_text_path():
+    """JSON and text read the same classification; both must run clean."""
+    r = runner.invoke(app, ["classify", "--files", "governance-profile.yaml", "--format", "json"])
+    assert r.exit_code == 0, r.output
+    assert '"primary": "E"' in r.output
 
 
 def test_classify_routes():

@@ -25,7 +25,12 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from mdl_core.ir import Model
-from mdl_core.severity import ChangeSeverity, _family_and_width, _is_narrowing  # noqa: F401
+from mdl_core.severity import (  # noqa: F401
+    ChangeSeverity,
+    _family_and_width,
+    _is_narrowing,
+    same_family_precision_change,
+)
 from mdl_reverse import lifting
 from mdl_reverse.manifest import ManifestProjection
 from mdl_reverse.projection import ExpectedModel, project_model
@@ -254,6 +259,12 @@ def _diff_columns(exp: ExpectedModel, man, report: DriftReport) -> None:
         if ec.data_type and mc.data_type and ec.data_type != mc.data_type:
             if _is_narrowing(ec.data_type, mc.data_type):
                 sev, kind = DriftSeverity.breaking, DriftKind.type_narrowed
+            elif same_family_precision_change(ec.data_type, mc.data_type):
+                # same family, only precision/scale/length differs (a warehouse
+                # DECIMAL(18,2) vs the model's DECIMAL(38,2) default) — cosmetic, not a
+                # stop-the-line change. Without this a freshly-reversed model reports
+                # phantom breaking drift against its own warehouse.
+                sev, kind = DriftSeverity.cosmetic, DriftKind.type_changed
             else:
                 sev, kind = DriftSeverity.breaking, DriftKind.type_changed
             report.add(

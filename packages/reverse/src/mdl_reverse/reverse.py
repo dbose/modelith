@@ -57,10 +57,36 @@ _SQL_TO_BASE = {
 }
 
 
+# Base type by family, matched after stripping precision/scale. A warehouse emits
+# DECIMAL(18,2), NUMBER(10,4), VARCHAR(255) … in countless (precision, scale) variants;
+# the exact-match table above can't enumerate them, so an unlisted DECIMAL used to fall
+# through to "string" — which then reported phantom breaking type drift the moment you
+# drifted a freshly-reversed model against its own warehouse (the north-star trust bug).
+_FAMILY_TO_BASE = {
+    "DECIMAL": "decimal", "NUMERIC": "decimal", "NUMBER": "decimal", "DEC": "decimal",
+    "FLOAT": "decimal", "DOUBLE": "decimal", "REAL": "decimal",
+    "BIGINT": "bigint", "INT8": "bigint",
+    "INTEGER": "integer", "INT": "integer", "INT4": "integer", "SMALLINT": "integer",
+    "VARCHAR": "string", "CHAR": "string", "TEXT": "string", "STRING": "string",
+    "NVARCHAR": "string", "CHARACTER": "string",
+    "BOOLEAN": "boolean", "BOOL": "boolean",
+    "DATE": "date",
+    "TIMESTAMP": "timestamp", "DATETIME": "timestamp", "TIMESTAMPTZ": "timestamp",
+    "TIMESTAMP_NTZ": "timestamp", "TIMESTAMP_TZ": "timestamp", "TIMESTAMP_LTZ": "timestamp",
+}
+
+
 def _base_for(sql_type: str | None) -> str:
     if not sql_type:
         return "string"
-    return _SQL_TO_BASE.get(sql_type.upper(), "string")
+    t = sql_type.upper().strip()
+    # Exact match first — keeps domain-specific overrides like VARCHAR(20) -> lei_code.
+    if t in _SQL_TO_BASE:
+        return _SQL_TO_BASE[t]
+    # Otherwise strip the precision/scale (or length) and match the type FAMILY, so any
+    # DECIMAL(p,s) / NUMERIC(p,s) / VARCHAR(n) / TIMESTAMP(n) resolves correctly.
+    family = t.split("(", 1)[0].strip()
+    return _FAMILY_TO_BASE.get(family, "string")
 
 
 @dataclass
