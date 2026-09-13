@@ -1,0 +1,23 @@
+id: 01M2C1YDFB8X6ZPFP5SPHWQ98K
+kind: logical_entity
+name: dim_organism
+realises: 01M2C1YDFB1SW8E5AB0MDVS3QQ
+attributes:
+  - id: 01M2C1YDFBA947G3VF30K8YM5X
+    name: taxon_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFBD70F2XQE71HTB11P
+    name: name
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFBSZ5X1QHB220FG2T0
+    name: common_name
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

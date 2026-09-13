@@ -1,0 +1,17 @@
+name: drug_discovery
+dbt_target: duckdb_dev
+platform_targets:
+  - duckdb_dev
+ontology_stack:
+  - type: ols
+    name: ols
+    layer: industry
+    url: https://www.ebi.ac.uk/ols4/api
+    ontologies: [mondo, efo, go, hp]
+naming:
+  logical_case: snake
+  physical_case: upper_snake
+  abbreviations: {}
+glossary:
+  source_of_truth: git
+  catalog_name: Collibra

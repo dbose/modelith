@@ -1,0 +1,12 @@
+name: warehouse
+version: "1.0.0"
+profile: warehouse
+model-paths: ["models"]
+seed-paths: ["seeds"]
+target-path: target
+models:
+  warehouse:
+    staging:
+      +materialized: view
+    intermediate:
+      +materialized: view

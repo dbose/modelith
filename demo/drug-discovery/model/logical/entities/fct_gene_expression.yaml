@@ -1,0 +1,23 @@
+id: 01M2C1YDFCPGCNJ9BC4V46NV25
+kind: logical_entity
+name: fct_gene_expression
+realises: 01M2C1YDFC5VXK4QGBYJQ4XZCM
+attributes:
+  - id: 01M2C1YDFCDR343DA0H5198511
+    name: ensembl_gene_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFC4GJPK6KN7N0BWX5T
+    name: uberon_id
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFCBFF740Q7FXPF6K53
+    name: tpm
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

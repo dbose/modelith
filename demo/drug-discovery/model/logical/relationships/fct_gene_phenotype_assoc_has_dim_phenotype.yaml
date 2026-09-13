@@ -1,0 +1,17 @@
+id: 01M2C1YDFF6TGEWYYJV369WP51
+kind: relationship
+name: fct_gene_phenotype_assoc_has_dim_phenotype
+from:
+  entity: 01M2C1YDFC0N3PB1TXK521R69K
+  attributes:
+    - 01M2C1YDFCYSJV68AR58V4HV9S
+to:
+  entity: 01M2C1YDFBNY52XRC18FAHE8C4
+  attributes:
+    - 01M2C1YDFB6K8FCVCCGWPPJP7J
+cardinality: many_to_one
+identifying: false
+optionality: mandatory
+enforce:
+  physical_constraint: true
+  dbt_test: relationships

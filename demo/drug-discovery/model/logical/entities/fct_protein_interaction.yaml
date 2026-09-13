@@ -1,0 +1,17 @@
+id: 01M2C1YDFC1ATRE2Z79WPZWFCQ
+kind: logical_entity
+name: fct_protein_interaction
+realises: 01M2C1YDFCWHSWA5CWPPXFVQ1B
+attributes:
+  - id: 01M2C1YDFC0SWB5ZCSTM4QJRKM
+    name: uniprot_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFC1H989JCVKDA1Y4FJ
+    name: partner_uniprot_id
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

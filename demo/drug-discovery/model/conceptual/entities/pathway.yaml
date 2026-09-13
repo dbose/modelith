@@ -1,0 +1,9 @@
+id: 01M2C1YDFBHTQTAC5JJVZAPKG7
+kind: conceptual_entity
+name: Pathway
+realised_by: []
+ontology_layer: industry
+ontology_refs:
+  - uri: GO:0008150
+    predicate: skos:closeMatch
+    resolved_via: ols4

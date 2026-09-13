@@ -1,0 +1,23 @@
+id: 01M2C1YDFBPGKAE3XP68QH83XY
+kind: logical_entity
+name: dim_disease
+realises: 01M2C1YDFBBWMTMS5F3JS2ZV0Q
+attributes:
+  - id: 01M2C1YDFBBPAFM3MXTWCJ3JG7
+    name: mondo_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFB6QTVYJF0XXNMMQ95
+    name: name
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFBETS7CV0ZHZWE1FVF
+    name: icd10_code
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

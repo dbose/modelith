@@ -1,0 +1,18 @@
+id: 01M2C1YDFDCTE1RPCGXKVC449C
+kind: logical_entity
+name: kpi_adverse_events
+realises: 01M2C1YDFD8KS4KRGQ4EWD8CJW
+attributes:
+  - id: 01M2C1YDFDNC1D4X1RM61H5XSC
+    name: severity_class
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFD0R6XDAQHVMM5D41M
+    name: n_reports
+    domain: bigint
+    role: attribute
+    nullable: true
+    ontology_refs: []
+unmanaged: true

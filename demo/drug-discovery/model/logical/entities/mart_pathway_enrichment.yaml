@@ -1,0 +1,18 @@
+id: 01M2C1YDFD2YRH5TGM20ZGAJ7D
+kind: logical_entity
+name: mart_pathway_enrichment
+realises: 01M2C1YDFDHD1CN94HEAE001TK
+attributes:
+  - id: 01M2C1YDFDX34FQX795DW7FWM3
+    name: pathway_group
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFD0CJB9F844F7FMZ33
+    name: enrichment_score
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+unmanaged: true

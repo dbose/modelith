@@ -1,0 +1,17 @@
+id: 01M2C1YDFCQB2Y0WCNVV57KRAB
+kind: logical_entity
+name: fct_gene_encodes_protein
+realises: 01M2C1YDFCPYBNFWSW1GBKYGHP
+attributes:
+  - id: 01M2C1YDFCY9694Q5GJNG148T2
+    name: ensembl_gene_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFCVMN3EK0AVVHRXS7R
+    name: uniprot_id
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

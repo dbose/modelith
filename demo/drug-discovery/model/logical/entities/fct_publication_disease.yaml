@@ -1,0 +1,17 @@
+id: 01M2C1YDFCVE4RSDA9JY53RDZP
+kind: logical_entity
+name: fct_publication_disease
+realises: 01M2C1YDFCNF1E71C1E9SDCBES
+attributes:
+  - id: 01M2C1YDFCDXXWE6M2PZBNGMXC
+    name: pmid
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFC1SD8TEPZVET7QJME
+    name: mondo_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []

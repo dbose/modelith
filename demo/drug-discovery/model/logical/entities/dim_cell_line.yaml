@@ -1,0 +1,23 @@
+id: 01M2C1YDFB4R0GXR2BQS5KXT1B
+kind: logical_entity
+name: dim_cell_line
+realises: 01M2C1YDFBSC0H6346WDZ0AE4F
+attributes:
+  - id: 01M2C1YDFBDRN4ZH1BAMGDX414
+    name: cellosaurus_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFBGKTAKQJEG25GNGYR
+    name: name
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFBHFKD10HBZCYVTW64
+    name: organism
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

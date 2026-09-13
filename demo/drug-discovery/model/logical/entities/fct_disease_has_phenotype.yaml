@@ -1,0 +1,17 @@
+id: 01M2C1YDFC94QX1VXGW5JXPAXS
+kind: logical_entity
+name: fct_disease_has_phenotype
+realises: 01M2C1YDFC349MEJ6YXKMSRBFN
+attributes:
+  - id: 01M2C1YDFCKZ4PNK2ES0CC222D
+    name: mondo_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFC3C1NN2TX5RZVVFZR
+    name: hp_id
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

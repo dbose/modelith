@@ -1,0 +1,17 @@
+id: 01M2C1YDFFD7YNMBPYK27RM6DH
+kind: relationship
+name: fct_pathway_disease_assoc_has_dim_disease
+from:
+  entity: 01M2C1YDFC1SCSDBAHSFV0DPXT
+  attributes:
+    - 01M2C1YDFC8EDYWF1XQFSJKZJ0
+to:
+  entity: 01M2C1YDFBPGKAE3XP68QH83XY
+  attributes:
+    - 01M2C1YDFBBPAFM3MXTWCJ3JG7
+cardinality: many_to_one
+identifying: false
+optionality: mandatory
+enforce:
+  physical_constraint: true
+  dbt_test: relationships

@@ -1,0 +1,17 @@
+id: 01M2C1YDFC9WB42ZTQSA70QSG7
+kind: logical_entity
+name: fct_antibody_target
+realises: 01M2C1YDFCQJCKT1ZBD2V5NQCQ
+attributes:
+  - id: 01M2C1YDFCQSCSG96EJ8N322TS
+    name: antibody_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFC7R9C29AM7S8693FK
+    name: uniprot_id
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

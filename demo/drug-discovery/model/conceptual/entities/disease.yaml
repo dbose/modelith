@@ -1,0 +1,9 @@
+id: 01M2C1YDFBBWMTMS5F3JS2ZV0Q
+kind: conceptual_entity
+name: Disease
+realised_by: []
+ontology_layer: industry
+ontology_refs:
+  - uri: MONDO:0005148
+    predicate: skos:closeMatch
+    resolved_via: ols4

@@ -1,0 +1,30 @@
+id: 01M2C1YDFCGJ0X7YH6829DHQDY
+kind: logical_entity
+name: dim_trial
+realises: 01M2C1YDFCXHQ1VX3JHHRDPPK6
+attributes:
+  - id: 01M2C1YDFC91WKF1G3R14HVKJW
+    name: nct_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFCN9SF2S0TQTGRNZQ1
+    name: title
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFCF1S10KM2VRM61ZVN
+    name: phase
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFCF1D52GMTDV3ENDRN
+    name: status
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+pattern: scd2

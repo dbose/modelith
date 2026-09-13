@@ -1,0 +1,9 @@
+id: 01M2C1YDFCH2219WN1WWEKVGRC
+kind: conceptual_entity
+name: Variant
+realised_by: []
+ontology_layer: industry
+ontology_refs:
+  - uri: SO:0001060
+    predicate: skos:closeMatch
+    resolved_via: ols4

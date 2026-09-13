@@ -1,0 +1,9 @@
+id: 01M2C1YDFB1DY6NF8SA6P341F7
+kind: conceptual_entity
+name: Protein
+realised_by: []
+ontology_layer: industry
+ontology_refs:
+  - uri: PR:000000001
+    predicate: skos:closeMatch
+    resolved_via: ols4

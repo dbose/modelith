@@ -1,0 +1,23 @@
+id: 01M2C1YDFBMQ8WB5E5YMXNBYJ7
+kind: logical_entity
+name: dim_antibody
+realises: 01M2C1YDFB535NCW2MY2N9ZWMS
+attributes:
+  - id: 01M2C1YDFBHGBAM09EGD5HT39J
+    name: antibody_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFBXTNNAFVR3T66CRQ0
+    name: name
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFB9VBCEXY506GD5ZEQ
+    name: clonality
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

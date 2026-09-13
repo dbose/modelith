@@ -1,0 +1,17 @@
+id: 01M2C1YDFEE13VXREW1ZFR23TP
+kind: relationship
+name: fct_compound_assay_result_has_dim_compound
+from:
+  entity: 01M2C1YDFCRHFT2BPSEMPQZKAB
+  attributes:
+    - 01M2C1YDFCY9N9DDSPP2Q8DBVH
+to:
+  entity: 01M2C1YDFB406XHVEV92K48HSN
+  attributes:
+    - 01M2C1YDFBD4TKCRXR3Z9XE4QC
+cardinality: many_to_one
+identifying: false
+optionality: mandatory
+enforce:
+  physical_constraint: true
+  dbt_test: relationships

@@ -1,0 +1,17 @@
+id: 01M2C1YDFC1SCSDBAHSFV0DPXT
+kind: logical_entity
+name: fct_pathway_disease_assoc
+realises: 01M2C1YDFCY8WXSADMZ714C9X3
+attributes:
+  - id: 01M2C1YDFCDMG5NAB8RCX9BS2K
+    name: reactome_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFC8EDYWF1XQFSJKZJ0
+    name: mondo_id
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

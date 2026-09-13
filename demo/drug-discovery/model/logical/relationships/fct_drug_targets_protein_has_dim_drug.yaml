@@ -1,0 +1,17 @@
+id: 01M2C1YDFF93XAYSS7QB4SSPBM
+kind: relationship
+name: fct_drug_targets_protein_has_dim_drug
+from:
+  entity: 01M2C1YDFC79B470HHVRCQ7718
+  attributes:
+    - 01M2C1YDFCC4PBNJSZZ14Z5J5K
+to:
+  entity: 01M2C1YDFB860AKT2XT51TWPRP
+  attributes:
+    - 01M2C1YDFBEQ0WJMGPPRH63MHV
+cardinality: many_to_one
+identifying: false
+optionality: mandatory
+enforce:
+  physical_constraint: true
+  dbt_test: relationships

@@ -1,0 +1,30 @@
+id: 01M2C1YDFB860AKT2XT51TWPRP
+kind: logical_entity
+name: dim_drug
+realises: 01M2C1YDFBBPBGNMQNV33KZ4JX
+attributes:
+  - id: 01M2C1YDFBEQ0WJMGPPRH63MHV
+    name: chembl_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFB9AESRFVZ79BJ8MZX
+    name: name
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFB9H9J63YT42EQKMWH
+    name: mechanism
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFBSFM87CG3FKRNNFVV
+    name: max_phase
+    domain: integer
+    role: attribute
+    nullable: true
+    ontology_refs: []
+pattern: scd2

@@ -1,0 +1,17 @@
+id: 01M2C1YDFFZN8VW44CBSMVS3ZK
+kind: relationship
+name: fct_protein_in_pathway_has_dim_protein
+from:
+  entity: 01M2C1YDFCGCBNC55AR765H5XC
+  attributes:
+    - 01M2C1YDFCK0ZM05P1Q2TEGRTG
+to:
+  entity: 01M2C1YDFBFD1EM0S2GWGE51R7
+  attributes:
+    - 01M2C1YDFBE961VRMW3YWE6GN5
+cardinality: many_to_one
+identifying: false
+optionality: mandatory
+enforce:
+  physical_constraint: true
+  dbt_test: relationships

@@ -1,0 +1,17 @@
+id: 01M2C1YDFC6MA8GY2WYNNS8H5A
+kind: logical_entity
+name: fct_biomarker_disease
+realises: 01M2C1YDFC1SC4H1JRS36K72ZF
+attributes:
+  - id: 01M2C1YDFCA3H3PQJW3A40MB7B
+    name: biomarker_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFC1VMH5VGFC6GPQYFV
+    name: mondo_id
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

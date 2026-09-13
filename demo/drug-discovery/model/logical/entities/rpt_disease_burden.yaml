@@ -1,0 +1,18 @@
+id: 01M2C1YDFDBT7JET5Q0Y15R4QB
+kind: logical_entity
+name: rpt_disease_burden
+realises: 01M2C1YDFDPC97B118VYPTYEJJ
+attributes:
+  - id: 01M2C1YDFDG8FA2VA8REWNCX1Y
+    name: burden_bucket
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFDXQJVZ17873H9P890
+    name: n_associations
+    domain: bigint
+    role: attribute
+    nullable: true
+    ontology_refs: []
+unmanaged: true

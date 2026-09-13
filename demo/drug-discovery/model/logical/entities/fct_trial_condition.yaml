@@ -1,0 +1,17 @@
+id: 01M2C1YDFDW0HCWKV14543B99K
+kind: logical_entity
+name: fct_trial_condition
+realises: 01M2C1YDFD9K3H54T4F4E9N2NB
+attributes:
+  - id: 01M2C1YDFD2GM12D9TM3R9NF86
+    name: nct_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFDQ69A3VKFBZJSA2T3
+    name: mondo_id
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

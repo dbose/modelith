@@ -1,0 +1,17 @@
+id: 01M2C1YDFCGCBNC55AR765H5XC
+kind: logical_entity
+name: fct_protein_in_pathway
+realises: 01M2C1YDFCC39Z3AW5HX104V65
+attributes:
+  - id: 01M2C1YDFCK0ZM05P1Q2TEGRTG
+    name: uniprot_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFCD12B1EQ9SCJY43XK
+    name: reactome_id
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

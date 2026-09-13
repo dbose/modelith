@@ -1,0 +1,17 @@
+id: 01M2C1YDFB7N2V5EAWPKZGDNJH
+kind: logical_entity
+name: dim_transcript
+realises: 01M2C1YDFBASMYHWSPHMBTNT7Z
+attributes:
+  - id: 01M2C1YDFBV2PKGE55VGWTSBCC
+    name: ensembl_transcript_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFB7N8BQE2GGEK8ZWZ3
+    name: length_bp
+    domain: integer
+    role: attribute
+    nullable: true
+    ontology_refs: []

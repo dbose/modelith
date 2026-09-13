@@ -1,0 +1,17 @@
+id: 01M2C1YDFCRHFT2BPSEMPQZKAB
+kind: logical_entity
+name: fct_compound_assay_result
+realises: 01M2C1YDFCMW9GE5S3498GE9JH
+attributes:
+  - id: 01M2C1YDFCY9N9DDSPP2Q8DBVH
+    name: compound_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFCZ03CT1T54BMBK8N8
+    name: assay_id
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
