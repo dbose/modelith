@@ -60,6 +60,22 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
 .tool-btn:hover { color: var(--text); border-color: var(--border-strong); }
 .tool-btn.active { color: var(--accent); border-color: var(--accent); }
 
+/* layout style picker (split button: icon + caret + menu) */
+.layout-picker { position: relative; display: inline-flex; gap: 2px; }
+.layout-picker .caret { padding: 6px 6px; font-size: 10px; }
+.layout-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 20;
+  background: var(--bg-raised); border: 1px solid var(--border-strong);
+  border-radius: 8px; padding: 4px; min-width: 150px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+.layout-menu button {
+  display: block; width: 100%; text-align: left; padding: 7px 10px;
+  border: 0; border-radius: 6px; background: transparent; color: var(--text-dim);
+  cursor: pointer; font-size: 13px;
+}
+.layout-menu button:hover { background: var(--bg-card); color: var(--text); }
+
 /* ---------- entity node (erwin-style card) ---------- */
 .entity-node {
   width: 264px; background: var(--bg-card);

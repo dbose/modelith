@@ -214,7 +214,7 @@ function Canvas() {
         showTypes={showTypes}
         onToggleTypes={() => setShowTypes((v) => !v)}
         onFitView={() => canvasRef.current?.fitView()}
-        onRelayout={() => canvasRef.current?.relayout()}
+        onRelayout={(mode) => canvasRef.current?.relayout(mode)}
         onRefresh={refresh}
         saColors={saColors}
         readOnly={readOnly}

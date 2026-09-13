@@ -24,7 +24,7 @@ import {
 } from "./EntityNode";
 import type { Capabilities, Exec } from "./exec";
 import { Inspector } from "./Inspector";
-import { layoutGraph } from "./layout";
+import { type LayoutMode, layoutGraph } from "./layout";
 import { AlignModal, NewEntityModal, RelEditModal, RelModal, TermMapModal } from "./modals";
 import { RelationshipEdge, type RelationshipEdgeData } from "./RelationshipEdge";
 import type { Entity, ModelDoc } from "./types";
@@ -61,7 +61,7 @@ export function anchorFor(
 /** Imperative handle for the things a shell needs to drive from its own chrome
  * (the toolbar's re-layout and fit buttons, and focus-by-id from search). */
 export interface ModelCanvasHandle {
-  relayout: () => void;
+  relayout: (mode?: LayoutMode) => void;
   fitView: () => void;
   focusEntity: (id: string) => void;
   /** Open the New Entity modal — a shell gesture (toolbar button, `n` shortcut). */
@@ -326,10 +326,13 @@ export function ModelCanvas({
     return () => cancelAnimationFrame(raf);
   }, [query, doc, getNodes, fitBounds]);
 
-  const relayout = useCallback(() => {
-    setNodes((prev) => layoutGraph(prev, edges, entityIndex));
-    requestAnimationFrame(() => fitView({ padding: 0.15, duration: 300 }));
-  }, [edges, entityIndex, fitView]);
+  const relayout = useCallback(
+    (mode: LayoutMode = "auto") => {
+      setNodes((prev) => layoutGraph(prev, edges, entityIndex, mode));
+      requestAnimationFrame(() => fitView({ padding: 0.15, duration: 300 }));
+    },
+    [edges, entityIndex, fitView],
+  );
 
   const focusEntity = useCallback(
     (id: string) => {
