@@ -1,0 +1,7 @@
+warehouse:
+  target: duckdb_dev
+  outputs:
+    duckdb_dev:
+      type: duckdb
+      path: drugdisc.duckdb
+      threads: 4

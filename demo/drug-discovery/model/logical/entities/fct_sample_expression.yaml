@@ -1,0 +1,17 @@
+id: 01M2C1YDFC6V4XQ26G41ZVCE0A
+kind: logical_entity
+name: fct_sample_expression
+realises: 01M2C1YDFDEJ4RT7TA0BYX229D
+attributes:
+  - id: 01M2C1YDFCA46Z2NHMP6KGPCZW
+    name: sample_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFDQQ6DH6K2QF1NXDX4
+    name: ensembl_gene_id
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

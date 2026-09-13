@@ -1,0 +1,29 @@
+id: 01M2C1YDFBHN9149XWWJVKB7QM
+kind: logical_entity
+name: dim_publication
+realises: 01M2C1YDFBDSN0R7N2C46MKV4K
+attributes:
+  - id: 01M2C1YDFBXAP4Z9A61XEAC2YD
+    name: pmid
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFB6GYY60NY8HKYTPRY
+    name: title
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFBGF8AJ6SX5PQHWZ3M
+    name: journal
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFBWQRR6YM5TST2ZCW0
+    name: year
+    domain: integer
+    role: attribute
+    nullable: true
+    ontology_refs: []

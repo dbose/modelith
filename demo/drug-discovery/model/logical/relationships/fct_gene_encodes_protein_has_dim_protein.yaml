@@ -1,0 +1,17 @@
+id: 01M2C1YDFFQ30BTQ5DGGQ8J167
+kind: relationship
+name: fct_gene_encodes_protein_has_dim_protein
+from:
+  entity: 01M2C1YDFCQB2Y0WCNVV57KRAB
+  attributes:
+    - 01M2C1YDFCVMN3EK0AVVHRXS7R
+to:
+  entity: 01M2C1YDFBFD1EM0S2GWGE51R7
+  attributes:
+    - 01M2C1YDFBE961VRMW3YWE6GN5
+cardinality: many_to_one
+identifying: false
+optionality: mandatory
+enforce:
+  physical_constraint: true
+  dbt_test: relationships

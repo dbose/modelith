@@ -1,0 +1,29 @@
+id: 01M2C1YDFCJ24D08C12SSSZVEN
+kind: logical_entity
+name: fct_drug_binding
+realises: 01M2C1YDFCZWYGV31VBD67C6G6
+attributes:
+  - id: 01M2C1YDFCTZXXG23179RSDG4J
+    name: chembl_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFC41XKXB6S9256NE4Z
+    name: target_id
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFCZ956MWTT8JBT2ZP4
+    name: assay_id
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFCBM01YK7FTSWBZK67
+    name: ic50_nm
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

@@ -1,0 +1,23 @@
+id: 01M2C1YDFB406XHVEV92K48HSN
+kind: logical_entity
+name: dim_compound
+realises: 01M2C1YDFBP92ZCYNECJJB56GK
+attributes:
+  - id: 01M2C1YDFBD4TKCRXR3Z9XE4QC
+    name: compound_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFBNDCZ0DC2RSJTJJBC
+    name: smiles
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFB2S3DNS02BC2V84VC
+    name: molecular_weight
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

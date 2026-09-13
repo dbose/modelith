@@ -1,0 +1,23 @@
+id: 01M2C1YDFBSM2PF5HYQM8GXPZ9
+kind: logical_entity
+name: dim_assay
+realises: 01M2C1YDFBEQ3KA6R3PD054EQ9
+attributes:
+  - id: 01M2C1YDFBHT4318A2XHZAFJKA
+    name: assay_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFBEZMEGDCHD1S7JD47
+    name: name
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFBZHQSS4YEXQ44HV6N
+    name: assay_type
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

@@ -1,0 +1,17 @@
+id: 01M2C1YDFEH66N6XTPRCG6BNH6
+kind: relationship
+name: fct_biomarker_disease_has_dim_biomarker
+from:
+  entity: 01M2C1YDFC6MA8GY2WYNNS8H5A
+  attributes:
+    - 01M2C1YDFCA3H3PQJW3A40MB7B
+to:
+  entity: 01M2C1YDFB00KSN93CANANX0FJ
+  attributes:
+    - 01M2C1YDFBFSHQX48YP19A21B5
+cardinality: many_to_one
+identifying: false
+optionality: mandatory
+enforce:
+  physical_constraint: true
+  dbt_test: relationships

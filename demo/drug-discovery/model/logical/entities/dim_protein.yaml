@@ -1,0 +1,23 @@
+id: 01M2C1YDFBFD1EM0S2GWGE51R7
+kind: logical_entity
+name: dim_protein
+realises: 01M2C1YDFB1DY6NF8SA6P341F7
+attributes:
+  - id: 01M2C1YDFBE961VRMW3YWE6GN5
+    name: uniprot_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFBHGV4JVF54YTD3PVQ
+    name: name
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFBB9P9NHQHZGG7EXPC
+    name: length_aa
+    domain: integer
+    role: attribute
+    nullable: true
+    ontology_refs: []

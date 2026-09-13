@@ -1,0 +1,9 @@
+id: 01M2C1YDFBBPBGNMQNV33KZ4JX
+kind: conceptual_entity
+name: Drug
+realised_by: []
+ontology_layer: industry
+ontology_refs:
+  - uri: CHEBI:23888
+    predicate: skos:closeMatch
+    resolved_via: ols4

@@ -1,0 +1,17 @@
+id: 01M2C1YDFE6VHZQ2NV2N0NAK2P
+kind: relationship
+name: fct_cell_line_mutation_has_dim_gene
+from:
+  entity: 01M2C1YDFC7RY3XVWPJNSNESJF
+  attributes:
+    - 01M2C1YDFCMFBB5GKGT7XKN4MM
+to:
+  entity: 01M2C1YDFBNKCECJ103WY67MRH
+  attributes:
+    - 01M2C1YDFBQE5W6JTG9RYQRWT6
+cardinality: many_to_one
+identifying: false
+optionality: mandatory
+enforce:
+  physical_constraint: true
+  dbt_test: relationships

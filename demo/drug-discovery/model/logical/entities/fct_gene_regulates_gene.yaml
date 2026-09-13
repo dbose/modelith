@@ -1,0 +1,29 @@
+id: 01M2C1YDFC7EKNH642FZJZNNNT
+kind: logical_entity
+name: fct_gene_regulates_gene
+realises: 01M2C1YDFCWBBFS004MC50QDEN
+attributes:
+  - id: 01M2C1YDFCFK3RQ06TT3SEJB71
+    name: regulator_ensembl_gene_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFCCJ82BYCWCF6CXX8S
+    name: target_ensembl_gene_id
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFC7ESXJM9XCDZNPHG6
+    name: regulation_type
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFCXNR2N7802QDZN035
+    name: evidence_score
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

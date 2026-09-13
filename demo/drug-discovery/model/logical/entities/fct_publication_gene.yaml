@@ -1,0 +1,17 @@
+id: 01M2C1YDFC4J5M52CMHTNKNH5C
+kind: logical_entity
+name: fct_publication_gene
+realises: 01M2C1YDFCB4MAV62PVRFCDVBA
+attributes:
+  - id: 01M2C1YDFC42TTYAEFVAWNPH36
+    name: pmid
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFC1JDSYPCFYZRCSK5M
+    name: ensembl_gene_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []

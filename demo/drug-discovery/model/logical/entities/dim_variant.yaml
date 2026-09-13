@@ -1,0 +1,23 @@
+id: 01M2C1YDFC0PX9EP75KS7844BY
+kind: logical_entity
+name: dim_variant
+realises: 01M2C1YDFCH2219WN1WWEKVGRC
+attributes:
+  - id: 01M2C1YDFCY3T3S5NQCSFMCZZZ
+    name: dbsnp_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFC4HQJA9WSFJ5ZGD8H
+    name: consequence
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFCCNTF56801Y7R7FHK
+    name: clinical_significance
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

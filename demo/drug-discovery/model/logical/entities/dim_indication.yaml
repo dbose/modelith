@@ -1,0 +1,23 @@
+id: 01M2C1YDFB8ZA84XHKA45J6J6D
+kind: logical_entity
+name: dim_indication
+realises: 01M2C1YDFBDKSTYK6A5TFPH5SK
+attributes:
+  - id: 01M2C1YDFBCT1A1960T85SSGXR
+    name: indication_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFB3J88R5T1SZWE879K
+    name: mondo_id
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFB5YEGHBYKQSXH35XZ
+    name: name
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

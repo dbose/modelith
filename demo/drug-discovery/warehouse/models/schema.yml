@@ -1,0 +1,939 @@
+version: 2
+
+models:
+  - name: agg_expression_by_tissue
+    columns:
+      - name: tissue_group
+        data_type: VARCHAR
+      - name: mean_tpm
+        data_type: DOUBLE
+  - name: agg_target_tractability
+    columns:
+      - name: tractability_class
+        data_type: VARCHAR
+      - name: n_targets
+        data_type: DOUBLE
+  - name: dim_antibody
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: antibody_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: antibody_id
+        data_type: VARCHAR
+      - name: name
+        data_type: VARCHAR
+      - name: clonality
+        data_type: VARCHAR
+  - name: dim_assay
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: assay_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: assay_id
+        data_type: VARCHAR
+      - name: name
+        data_type: VARCHAR
+      - name: assay_type
+        data_type: VARCHAR
+  - name: dim_biomarker
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: biomarker_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: biomarker_id
+        data_type: VARCHAR
+      - name: name
+        data_type: VARCHAR
+      - name: type
+        data_type: VARCHAR
+  - name: dim_cell_line
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: cell_line_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: cellosaurus_id
+        data_type: VARCHAR
+      - name: name
+        data_type: VARCHAR
+      - name: organism
+        data_type: VARCHAR
+  - name: dim_compound
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: compound_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: compound_id
+        data_type: VARCHAR
+      - name: smiles
+        data_type: VARCHAR
+      - name: molecular_weight
+        data_type: DOUBLE
+  - name: dim_disease
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: disease_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: mondo_id
+        data_type: VARCHAR
+      - name: name
+        data_type: VARCHAR
+      - name: icd10_code
+        data_type: VARCHAR
+  - name: dim_drug
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: drug_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: chembl_id
+        data_type: VARCHAR
+      - name: name
+        data_type: VARCHAR
+      - name: mechanism
+        data_type: VARCHAR
+      - name: max_phase
+        data_type: INTEGER
+      - name: valid_from
+        data_type: TIMESTAMP
+      - name: valid_to
+        data_type: TIMESTAMP
+      - name: is_current
+        data_type: BOOLEAN
+  - name: dim_gene
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: gene_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: ensembl_gene_id
+        data_type: VARCHAR
+      - name: symbol
+        data_type: VARCHAR
+      - name: chromosome
+        data_type: VARCHAR
+      - name: biotype
+        data_type: VARCHAR
+  - name: dim_indication
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: indication_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: indication_id
+        data_type: VARCHAR
+      - name: mondo_id
+        data_type: VARCHAR
+      - name: name
+        data_type: VARCHAR
+  - name: dim_organism
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: organism_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: taxon_id
+        data_type: VARCHAR
+      - name: name
+        data_type: VARCHAR
+      - name: common_name
+        data_type: VARCHAR
+  - name: dim_pathway
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: pathway_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: reactome_id
+        data_type: VARCHAR
+      - name: name
+        data_type: VARCHAR
+      - name: category
+        data_type: VARCHAR
+  - name: dim_phenotype
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: phenotype_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: hp_id
+        data_type: VARCHAR
+      - name: name
+        data_type: VARCHAR
+  - name: dim_protein
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: protein_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: uniprot_id
+        data_type: VARCHAR
+      - name: name
+        data_type: VARCHAR
+      - name: length_aa
+        data_type: INTEGER
+  - name: dim_publication
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: publication_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: pmid
+        data_type: VARCHAR
+      - name: title
+        data_type: VARCHAR
+      - name: journal
+        data_type: VARCHAR
+      - name: year
+        data_type: INTEGER
+  - name: dim_sample
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: sample_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: sample_id
+        data_type: VARCHAR
+      - name: tissue_uberon_id
+        data_type: VARCHAR
+      - name: condition
+        data_type: VARCHAR
+  - name: dim_target
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: target_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: target_id
+        data_type: VARCHAR
+      - name: target_type
+        data_type: VARCHAR
+      - name: tractability
+        data_type: VARCHAR
+      - name: valid_from
+        data_type: TIMESTAMP
+      - name: valid_to
+        data_type: TIMESTAMP
+      - name: is_current
+        data_type: BOOLEAN
+  - name: dim_tissue
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: tissue_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: uberon_id
+        data_type: VARCHAR
+      - name: name
+        data_type: VARCHAR
+  - name: dim_transcript
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: transcript_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: ensembl_transcript_id
+        data_type: VARCHAR
+      - name: length_bp
+        data_type: INTEGER
+  - name: dim_trial
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: trial_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: nct_id
+        data_type: VARCHAR
+      - name: title
+        data_type: VARCHAR
+      - name: phase
+        data_type: VARCHAR
+      - name: status
+        data_type: VARCHAR
+      - name: valid_from
+        data_type: TIMESTAMP
+      - name: valid_to
+        data_type: TIMESTAMP
+      - name: is_current
+        data_type: BOOLEAN
+  - name: dim_variant
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: variant_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: dbsnp_id
+        data_type: VARCHAR
+      - name: consequence
+        data_type: VARCHAR
+      - name: clinical_significance
+        data_type: VARCHAR
+  - name: fct_adverse_event
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: adverse_event_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: chembl_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_drug')
+              field: chembl_id
+      - name: meddra_pt
+        data_type: VARCHAR
+      - name: report_count
+        data_type: INTEGER
+  - name: fct_antibody_target
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: antibody_target_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: antibody_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_antibody')
+              field: antibody_id
+      - name: uniprot_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_protein')
+              field: uniprot_id
+  - name: fct_biomarker_disease
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: biomarker_disease_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: biomarker_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_biomarker')
+              field: biomarker_id
+      - name: mondo_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_disease')
+              field: mondo_id
+  - name: fct_cell_line_mutation
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: cell_line_mutation_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: cellosaurus_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_cell_line')
+              field: cellosaurus_id
+      - name: ensembl_gene_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_gene')
+              field: ensembl_gene_id
+  - name: fct_compound_assay_result
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: compound_assay_result_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: compound_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_compound')
+              field: compound_id
+      - name: assay_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_assay')
+              field: assay_id
+  - name: fct_disease_has_phenotype
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: disease_has_phenotype_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: mondo_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_disease')
+              field: mondo_id
+      - name: hp_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_phenotype')
+              field: hp_id
+  - name: fct_drug_binding
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: drug_binding_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: chembl_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_drug')
+              field: chembl_id
+      - name: target_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_target')
+              field: target_id
+      - name: assay_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_assay')
+              field: assay_id
+      - name: ic50_nm
+        data_type: DOUBLE
+  - name: fct_drug_pathway_effect
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: drug_pathway_effect_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: chembl_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_drug')
+              field: chembl_id
+      - name: reactome_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_pathway')
+              field: reactome_id
+  - name: fct_drug_targets_protein
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: drug_targets_protein_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: chembl_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_drug')
+              field: chembl_id
+      - name: uniprot_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_protein')
+              field: uniprot_id
+      - name: action_type
+        data_type: VARCHAR
+      - name: affinity_nm
+        data_type: DOUBLE
+  - name: fct_drug_treats_disease
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: drug_treats_disease_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: chembl_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_drug')
+              field: chembl_id
+      - name: mondo_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_disease')
+              field: mondo_id
+  - name: fct_gene_encodes_protein
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: gene_encodes_protein_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: ensembl_gene_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_gene')
+              field: ensembl_gene_id
+      - name: uniprot_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_protein')
+              field: uniprot_id
+  - name: fct_gene_expression
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: gene_expression_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: ensembl_gene_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_gene')
+              field: ensembl_gene_id
+      - name: uberon_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_tissue')
+              field: uberon_id
+      - name: tpm
+        data_type: DOUBLE
+  - name: fct_gene_phenotype_assoc
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: gene_phenotype_assoc_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: ensembl_gene_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_gene')
+              field: ensembl_gene_id
+      - name: hp_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_phenotype')
+              field: hp_id
+  - name: fct_gene_regulates_gene
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: gene_regulates_gene_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: regulator_ensembl_gene_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_gene')
+              field: ensembl_gene_id
+      - name: target_ensembl_gene_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_gene')
+              field: ensembl_gene_id
+      - name: regulation_type
+        data_type: VARCHAR
+      - name: evidence_score
+        data_type: DOUBLE
+  - name: fct_pathway_disease_assoc
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: pathway_disease_assoc_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: reactome_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_pathway')
+              field: reactome_id
+      - name: mondo_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_disease')
+              field: mondo_id
+  - name: fct_protein_in_pathway
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: protein_in_pathway_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: uniprot_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_protein')
+              field: uniprot_id
+      - name: reactome_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_pathway')
+              field: reactome_id
+  - name: fct_protein_interaction
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: protein_interaction_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: uniprot_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_protein')
+              field: uniprot_id
+      - name: partner_uniprot_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_protein')
+              field: uniprot_id
+  - name: fct_publication_disease
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: publication_disease_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: pmid
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_publication')
+              field: pmid
+      - name: mondo_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_disease')
+              field: mondo_id
+  - name: fct_publication_gene
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: publication_gene_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: pmid
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_publication')
+              field: pmid
+      - name: ensembl_gene_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_gene')
+              field: ensembl_gene_id
+  - name: fct_sample_expression
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: sample_expression_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: sample_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_sample')
+              field: sample_id
+      - name: ensembl_gene_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_gene')
+              field: ensembl_gene_id
+  - name: fct_trial_condition
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: trial_condition_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: nct_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_trial')
+              field: nct_id
+      - name: mondo_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_disease')
+              field: mondo_id
+  - name: fct_trial_intervention
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: trial_intervention_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: nct_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_trial')
+              field: nct_id
+      - name: chembl_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_drug')
+              field: chembl_id
+  - name: fct_variant_disease_assoc
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: variant_disease_assoc_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: dbsnp_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_variant')
+              field: dbsnp_id
+      - name: mondo_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_disease')
+              field: mondo_id
+      - name: p_value
+        data_type: DOUBLE
+      - name: odds_ratio
+        data_type: DOUBLE
+  - name: fct_variant_in_gene
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: variant_in_gene_sk
+        data_type: VARCHAR
+        constraints:
+          - type: not_null
+          - type: primary_key
+      - name: dbsnp_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_variant')
+              field: dbsnp_id
+      - name: ensembl_gene_id
+        data_type: VARCHAR
+        tests:
+          - relationships:
+              to: ref('dim_gene')
+              field: ensembl_gene_id
+  - name: kpi_adverse_events
+    columns:
+      - name: severity_class
+        data_type: VARCHAR
+      - name: n_reports
+        data_type: DOUBLE
+  - name: mart_kpi_drug_pipeline
+    columns:
+      - name: pipeline_phase
+        data_type: VARCHAR
+      - name: n_drugs
+        data_type: DOUBLE
+  - name: mart_pathway_enrichment
+    columns:
+      - name: pathway_group
+        data_type: VARCHAR
+      - name: enrichment_score
+        data_type: DOUBLE
+  - name: mart_trial_landscape
+    columns:
+      - name: phase_bucket
+        data_type: VARCHAR
+      - name: n_trials
+        data_type: DOUBLE
+  - name: rpt_disease_burden
+    columns:
+      - name: burden_bucket
+        data_type: VARCHAR
+      - name: n_associations
+        data_type: DOUBLE
+  - name: rpt_gwas_summary
+    columns:
+      - name: chromosome_band
+        data_type: VARCHAR
+      - name: n_variants
+        data_type: DOUBLE

@@ -1,0 +1,17 @@
+id: 01M2C1YDFBNY52XRC18FAHE8C4
+kind: logical_entity
+name: dim_phenotype
+realises: 01M2C1YDFB85S4XHJ1EDDC5PTB
+attributes:
+  - id: 01M2C1YDFB6K8FCVCCGWPPJP7J
+    name: hp_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFBJTF62PKGQ5DA78X5
+    name: name
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

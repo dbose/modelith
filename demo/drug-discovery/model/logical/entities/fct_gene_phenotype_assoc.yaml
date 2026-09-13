@@ -1,0 +1,17 @@
+id: 01M2C1YDFC0N3PB1TXK521R69K
+kind: logical_entity
+name: fct_gene_phenotype_assoc
+realises: 01M2C1YDFCQ6NPX1574EPR52F9
+attributes:
+  - id: 01M2C1YDFCJJAJ7P48YQCY6TSF
+    name: ensembl_gene_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFCYSJV68AR58V4HV9S
+    name: hp_id
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

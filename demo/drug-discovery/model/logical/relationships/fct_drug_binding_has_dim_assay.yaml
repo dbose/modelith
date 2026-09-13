@@ -1,0 +1,17 @@
+id: 01M2C1YDFEBYWZV11DNTCASX16
+kind: relationship
+name: fct_drug_binding_has_dim_assay
+from:
+  entity: 01M2C1YDFCJ24D08C12SSSZVEN
+  attributes:
+    - 01M2C1YDFCZ956MWTT8JBT2ZP4
+to:
+  entity: 01M2C1YDFBSM2PF5HYQM8GXPZ9
+  attributes:
+    - 01M2C1YDFBHT4318A2XHZAFJKA
+cardinality: many_to_one
+identifying: false
+optionality: mandatory
+enforce:
+  physical_constraint: true
+  dbt_test: relationships

@@ -1,0 +1,23 @@
+id: 01M2C1YDFCAAQTD8734Y3H9WP6
+kind: logical_entity
+name: fct_adverse_event
+realises: 01M2C1YDFC9D9YKE2HRG67A9J9
+attributes:
+  - id: 01M2C1YDFC70GA84R5WVRX10C5
+    name: chembl_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFCG255J9Z0QZRSJYD5
+    name: meddra_pt
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFCT8NPYJBSSCRNEG9F
+    name: report_count
+    domain: integer
+    role: attribute
+    nullable: true
+    ontology_refs: []

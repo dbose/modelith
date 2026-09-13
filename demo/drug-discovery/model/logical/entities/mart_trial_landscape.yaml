@@ -1,0 +1,18 @@
+id: 01M2C1YDFDG3S90B9DZMM2SW1F
+kind: logical_entity
+name: mart_trial_landscape
+realises: 01M2C1YDFDWAQQW39BPTXNWXBT
+attributes:
+  - id: 01M2C1YDFD1TBA6XA3J3H643PV
+    name: phase_bucket
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFD5QGA286YWEVFXA9P
+    name: n_trials
+    domain: bigint
+    role: attribute
+    nullable: true
+    ontology_refs: []
+unmanaged: true

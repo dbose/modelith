@@ -1,0 +1,974 @@
+decisions:
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_adverse_event.chembl_id -> dim_drug (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_adverse_event
+      column: chembl_id
+      to: dim_drug
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_antibody_target.antibody_id -> dim_antibody (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_antibody_target
+      column: antibody_id
+      to: dim_antibody
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_antibody_target.uniprot_id -> dim_protein (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_antibody_target
+      column: uniprot_id
+      to: dim_protein
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_biomarker_disease.biomarker_id -> dim_biomarker (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_biomarker_disease
+      column: biomarker_id
+      to: dim_biomarker
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_biomarker_disease.mondo_id -> dim_disease (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_biomarker_disease
+      column: mondo_id
+      to: dim_disease
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_cell_line_mutation.cellosaurus_id -> dim_cell_line (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_cell_line_mutation
+      column: cellosaurus_id
+      to: dim_cell_line
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_cell_line_mutation.ensembl_gene_id -> dim_gene (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_cell_line_mutation
+      column: ensembl_gene_id
+      to: dim_gene
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_compound_assay_result.assay_id -> dim_assay (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_compound_assay_result
+      column: assay_id
+      to: dim_assay
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_compound_assay_result.compound_id -> dim_compound (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_compound_assay_result
+      column: compound_id
+      to: dim_compound
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_disease_has_phenotype.hp_id -> dim_phenotype (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_disease_has_phenotype
+      column: hp_id
+      to: dim_phenotype
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_disease_has_phenotype.mondo_id -> dim_disease (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_disease_has_phenotype
+      column: mondo_id
+      to: dim_disease
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_drug_binding.assay_id -> dim_assay (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_drug_binding
+      column: assay_id
+      to: dim_assay
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_drug_binding.chembl_id -> dim_drug (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_drug_binding
+      column: chembl_id
+      to: dim_drug
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_drug_binding.target_id -> dim_target (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_drug_binding
+      column: target_id
+      to: dim_target
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_drug_pathway_effect.chembl_id -> dim_drug (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_drug_pathway_effect
+      column: chembl_id
+      to: dim_drug
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_drug_pathway_effect.reactome_id -> dim_pathway (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_drug_pathway_effect
+      column: reactome_id
+      to: dim_pathway
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_drug_targets_protein.chembl_id -> dim_drug (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_drug_targets_protein
+      column: chembl_id
+      to: dim_drug
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_drug_targets_protein.uniprot_id -> dim_protein (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_drug_targets_protein
+      column: uniprot_id
+      to: dim_protein
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_drug_treats_disease.chembl_id -> dim_drug (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_drug_treats_disease
+      column: chembl_id
+      to: dim_drug
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_drug_treats_disease.mondo_id -> dim_disease (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_drug_treats_disease
+      column: mondo_id
+      to: dim_disease
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_gene_encodes_protein.ensembl_gene_id -> dim_gene (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_gene_encodes_protein
+      column: ensembl_gene_id
+      to: dim_gene
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_gene_encodes_protein.uniprot_id -> dim_protein (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_gene_encodes_protein
+      column: uniprot_id
+      to: dim_protein
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_gene_expression.ensembl_gene_id -> dim_gene (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_gene_expression
+      column: ensembl_gene_id
+      to: dim_gene
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_gene_expression.uberon_id -> dim_tissue (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_gene_expression
+      column: uberon_id
+      to: dim_tissue
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_gene_phenotype_assoc.ensembl_gene_id -> dim_gene (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_gene_phenotype_assoc
+      column: ensembl_gene_id
+      to: dim_gene
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_gene_phenotype_assoc.hp_id -> dim_phenotype (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_gene_phenotype_assoc
+      column: hp_id
+      to: dim_phenotype
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_gene_regulates_gene.regulator_ensembl_gene_id -> dim_gene (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_gene_regulates_gene
+      column: regulator_ensembl_gene_id
+      to: dim_gene
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_gene_regulates_gene.target_ensembl_gene_id -> dim_gene (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_gene_regulates_gene
+      column: target_ensembl_gene_id
+      to: dim_gene
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_pathway_disease_assoc.mondo_id -> dim_disease (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_pathway_disease_assoc
+      column: mondo_id
+      to: dim_disease
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_pathway_disease_assoc.reactome_id -> dim_pathway (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_pathway_disease_assoc
+      column: reactome_id
+      to: dim_pathway
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_protein_in_pathway.reactome_id -> dim_pathway (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_protein_in_pathway
+      column: reactome_id
+      to: dim_pathway
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_protein_in_pathway.uniprot_id -> dim_protein (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_protein_in_pathway
+      column: uniprot_id
+      to: dim_protein
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_protein_interaction.partner_uniprot_id -> dim_protein (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_protein_interaction
+      column: partner_uniprot_id
+      to: dim_protein
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_protein_interaction.uniprot_id -> dim_protein (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_protein_interaction
+      column: uniprot_id
+      to: dim_protein
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_publication_disease.mondo_id -> dim_disease (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_publication_disease
+      column: mondo_id
+      to: dim_disease
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_publication_disease.pmid -> dim_publication (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_publication_disease
+      column: pmid
+      to: dim_publication
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_publication_gene.ensembl_gene_id -> dim_gene (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_publication_gene
+      column: ensembl_gene_id
+      to: dim_gene
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_publication_gene.pmid -> dim_publication (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_publication_gene
+      column: pmid
+      to: dim_publication
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_sample_expression.ensembl_gene_id -> dim_gene (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_sample_expression
+      column: ensembl_gene_id
+      to: dim_gene
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_sample_expression.sample_id -> dim_sample (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_sample_expression
+      column: sample_id
+      to: dim_sample
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_trial_condition.mondo_id -> dim_disease (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_trial_condition
+      column: mondo_id
+      to: dim_disease
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_trial_condition.nct_id -> dim_trial (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_trial_condition
+      column: nct_id
+      to: dim_trial
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_trial_intervention.chembl_id -> dim_drug (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_trial_intervention
+      column: chembl_id
+      to: dim_drug
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_trial_intervention.nct_id -> dim_trial (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_trial_intervention
+      column: nct_id
+      to: dim_trial
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_variant_disease_assoc.dbsnp_id -> dim_variant (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_variant_disease_assoc
+      column: dbsnp_id
+      to: dim_variant
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_variant_disease_assoc.mondo_id -> dim_disease (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_variant_disease_assoc
+      column: mondo_id
+      to: dim_disease
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_variant_in_gene.dbsnp_id -> dim_variant (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_variant_in_gene
+      column: dbsnp_id
+      to: dim_variant
+      signal: relationships_test
+  - kind: relationship
+    signal: relationships_test
+    confidence: high
+    subject: fct_variant_in_gene.ensembl_gene_id -> dim_gene (dbt relationships test)
+    verdict: accepted
+    evidence:
+      from: fct_variant_in_gene
+      column: ensembl_gene_id
+      to: dim_gene
+      signal: relationships_test
+  - kind: reporting_rollup
+    signal: rollup_naming
+    confidence: medium-high
+    subject: model 'agg_expression_by_tissue' looks like a reporting rollup; kept unmanaged
+    verdict: accepted
+    evidence:
+      model: agg_expression_by_tissue
+      reason: rollup name + no business key
+  - kind: reporting_rollup
+    signal: rollup_naming
+    confidence: medium-high
+    subject: model 'agg_target_tractability' looks like a reporting rollup; kept unmanaged
+    verdict: accepted
+    evidence:
+      model: agg_target_tractability
+      reason: rollup name + no business key
+  - kind: reporting_rollup
+    signal: rollup_naming
+    confidence: medium-high
+    subject: model 'kpi_adverse_events' looks like a reporting rollup; kept unmanaged
+    verdict: accepted
+    evidence:
+      model: kpi_adverse_events
+      reason: rollup name + no business key
+  - kind: reporting_rollup
+    signal: rollup_naming
+    confidence: medium-high
+    subject: model 'mart_kpi_drug_pipeline' looks like a reporting rollup; kept unmanaged
+    verdict: accepted
+    evidence:
+      model: mart_kpi_drug_pipeline
+      reason: rollup name + no business key
+  - kind: reporting_rollup
+    signal: rollup_naming
+    confidence: medium-high
+    subject: model 'mart_pathway_enrichment' looks like a reporting rollup; kept unmanaged
+    verdict: accepted
+    evidence:
+      model: mart_pathway_enrichment
+      reason: rollup name + no business key
+  - kind: reporting_rollup
+    signal: rollup_naming
+    confidence: medium-high
+    subject: model 'mart_trial_landscape' looks like a reporting rollup; kept unmanaged
+    verdict: accepted
+    evidence:
+      model: mart_trial_landscape
+      reason: rollup name + no business key
+  - kind: reporting_rollup
+    signal: rollup_naming
+    confidence: medium-high
+    subject: model 'rpt_disease_burden' looks like a reporting rollup; kept unmanaged
+    verdict: accepted
+    evidence:
+      model: rpt_disease_burden
+      reason: rollup name + no business key
+  - kind: reporting_rollup
+    signal: rollup_naming
+    confidence: medium-high
+    subject: model 'rpt_gwas_summary' looks like a reporting rollup; kept unmanaged
+    verdict: accepted
+    evidence:
+      model: rpt_gwas_summary
+      reason: rollup name + no business key
+  - kind: scd2_pattern
+    signal: scd2_columns
+    confidence: medium-high
+    subject: model 'dim_drug' looks like SCD2 (valid_from, valid_to, is_current)
+    verdict: accepted
+    evidence:
+      model: dim_drug
+      columns:
+        - valid_from
+        - valid_to
+        - is_current
+  - kind: scd2_pattern
+    signal: scd2_columns
+    confidence: medium-high
+    subject: model 'dim_target' looks like SCD2 (valid_from, valid_to, is_current)
+    verdict: accepted
+    evidence:
+      model: dim_target
+      columns:
+        - valid_from
+        - valid_to
+        - is_current
+  - kind: scd2_pattern
+    signal: scd2_columns
+    confidence: medium-high
+    subject: model 'dim_trial' looks like SCD2 (valid_from, valid_to, is_current)
+    verdict: accepted
+    evidence:
+      model: dim_trial
+      columns:
+        - valid_from
+        - valid_to
+        - is_current
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key dim_antibody.antibody_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: dim_antibody
+      column: antibody_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key dim_assay.assay_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: dim_assay
+      column: assay_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key dim_biomarker.biomarker_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: dim_biomarker
+      column: biomarker_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key dim_cell_line.cell_line_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: dim_cell_line
+      column: cell_line_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key dim_compound.compound_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: dim_compound
+      column: compound_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key dim_disease.disease_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: dim_disease
+      column: disease_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key dim_drug.drug_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: dim_drug
+      column: drug_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key dim_gene.gene_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: dim_gene
+      column: gene_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key dim_indication.indication_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: dim_indication
+      column: indication_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key dim_organism.organism_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: dim_organism
+      column: organism_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key dim_pathway.pathway_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: dim_pathway
+      column: pathway_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key dim_phenotype.phenotype_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: dim_phenotype
+      column: phenotype_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key dim_protein.protein_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: dim_protein
+      column: protein_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key dim_publication.publication_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: dim_publication
+      column: publication_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key dim_sample.sample_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: dim_sample
+      column: sample_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key dim_target.target_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: dim_target
+      column: target_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key dim_tissue.tissue_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: dim_tissue
+      column: tissue_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key dim_transcript.transcript_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: dim_transcript
+      column: transcript_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key dim_trial.trial_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: dim_trial
+      column: trial_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key dim_variant.variant_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: dim_variant
+      column: variant_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key fct_adverse_event.adverse_event_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: fct_adverse_event
+      column: adverse_event_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key fct_antibody_target.antibody_target_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: fct_antibody_target
+      column: antibody_target_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key fct_biomarker_disease.biomarker_disease_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: fct_biomarker_disease
+      column: biomarker_disease_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key fct_cell_line_mutation.cell_line_mutation_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: fct_cell_line_mutation
+      column: cell_line_mutation_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key fct_compound_assay_result.compound_assay_result_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: fct_compound_assay_result
+      column: compound_assay_result_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key fct_disease_has_phenotype.disease_has_phenotype_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: fct_disease_has_phenotype
+      column: disease_has_phenotype_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key fct_drug_binding.drug_binding_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: fct_drug_binding
+      column: drug_binding_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key fct_drug_pathway_effect.drug_pathway_effect_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: fct_drug_pathway_effect
+      column: drug_pathway_effect_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key fct_drug_targets_protein.drug_targets_protein_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: fct_drug_targets_protein
+      column: drug_targets_protein_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key fct_drug_treats_disease.drug_treats_disease_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: fct_drug_treats_disease
+      column: drug_treats_disease_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key fct_gene_encodes_protein.gene_encodes_protein_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: fct_gene_encodes_protein
+      column: gene_encodes_protein_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key fct_gene_expression.gene_expression_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: fct_gene_expression
+      column: gene_expression_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key fct_gene_phenotype_assoc.gene_phenotype_assoc_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: fct_gene_phenotype_assoc
+      column: gene_phenotype_assoc_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key fct_gene_regulates_gene.gene_regulates_gene_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: fct_gene_regulates_gene
+      column: gene_regulates_gene_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key fct_pathway_disease_assoc.pathway_disease_assoc_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: fct_pathway_disease_assoc
+      column: pathway_disease_assoc_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key fct_protein_in_pathway.protein_in_pathway_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: fct_protein_in_pathway
+      column: protein_in_pathway_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key fct_protein_interaction.protein_interaction_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: fct_protein_interaction
+      column: protein_interaction_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key fct_publication_disease.publication_disease_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: fct_publication_disease
+      column: publication_disease_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key fct_publication_gene.publication_gene_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: fct_publication_gene
+      column: publication_gene_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key fct_sample_expression.sample_expression_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: fct_sample_expression
+      column: sample_expression_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key fct_trial_condition.trial_condition_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: fct_trial_condition
+      column: trial_condition_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key fct_trial_intervention.trial_intervention_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: fct_trial_intervention
+      column: trial_intervention_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key fct_variant_disease_assoc.variant_disease_assoc_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: fct_variant_disease_assoc
+      column: variant_disease_assoc_sk
+      reason: surrogate_key
+  - kind: strip_column
+    signal: surrogate_key
+    confidence: medium-high
+    subject: strip surrogate_key fct_variant_in_gene.variant_in_gene_sk from the logical view
+    verdict: accepted
+    evidence:
+      model: fct_variant_in_gene
+      column: variant_in_gene_sk
+      reason: surrogate_key

@@ -1,0 +1,29 @@
+id: 01M2C1YDFC79B470HHVRCQ7718
+kind: logical_entity
+name: fct_drug_targets_protein
+realises: 01M2C1YDFCDFQ7WS2E851ZK3E4
+attributes:
+  - id: 01M2C1YDFCC4PBNJSZZ14Z5J5K
+    name: chembl_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFCTMNB4MX73Q13F071
+    name: uniprot_id
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFC2HAZYAGRJ6B3YMY6
+    name: action_type
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFC58QYFS4YNT95KH1S
+    name: affinity_nm
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

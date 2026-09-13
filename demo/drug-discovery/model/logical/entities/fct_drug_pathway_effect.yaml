@@ -1,0 +1,17 @@
+id: 01M2C1YDFCNP4WRC0KMTPG6WPM
+kind: logical_entity
+name: fct_drug_pathway_effect
+realises: 01M2C1YDFCSSGNY8YCERDHR6ZP
+attributes:
+  - id: 01M2C1YDFC9130CJ16SBYNA78R
+    name: chembl_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFC45SZ4FKF2K53CAEF
+    name: reactome_id
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

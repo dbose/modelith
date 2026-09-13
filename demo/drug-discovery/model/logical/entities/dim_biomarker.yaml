@@ -1,0 +1,23 @@
+id: 01M2C1YDFB00KSN93CANANX0FJ
+kind: logical_entity
+name: dim_biomarker
+realises: 01M2C1YDFBZSQVS205RABYSV5G
+attributes:
+  - id: 01M2C1YDFBFSHQX48YP19A21B5
+    name: biomarker_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFBHDYERCCZZ37921CZ
+    name: name
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFBQD3VGVBXZWJ65RWA
+    name: type
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

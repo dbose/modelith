@@ -1,0 +1,17 @@
+id: 01M2C1YDFBDWF6EYYXFKASH040
+kind: logical_entity
+name: dim_tissue
+realises: 01M2C1YDFB005WZ4B97XWJTCR7
+attributes:
+  - id: 01M2C1YDFBQEYVAET012X8FT62
+    name: uberon_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFBM51G8RA8ATTN91KZ
+    name: name
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

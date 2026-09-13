@@ -1,0 +1,23 @@
+id: 01M2C1YDFB2M88H7CY0V6P4Q68
+kind: logical_entity
+name: dim_pathway
+realises: 01M2C1YDFBHTQTAC5JJVZAPKG7
+attributes:
+  - id: 01M2C1YDFBAYQH4EN9G27ZG0BT
+    name: reactome_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFBKQ7E3V1VNK06KYTA
+    name: name
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFBK9Q7QA4FAZYQFQ2A
+    name: category
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

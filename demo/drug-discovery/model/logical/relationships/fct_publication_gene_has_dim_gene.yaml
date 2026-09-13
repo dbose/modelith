@@ -1,0 +1,17 @@
+id: 01M2C1YDFFT8KQ45TMKA9R3EJ2
+kind: relationship
+name: fct_publication_gene_has_dim_gene
+from:
+  entity: 01M2C1YDFC4J5M52CMHTNKNH5C
+  attributes:
+    - 01M2C1YDFC1JDSYPCFYZRCSK5M
+to:
+  entity: 01M2C1YDFBNKCECJ103WY67MRH
+  attributes:
+    - 01M2C1YDFBQE5W6JTG9RYQRWT6
+cardinality: many_to_one
+identifying: false
+optionality: mandatory
+enforce:
+  physical_constraint: true
+  dbt_test: relationships

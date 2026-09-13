@@ -1,0 +1,17 @@
+id: 01M2C1YDFCFHXAVZC4F9JEF8MF
+kind: logical_entity
+name: fct_drug_treats_disease
+realises: 01M2C1YDFC2TV62NZRY81E77RC
+attributes:
+  - id: 01M2C1YDFCG1RVNGAZ7FFPYCGC
+    name: chembl_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFCYVBFYTXDHJYY5G3K
+    name: mondo_id
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

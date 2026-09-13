@@ -1,0 +1,9 @@
+id: 01M2C1YDFB85S4XHJ1EDDC5PTB
+kind: conceptual_entity
+name: Phenotype
+realised_by: []
+ontology_layer: industry
+ontology_refs:
+  - uri: HP:0000118
+    predicate: skos:closeMatch
+    resolved_via: ols4

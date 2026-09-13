@@ -1,0 +1,17 @@
+id: 01M2C1YDFFTNQZVZ0XWRAA9GAQ
+kind: relationship
+name: fct_drug_pathway_effect_has_dim_pathway
+from:
+  entity: 01M2C1YDFCNP4WRC0KMTPG6WPM
+  attributes:
+    - 01M2C1YDFC45SZ4FKF2K53CAEF
+to:
+  entity: 01M2C1YDFB2M88H7CY0V6P4Q68
+  attributes:
+    - 01M2C1YDFBAYQH4EN9G27ZG0BT
+cardinality: many_to_one
+identifying: false
+optionality: mandatory
+enforce:
+  physical_constraint: true
+  dbt_test: relationships

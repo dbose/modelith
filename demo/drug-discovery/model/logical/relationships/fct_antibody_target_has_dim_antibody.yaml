@@ -1,0 +1,17 @@
+id: 01M2C1YDFENCSFSEVBTM9S4YK8
+kind: relationship
+name: fct_antibody_target_has_dim_antibody
+from:
+  entity: 01M2C1YDFC9WB42ZTQSA70QSG7
+  attributes:
+    - 01M2C1YDFCQSCSG96EJ8N322TS
+to:
+  entity: 01M2C1YDFBMQ8WB5E5YMXNBYJ7
+  attributes:
+    - 01M2C1YDFBHGBAM09EGD5HT39J
+cardinality: many_to_one
+identifying: false
+optionality: mandatory
+enforce:
+  physical_constraint: true
+  dbt_test: relationships

@@ -1,0 +1,17 @@
+id: 01M2C1YDFDSCCV5TZVAXGP1DDQ
+kind: logical_entity
+name: fct_trial_intervention
+realises: 01M2C1YDFD2CD9QA1XGX7JJKV3
+attributes:
+  - id: 01M2C1YDFDM6SVQQTENGMEBNT9
+    name: nct_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFDVVSVAFYB3Y82VF7X
+    name: chembl_id
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

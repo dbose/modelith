@@ -1,0 +1,24 @@
+id: 01M2C1YDFB03G7B5ZJSNW3JB8E
+kind: logical_entity
+name: dim_target
+realises: 01M2C1YDFBXWYGFAGAAYSVVSA0
+attributes:
+  - id: 01M2C1YDFB45JP2E5GR3VR3GJZ
+    name: target_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFB9C1M7BGY0CE09T5N
+    name: target_type
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFBHJEEFRKJJ3H526Y5
+    name: tractability
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+pattern: scd2

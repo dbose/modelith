@@ -1,0 +1,23 @@
+id: 01M2C1YDFB2QSX0HVM08DWF8HV
+kind: logical_entity
+name: dim_sample
+realises: 01M2C1YDFBBF9N1GQ8DBX4X668
+attributes:
+  - id: 01M2C1YDFBFMJNF3RF0KQ3VAXM
+    name: sample_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFBYK8FY5CADA0R43AD
+    name: tissue_uberon_id
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFB1ABME5PD34DBY3BF
+    name: condition
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

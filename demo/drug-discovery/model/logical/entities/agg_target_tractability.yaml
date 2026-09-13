@@ -1,0 +1,18 @@
+id: 01M2C1YDFBE50CESJYV5QJM6J3
+kind: logical_entity
+name: agg_target_tractability
+realises: 01M2C1YDFB1QVE3CBCZCMMTEYF
+attributes:
+  - id: 01M2C1YDFB9J1Y91M0VR0ZSD8M
+    name: tractability_class
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFBPH26C1VSS488C56W
+    name: n_targets
+    domain: bigint
+    role: attribute
+    nullable: true
+    ontology_refs: []
+unmanaged: true

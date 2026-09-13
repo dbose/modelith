@@ -1,0 +1,17 @@
+id: 01M2C1YDFF54R119ZXGFQ72H1C
+kind: relationship
+name: fct_gene_expression_has_dim_tissue
+from:
+  entity: 01M2C1YDFCPGCNJ9BC4V46NV25
+  attributes:
+    - 01M2C1YDFC4GJPK6KN7N0BWX5T
+to:
+  entity: 01M2C1YDFBDWF6EYYXFKASH040
+  attributes:
+    - 01M2C1YDFBQEYVAET012X8FT62
+cardinality: many_to_one
+identifying: false
+optionality: mandatory
+enforce:
+  physical_constraint: true
+  dbt_test: relationships

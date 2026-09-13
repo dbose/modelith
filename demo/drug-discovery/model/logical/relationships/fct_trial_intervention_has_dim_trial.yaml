@@ -1,0 +1,17 @@
+id: 01M2C1YDFGK9DJ7XRW5D2KK4A2
+kind: relationship
+name: fct_trial_intervention_has_dim_trial
+from:
+  entity: 01M2C1YDFDSCCV5TZVAXGP1DDQ
+  attributes:
+    - 01M2C1YDFDM6SVQQTENGMEBNT9
+to:
+  entity: 01M2C1YDFCGJ0X7YH6829DHQDY
+  attributes:
+    - 01M2C1YDFC91WKF1G3R14HVKJW
+cardinality: many_to_one
+identifying: false
+optionality: mandatory
+enforce:
+  physical_constraint: true
+  dbt_test: relationships

@@ -1,0 +1,17 @@
+id: 01M2C1YDFC7RY3XVWPJNSNESJF
+kind: logical_entity
+name: fct_cell_line_mutation
+realises: 01M2C1YDFCFW46V6EFRZ5M785K
+attributes:
+  - id: 01M2C1YDFCXEHKHP41G5DEY0YJ
+    name: cellosaurus_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFCMFBB5GKGT7XKN4MM
+    name: ensembl_gene_id
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []

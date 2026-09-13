@@ -1,0 +1,17 @@
+id: 01M2C1YDFEYG8KYC0F2N6DQMRK
+kind: relationship
+name: fct_disease_has_phenotype_has_dim_disease
+from:
+  entity: 01M2C1YDFC94QX1VXGW5JXPAXS
+  attributes:
+    - 01M2C1YDFCKZ4PNK2ES0CC222D
+to:
+  entity: 01M2C1YDFBPGKAE3XP68QH83XY
+  attributes:
+    - 01M2C1YDFBBPAFM3MXTWCJ3JG7
+cardinality: many_to_one
+identifying: false
+optionality: mandatory
+enforce:
+  physical_constraint: true
+  dbt_test: relationships

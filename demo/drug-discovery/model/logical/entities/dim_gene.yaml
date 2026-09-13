@@ -1,0 +1,29 @@
+id: 01M2C1YDFBNKCECJ103WY67MRH
+kind: logical_entity
+name: dim_gene
+realises: 01M2C1YDFBPM1G31X7S6QW9F2D
+attributes:
+  - id: 01M2C1YDFBQE5W6JTG9RYQRWT6
+    name: ensembl_gene_id
+    domain: string
+    role: business_key
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFBY4RFEZFTV3A494H3
+    name: symbol
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFBHQJBT3V2AWVKHDRY
+    name: chromosome
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
+  - id: 01M2C1YDFBFE2QYPAYR3FBP9YX
+    name: biotype
+    domain: string
+    role: attribute
+    nullable: true
+    ontology_refs: []
