@@ -46,6 +46,45 @@ def _family_and_width(t: str) -> tuple[str, int] | None:
     return None
 
 
+# Coarse type family by NAME, robust to precision/scale/length: DECIMAL(18,2) and
+# DECIMAL(38,2) are both "numeric"; VARCHAR(255) and TEXT are both "string". Used to
+# decide that two types differing ONLY in precision/length are not a breaking change —
+# a warehouse DECIMAL(18,2) vs a model's DECIMAL(38,2) default is cosmetic, not a
+# stop-the-line type change. Distinct from _FAMILIES (which pins narrowing WIDTH within
+# a family from an exact-string lattice); this is the family membership test.
+_FAMILY_BY_NAME: dict[str, str] = {
+    "DECIMAL": "numeric", "NUMERIC": "numeric", "NUMBER": "numeric", "DEC": "numeric",
+    "FLOAT": "numeric", "DOUBLE": "numeric", "REAL": "numeric",
+    "BIGINT": "numeric", "INT8": "numeric", "INTEGER": "numeric", "INT": "numeric",
+    "INT4": "numeric", "SMALLINT": "numeric", "TINYINT": "numeric", "BOOLEAN": "numeric",
+    "BOOL": "numeric",
+    "VARCHAR": "string", "CHAR": "string", "TEXT": "string", "STRING": "string",
+    "NVARCHAR": "string", "CHARACTER": "string",
+    "DATE": "temporal", "TIMESTAMP": "temporal", "DATETIME": "temporal",
+    "TIMESTAMPTZ": "temporal", "TIMESTAMP_NTZ": "temporal", "TIMESTAMP_TZ": "temporal",
+    "TIMESTAMP_LTZ": "temporal",
+}
+
+
+def type_family(t: str | None) -> str | None:
+    """The coarse family (numeric | string | temporal) of a SQL type, ignoring
+    precision/scale/length. None when unknown."""
+    if not t:
+        return None
+    base = t.upper().strip().split("(", 1)[0].strip()
+    return _FAMILY_BY_NAME.get(base)
+
+
+def same_family_precision_change(old: str | None, new: str | None) -> bool:
+    """True when `old` and `new` are the same family and differ only in
+    precision/scale/length (e.g. DECIMAL(38,2) vs DECIMAL(18,2), VARCHAR(255) vs
+    VARCHAR(64)). Such a change is cosmetic, not breaking."""
+    if not old or not new or old.upper().strip() == new.upper().strip():
+        return False
+    fo, fn = type_family(old), type_family(new)
+    return fo is not None and fo == fn
+
+
 def _is_narrowing(old: str | None, new: str | None) -> bool:
     if not old or not new:
         return False
