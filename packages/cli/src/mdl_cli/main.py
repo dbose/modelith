@@ -289,7 +289,17 @@ def generate(
 @app.command()
 def reverse(
     project: Path = typer.Option(
-        ..., "--project", help="Path to a dbt project (manifest.json or an emitted schema.yml)"
+        None, "--project", help="Path to a dbt project (manifest.json or an emitted schema.yml)"
+    ),
+    ddl: Path = typer.Option(
+        None,
+        "--ddl",
+        help="Path to a raw SQL DDL script (CREATE TABLE …). Reversed through the same "
+        "engine as a dbt project: surrogate stripping, SCD2/staging classification, and "
+        "the review ledger all apply. Nullability and keys come from the DDL.",
+    ),
+    dialect: str = typer.Option(
+        None, "--dialect", help="SQL dialect for --ddl (postgres|snowflake|mysql|duckdb|…)"
     ),
     out: Path = typer.Option(Path("model"), "--out", "-o", help="Where to write the model"),
     target: str = typer.Option("duckdb_dev", "--target", "-t"),
@@ -324,13 +334,29 @@ def reverse(
           rollup_prefixes: [gold_, ber_]     # kept: mart_/rpt_/... + these
           staging_prefixes: [bronze_, silver_]
     """
-    # Accept either a manifest.json or a schema.yml (warehouse-free path).
-    if project.name.endswith(".yml") or project.name.endswith(".yaml"):
+    # Exactly one source: a dbt project (manifest.json / schema.yml) or a SQL DDL script.
+    if bool(project) == bool(ddl):
+        typer.secho(
+            "pass exactly one of --project (a dbt manifest/schema.yml) or --ddl (a SQL script)",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    if ddl:
+        from mdl_reverse.ddl_projection import ddl_projection
+
+        proj = ddl_projection(ddl.read_text(encoding="utf-8"), dialect=dialect)
+    elif project.name.endswith(".yml") or project.name.endswith(".yaml"):
+        # a dbt schema.yml (warehouse-free path)
         proj = read_schema_yml(project)
     else:
         from mdl_reverse.manifest import read_manifest as _rm
 
         proj = _rm(project)
+
+    for w in proj.warnings:
+        typer.secho(f"  {w}", fg=typer.colors.YELLOW)
 
     reverse_naming = _load_reverse_naming(naming, out)
 
@@ -1340,9 +1366,31 @@ app.add_typer(decisions_app, name="decisions")
 def decisions_list(
     model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
     pending: bool = typer.Option(False, "--pending", help="Only unreviewed proposals"),
+    fmt: str = typer.Option(
+        "text", "--format", help="text|json (json feeds the VS Code review UI)"
+    ),
 ) -> None:
     ledger = DecisionLedger.load(model_dir)
     items = ledger.pending() if pending else list(ledger.decisions.values())
+    if fmt == "json":
+        typer.echo(
+            json.dumps(
+                [
+                    {
+                        "signal_key": d.signal_key,
+                        "kind": d.kind,
+                        "signal": d.signal,
+                        "confidence": d.confidence.value,
+                        "verdict": d.verdict.value,
+                        "subject": d.subject,
+                        "evidence": d.evidence,
+                    }
+                    for d in items
+                ],
+                default=str,
+            )
+        )
+        return
     for d in items:
         mark = {"accepted": "✓", "rejected": "✗", "proposed": "?"}[d.verdict.value]
         typer.echo(f"  {mark} [{d.confidence.value:11}] {d.signal_key}  {d.subject}")

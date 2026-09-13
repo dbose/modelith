@@ -1,4 +1,6 @@
+import { useEffect, useRef, useState } from "react";
 import type { Exec } from "./exec";
+import type { LayoutMode } from "./layout";
 import type { PanelTab } from "./SidePanel";
 import { ImportExportMenu } from "./sme/ImportExportMenu";
 import type { DiagnosticsDoc, ModelDoc } from "./types";
@@ -33,7 +35,7 @@ export function TopBar({
   showTypes: boolean;
   onToggleTypes: () => void;
   onFitView: () => void;
-  onRelayout: () => void;
+  onRelayout: (mode?: LayoutMode) => void;
   onRefresh: () => void;
   saColors: Map<string, string>;
   readOnly: boolean;
@@ -131,9 +133,7 @@ export function TopBar({
         >
           {"⟳"}
         </button>
-        <button className="tool-btn" onClick={onRelayout} title="Auto-layout">
-          {"⌗"}
-        </button>
+        <LayoutPicker onRelayout={onRelayout} />
         <button className="tool-btn" onClick={onFitView} title="Fit view">
           {"⛶"}
         </button>
@@ -152,5 +152,49 @@ export function TopBar({
         />
       </div>
     </header>
+  );
+}
+
+/** Auto-layout as a small picker. The icon button re-lays out in "auto" (dagre for
+ *  small models, grid past the entity threshold — no regression for existing models).
+ *  The caret opens a menu to force Hierarchical or Grid, so a large model can be
+ *  arranged either way. */
+function LayoutPicker({ onRelayout }: { onRelayout: (mode?: LayoutMode) => void }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+
+  const pick = (mode: LayoutMode) => {
+    onRelayout(mode);
+    setOpen(false);
+  };
+
+  return (
+    <div className="layout-picker" ref={ref}>
+      <button className="tool-btn" onClick={() => onRelayout("auto")} title="Auto-layout">
+        {"⌗"}
+      </button>
+      <button
+        className={"tool-btn caret" + (open ? " active" : "")}
+        onClick={() => setOpen((v) => !v)}
+        title="Layout style"
+      >
+        {"▾"}
+      </button>
+      {open && (
+        <div className="layout-menu" role="menu">
+          <button onClick={() => pick("auto")}>Auto (by size)</button>
+          <button onClick={() => pick("hierarchical")}>Hierarchical</button>
+          <button onClick={() => pick("grid")}>Grid</button>
+        </div>
+      )}
+    </div>
   );
 }

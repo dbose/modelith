@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 dependencies = [
     "modelith-core",
+    "modelith-emit-erd",
     "dbt-artifacts-parser>=0.5",
 ]
 
@@ -18,3 +19,4 @@ packages = ["src/mdl_reverse"]
 
 [tool.uv.sources]
 modelith-core = { workspace = true }
+modelith-emit-erd = { workspace = true }
