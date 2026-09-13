@@ -85,8 +85,20 @@ def read_manifest(path: str | Path) -> ManifestProjection:
 
 
 def _merge_catalog(proj: ManifestProjection, catalog: dict[str, Any]) -> None:
-    """Fill in physical columns from catalog.json. Catalog is authoritative for the
-    column SET and data types; manifest descriptions/meta are kept where they exist."""
+    """Fill in physical columns from catalog.json. The catalog reflects the REAL
+    warehouse (`dbt docs generate` introspects it), so for every model the catalog
+    covers it is authoritative for the column SET and data types — REPLACING the
+    manifest's declared columns, not just adding to them.
+
+    This matters for drift: a governed column documented in schema.yml (manifest) but
+    silently dropped from the warehouse is absent from the catalog. If we only added
+    catalog columns, that stale manifest column would survive and drift would never flag
+    it dropped — the exact 'is the governed definition actually materialized?' gap. By
+    rebuilding the column set from the catalog (keeping manifest description/meta where a
+    column survives), a dropped column disappears here and surfaces as breaking drift.
+
+    A model NOT present in the catalog keeps its manifest columns untouched (the catalog
+    simply doesn't cover it — e.g. an ephemeral model, or a partial catalog)."""
     by_name = {m.name: m for m in proj.models.values()}
     for node in (catalog.get("nodes") or {}).values():
         if not isinstance(node, dict):
@@ -95,14 +107,21 @@ def _merge_catalog(proj: ManifestProjection, catalog: dict[str, Any]) -> None:
         model = by_name.get(name)
         if model is None:
             continue
-        for col_name, col in (node.get("columns") or {}).items():
+        catalog_cols = node.get("columns") or {}
+        if not catalog_cols:
+            continue  # a catalog node with no columns tells us nothing — don't wipe
+        rebuilt: dict[str, ManifestColumn] = {}
+        for col_name, col in catalog_cols.items():
             existing = model.columns.get(col_name)
-            model.columns[col_name] = ManifestColumn(
+            rebuilt[col_name] = ManifestColumn(
                 name=col_name,
                 data_type=_norm_type(col.get("type")),
                 description=(existing.description if existing else None),
                 meta=(existing.meta if existing else {}),
             )
+        # Authoritative replace: manifest columns absent from the catalog were dropped
+        # from the warehouse and must not linger.
+        model.columns = rebuilt
 
 
 def read_manifest_dict(raw: dict[str, Any]) -> ManifestProjection:

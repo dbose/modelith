@@ -117,3 +117,34 @@ def test_reverse_then_drift_has_no_breaking_drift():
         "a freshly-reversed model must be drift-clean against its own warehouse; "
         f"got breaking drift: {[(i.model, i.column, i.detail) for i in breaking]}"
     )
+
+
+def test_drift_uses_catalog_not_stale_manifest_for_column_presence():
+    """A governed column documented in schema.yml (manifest) but silently dropped from
+    the warehouse must surface as BREAKING drift, even if the yml is left stale. Drift
+    must trust the catalog (real warehouse) for the column set, not the manifest doc."""
+    from mdl_reverse.drift import DriftKind
+
+    manifest, catalog = _manifest_and_catalog()
+
+    # Reverse from the honest (catalog-merged) warehouse -> the model has lifetime_value.
+    proj_full = _project(manifest, catalog)
+    result = reverse(proj_full, project_name="shop", target=TARGET)
+
+    # Now the warehouse drops lifetime_value (gone from the CATALOG) but the schema.yml
+    # (MANIFEST) is left stale — it still documents the column.
+    del catalog["nodes"]["model.shop.dim_customer"]["columns"]["lifetime_value"]
+    # manifest still declares it (stale yml); merged projection should follow the catalog
+    proj_drifted = _project(manifest, catalog)
+
+    report = compute_drift(result.model, proj_drifted, TARGET)
+    dropped = [
+        i
+        for i in report.items
+        if i.kind == DriftKind.column_dropped and i.column == "lifetime_value"
+    ]
+    assert dropped, (
+        "a column dropped from the warehouse must be flagged even when schema.yml is "
+        f"stale; got items: {[(i.kind.value, i.column) for i in report.items]}"
+    )
+    assert dropped[0].severity == DriftSeverity.breaking
