@@ -1,0 +1,21 @@
+# Modelith project config (spec §2.2) — bundled demo model (`mdl init --demo`).
+# A 7-entity investment book-of-record (IBoR): price, instrument, position,
+# counterparty, transaction, portfolio, benchmark. Validates offline, renders a
+# populated ERD in `mdl serve`, and generates a DuckDB warehouse you can `dbt build`.
+name: pension_ibor
+dbt_target: duckdb_dev
+platform_targets:
+  - duckdb_dev
+# Ontology sources plug in by declaration (types: ols, ols-compatible, ontoportal,
+# collibra, or a local file vocabulary). Left empty so the demo runs fully offline
+# with no spawned resolver. To try live ontology search, add a source, e.g.:
+#   ontology_stack:
+#     - name: ols
+#       layer: industry
+#       type: ols
+#       url: https://www.ebi.ac.uk/ols4/api
+ontology_stack: []
+naming:
+  logical_case: snake
+  physical_case: upper_snake
+  abbreviations: {}

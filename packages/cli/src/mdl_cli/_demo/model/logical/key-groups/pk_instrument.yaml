@@ -1,0 +1,6 @@
+id: 01KZKEYGROUPINSTRUMENTPK000
+kind: key_group
+entity: 01KZ2B1RV0BZ5257G4AFKRW34X
+name: pk_instrument
+type: pk
+members: [01KZ2WQ5DTWCEVGQ568DK327BA]

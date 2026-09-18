@@ -1,0 +1,10 @@
+id: 01KZ2659638XNEK72JK6PGQA7P
+kind: conceptual_entity
+name: Counterparty
+subject_area: 01KZ265963K1SX5TK770VJEYHD
+definition: >
+  A legal person with whom the firm has or may have a contractual obligation.
+stewardship:
+  owner: risk-data-office
+  steward: a.hough
+synonyms: [Counterparty, CPTY]

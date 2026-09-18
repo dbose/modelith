@@ -101,13 +101,38 @@ def init(
     git_hooks: bool = typer.Option(
         False, "--git-hooks", help="Only wire the semantic merge driver (§6.1)"
     ),
+    demo: bool = typer.Option(
+        False,
+        "--demo",
+        help="Scaffold a populated 7-entity example model + a DuckDB dbt project, "
+        "so the first `mdl serve` shows a real ERD (spec §4.2). Runs fully offline.",
+    ),
 ) -> None:
     """Scaffold a model repo, or a full collaboration workspace.
 
     The project name defaults to the target directory (``mdl init my-model`` names
-    the project ``my_model``); pass ``--name`` to override.
+    the project ``my_model``); pass ``--name`` to override. ``--demo`` instead lays
+    down a ready-made example you can `serve`, `validate`, `generate`, and `dbt build`
+    with no configuration.
     """
     from mdl_cli.collab import ensure_git_hooks, scaffold_workspace
+
+    if demo:
+        from mdl_cli.demo import scaffold_demo
+
+        written = scaffold_demo(path)
+        typer.secho(
+            f"Scaffolded a 7-entity demo model ({len(written)} files) under {path}",
+            fg=typer.colors.GREEN,
+        )
+        typer.secho(
+            "  Next: mdl serve -m model   (populated ERD)\n"
+            "        mdl validate -m model\n"
+            "        mdl generate -m model -o transform/warehouse\n"
+            "        cd transform/warehouse && dbt build   (needs dbt-duckdb)",
+            fg=typer.colors.CYAN,
+        )
+        return
 
     if name is None:
         name = _project_name_from_path(path)

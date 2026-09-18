@@ -1,0 +1,13 @@
+id: 01KZ31ZGXYKE7S82XFEP8A774C
+kind: relationship
+name: instrument_to_counterparty
+from:
+  entity: 01KZ2B1RV0BZ5257G4AFKRW34X
+  attributes:
+    - 01KZ31ZGXYM6JQB1JJQSZR7E19
+to:
+  entity: 01KZ2659634FAG7WT6KDWKA62S
+  attributes:
+    - 01KZ265963ANMN3276ZTRPT5K3
+cardinality: many_to_one
+optionality: mandatory

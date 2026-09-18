@@ -1,0 +1,20 @@
+id: 01KZ2659634FAG7WT6KDWKA62S
+kind: logical_entity
+name: counterparty
+realises: 01KZ2659638XNEK72JK6PGQA7P
+attributes:
+  - id: 01KZ265963ANMN3276ZTRPT5K3
+    name: counterparty_id
+    domain: identifier_bigint
+    role: business_key
+    nullable: false
+  - id: 01KZ2MAGACD933NTCW8DB0AERF
+    name: legal_name
+    domain: string
+    role: attribute
+    nullable: false
+  - id: 01KZ2MBC38TAWEE2VSG6AKV652
+    name: country
+    domain: string
+    role: attribute
+    nullable: false

@@ -1,0 +1,13 @@
+id: 01KZ30ERDEA64BS5CZPXQT0G8N
+kind: relationship
+name: portfolio_to_benchmark
+from:
+  entity: 01KZ2CBAD9WD1EH0ZKQP3ESE2N
+  attributes:
+    - 01KZ30ERDDHAA7FD11599HKTRW
+to:
+  entity: 01KZ2FV3S3JZJQFY7QAA969635
+  attributes:
+    - 01KZ2Z2847JT0V7W2BB7JKTD69
+cardinality: many_to_one
+optionality: mandatory
