@@ -7,6 +7,7 @@ offline with no config, and mint fresh ids each run so two demos never collide.
 from __future__ import annotations
 
 from pathlib import Path
+from unittest import mock
 
 from typer.testing import CliRunner
 
@@ -18,6 +19,26 @@ runner = CliRunner()
 
 def _logical_entities(model: Path) -> list[Path]:
     return sorted((model / "logical" / "entities").glob("*.yaml"))
+
+
+def test_init_demo_no_path_defaults_to_home_not_cwd(tmp_path: Path, monkeypatch):
+    """`mdl init --demo` with no path must NOT write into the current directory
+    (the engineer's repo); it defaults to ~/modelith-demo. Regression guard for the
+    pollution bug where the demo scaffolded into whatever repo you were standing in."""
+    home = tmp_path / "home"
+    home.mkdir()
+    cwd = tmp_path / "some_repo"
+    cwd.mkdir()
+    monkeypatch.chdir(cwd)
+    # Path.home() reads $HOME on posix; set it so the test never touches the real home.
+    with mock.patch("mdl_cli.main.Path.home", return_value=home):
+        result = runner.invoke(app, ["init", "--demo"])
+    assert result.exit_code == 0, result.output
+    # the demo landed in ~/modelith-demo ...
+    assert (home / "modelith-demo" / "model" / "mdl-project.yaml").exists()
+    # ... and the cwd (the "repo") is untouched
+    assert not (cwd / "model").exists()
+    assert list(cwd.iterdir()) == []
 
 
 def test_init_demo_scaffolds_a_populated_model(tmp_path: Path):
