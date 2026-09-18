@@ -16,6 +16,13 @@ uv tool install modelith-dbt
 The extension does not bundle its own copy of the canvas. It launches `mdl serve` and
 embeds the live canvas, so whatever the CLI understands, the editor shows.
 
+Install the extension from the Marketplace UI, or by id:
+
+```bash
+code --install-extension BosonResearch.modelith-vscode
+# cursor --install-extension BosonResearch.modelith-vscode   # Cursor / Windsurf / VSCodium (Open VSX)
+```
+
 ## What you get
 
 - **Canvas beside your YAML.** Right-click a model file and choose *Modelith: Open Model
@@ -68,8 +75,10 @@ install.
 
 The extension declares `"extensionKind": ["workspace"]`, so in a devcontainer it runs inside
 the container, next to `mdl`, dbt, and your warehouse credentials. The canvas server binds in
-the container and VS Code forwards the port automatically. A ready-made devcontainer template
-ships in the Modelith repository under `profiles/devcontainer/`.
+the container and VS Code forwards the port automatically. Two ready-made setups ship in the
+Modelith repository: a minimal template under `profiles/devcontainer/`, and a full onboarding
+devcontainer at `.devcontainer/` that installs the CLI, scaffolds a demo model, and opens the
+ER canvas on first attach.
 
 ## Learn more
 

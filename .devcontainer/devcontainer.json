@@ -1,0 +1,58 @@
+{
+  // Modelith onboarding devcontainer — visually test the ER canvas end to end.
+  //
+  // One file, both worlds: "Dev Containers: Reopen in Container" in VS Code
+  // Desktop, or launch it as a GitHub Codespace. It installs the `mdl` CLI the
+  // blessed way and the Modelith extension, with zero manual `modelith.mdlPath`
+  // config. It does NOT scaffold anything into your workspace — run
+  // `mdl init --demo` yourself from the terminal (writes to ~/modelith-demo), or
+  // `mdl reverse` your own dbt project. See setup-demo.sh's banner.
+  //
+  // The extension host and `mdl serve` both run INSIDE the container
+  // (extensionKind: workspace), and the canvas URL is resolved through
+  // vscode.env.asExternalUri, so port 4800 tunnels back to your machine
+  // automatically in Desktop and Codespaces alike.
+  "name": "Modelith onboarding (canvas)",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+
+  "features": {
+    // The extension's build/runtime toolchain wants Node 18+; pin 20.
+    "ghcr.io/devcontainers/features/node:1": { "version": "20" }
+  },
+
+  // Blessed-path install of the CLI. `uv tool install` puts `mdl` on PATH for
+  // every terminal AND for the extension's zero-config detection (PATH +
+  // ~/.local/bin probing). Nothing sets modelith.mdlPath — that is the point.
+  "onCreateCommand": "python3 -m pip install --user uv && ~/.local/bin/uv tool install modelith-dbt",
+
+  // Confirms the CLI is detected; does not scaffold (see setup-demo.sh).
+  "postCreateCommand": "bash .devcontainer/setup-demo.sh",
+
+  "customizations": {
+    "vscode": {
+      // Dev Containers installs these automatically on create, from the registry
+      // each host queries (MS Marketplace in Desktop, Open VSX in Codespaces).
+      // BosonResearch.modelith-vscode is published to both, so a fresh clone or
+      // Codespace brings the extension up with zero scripts and zero manual steps.
+      "extensions": ["BosonResearch.modelith-vscode", "redhat.vscode-yaml"],
+      "settings": {
+        // modelDir/dbtProjectDir are left to auto-discovery: nothing is scaffolded
+        // into the workspace, so hard-coding "model" would point at a missing dir.
+        // The extension finds a model when you create/reverse one, or you can point
+        // it at ~/modelith-demo/model after `mdl init --demo`.
+        //
+        // Full-window canvas via a forwarded port (recommended for containers).
+        // Switch to "tab" to test the embedded webview instead.
+        "modelith.canvas.display": "external"
+      }
+    }
+  },
+
+  // The canvas server binds 4800 inside the container; forward it so the browser
+  // tab the extension opens reaches it. onAutoForward: silent — the extension
+  // opens the URL itself; no need for a popup.
+  "forwardPorts": [4800],
+  "portsAttributes": {
+    "4800": { "label": "Modelith ER canvas", "onAutoForward": "silent" }
+  }
+}

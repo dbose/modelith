@@ -99,8 +99,8 @@ Code, Cursor, Windsurf, and VSCodium: open the Extensions panel and search for
 **Modelith**, or install from the command line.
 
 ```bash
-code --install-extension modelith.modelith-vscode        # VS Code
-# cursor --install-extension modelith.modelith-vscode    # Cursor
+code --install-extension BosonResearch.modelith-vscode        # VS Code
+# cursor --install-extension BosonResearch.modelith-vscode    # Cursor
 ```
 
 ### From source
