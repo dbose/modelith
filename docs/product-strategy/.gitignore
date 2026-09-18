@@ -1,0 +1,5 @@
+# Sensitive product/GTM strategy material — never committed.
+# Ignore everything in this directory...
+*
+# ...except this .gitignore itself, so the folder's intent travels with the repo.
+!.gitignore
