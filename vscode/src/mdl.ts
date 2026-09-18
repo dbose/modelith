@@ -86,8 +86,15 @@ export function isMdlNotFound(e: unknown): e is MdlNotFoundError {
   return e instanceof MdlNotFoundError || (typeof e === "object" && e !== null && "notFound" in e);
 }
 
-/** The blessed install command (matches the README and PyPI name `modelith-dbt`). */
-export const CLI_INSTALL_CMD = "uv tool install modelith-dbt";
+/**
+ * The blessed install command (matches the README and PyPI name `modelith-dbt`).
+ * `--force` is deliberate: `uv tool install` is a no-op when the tool already
+ * exists, so a lingering/stale `mdl` (e.g. left behind after uninstalling an older
+ * extension) would NOT be upgraded and the extension could then call commands the
+ * old CLI lacks. --force reinstalls to the current version whether mdl is absent,
+ * stale, or current, and is a clean no-op-equivalent when already current.
+ */
+export const CLI_INSTALL_CMD = "uv tool install --force modelith-dbt";
 
 /**
  * When `mdl` is missing, show an actionable error with a one-click install button
@@ -106,7 +113,8 @@ export async function offerCliInstall(): Promise<boolean> {
   );
   if (choice !== INSTALL && choice !== PIPX) return false;
 
-  const cmd = choice === PIPX ? "pipx install modelith-dbt" : CLI_INSTALL_CMD;
+  // pipx --force likewise reinstalls over any existing/stale copy.
+  const cmd = choice === PIPX ? "pipx install --force modelith-dbt" : CLI_INSTALL_CMD;
   const term = vscode.window.createTerminal({ name: "Install Modelith CLI" });
   term.show(true);
   // Send the install; on success, clear the cache so the very next Modelith action
