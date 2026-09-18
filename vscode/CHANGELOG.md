@@ -1,7 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.2.0
 
+- **One-click CLI install.** When the `mdl` command-line tool isn't found, the
+  extension now offers an "Install the CLI for me" button that runs
+  `uv tool install modelith-dbt` (or `pipx`) in an integrated terminal and
+  re-detects — no more copying a command out of an error message. Also available
+  from the palette as *Modelith: Install the CLI (mdl)*.
 - **AI assistance.** Two Copilot Chat integrations backed by the same `mdl` engine:
   a bundled MCP server (`mdl mcp`) exposing model + ontology tools in Agent mode
   (`list_entities`, `get_entity`, `search_ontology`, `get_model_context`, `validate`,

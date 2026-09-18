@@ -65,12 +65,66 @@ export async function findMdl(root: string): Promise<MdlBin> {
       return c;
     }
   }
-  throw new Error(
-    "mdl CLI not found. Install it (`uv tool install modelith` or `pipx install " +
-      "modelith`), then reload. If it's installed but not detected — e.g. in a conda " +
-      "env — run `which mdl` in the integrated terminal and set that path as " +
-      "`modelith.mdlPath` in Settings.",
+  throw new MdlNotFoundError();
+}
+
+/** Thrown by findMdl when no `mdl` resolves. Carries a stable marker so callers
+ * can offer the one-click installer instead of just printing the message. */
+export class MdlNotFoundError extends Error {
+  readonly notFound = true as const;
+  constructor() {
+    super(
+      "The Modelith CLI (`mdl`) was not found. Install it, then reload. If it is " +
+        "installed but not detected (e.g. a conda env), run `which mdl` in a terminal " +
+        "and set that path as `modelith.mdlPath` in Settings.",
+    );
+    this.name = "MdlNotFoundError";
+  }
+}
+
+export function isMdlNotFound(e: unknown): e is MdlNotFoundError {
+  return e instanceof MdlNotFoundError || (typeof e === "object" && e !== null && "notFound" in e);
+}
+
+/**
+ * The blessed install command (matches the README and PyPI name `modelith-dbt`).
+ * `--force` is deliberate: `uv tool install` is a no-op when the tool already
+ * exists, so a lingering/stale `mdl` (e.g. left behind after uninstalling an older
+ * extension) would NOT be upgraded and the extension could then call commands the
+ * old CLI lacks. --force reinstalls to the current version whether mdl is absent,
+ * stale, or current, and is a clean no-op-equivalent when already current.
+ */
+export const CLI_INSTALL_CMD = "uv tool install --force modelith-dbt";
+
+/**
+ * When `mdl` is missing, show an actionable error with a one-click install button
+ * (doc §4.1: not a docs link — run the command for them). Runs the install in an
+ * integrated terminal, then clears the detection cache so the next action re-probes.
+ * Returns true if the user chose to install (the terminal was launched).
+ */
+export async function offerCliInstall(): Promise<boolean> {
+  const INSTALL = "Install the CLI for me";
+  const PIPX = "Use pipx instead";
+  const choice = await vscode.window.showErrorMessage(
+    "Modelith needs the `mdl` command-line tool, which isn't installed yet.",
+    { modal: false },
+    INSTALL,
+    PIPX,
   );
+  if (choice !== INSTALL && choice !== PIPX) return false;
+
+  // pipx --force likewise reinstalls over any existing/stale copy.
+  const cmd = choice === PIPX ? "pipx install --force modelith-dbt" : CLI_INSTALL_CMD;
+  const term = vscode.window.createTerminal({ name: "Install Modelith CLI" });
+  term.show(true);
+  // Send the install; on success, clear the cache so the very next Modelith action
+  // finds the freshly-installed binary without a window reload.
+  term.sendText(cmd, true);
+  vscode.window.showInformationMessage(
+    "Installing the Modelith CLI in the terminal. When it finishes, run your Modelith command again.",
+  );
+  resetMdlCache();
+  return true;
 }
 
 export function resetMdlCache(): void {

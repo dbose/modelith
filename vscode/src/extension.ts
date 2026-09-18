@@ -14,6 +14,8 @@ import {
   findMdl,
   findModelDir,
   hasAiCommands,
+  isMdlNotFound,
+  offerCliInstall,
   resetMdlCache,
   runMdl,
   upgradeHint,
@@ -140,8 +142,23 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     await fn(dir);
   };
 
+  // Every CLI-backed command flows through cmd(). Wrap it once so that if any of
+  // them hits a missing `mdl`, the user gets the one-click installer (doc §4.1)
+  // instead of an opaque error — the single highest first-run bounce point.
   const cmd = (id: string, fn: (...a: unknown[]) => unknown) =>
-    ctx.subscriptions.push(vscode.commands.registerCommand(id, fn));
+    ctx.subscriptions.push(
+      vscode.commands.registerCommand(id, async (...a: unknown[]) => {
+        try {
+          return await fn(...a);
+        } catch (e) {
+          if (isMdlNotFound(e)) {
+            await offerCliInstall();
+            return;
+          }
+          throw e;
+        }
+      }),
+    );
 
   // --- language server (diagnostics, hover, lens, actions, lift/adopt/unmanage)
 
@@ -272,6 +289,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
       try {
         await canvas.open(dir);
       } catch (e) {
+        if (isMdlNotFound(e)) throw e; // let cmd() offer the one-click installer
         void vscode.window.showErrorMessage(`Modelith canvas: ${e}`);
       }
     }),
@@ -290,12 +308,20 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
         // working tree (direct-write, like the CLI) — you review the git diff.
         await canvas.open(dir, "import=1");
       } catch (e) {
+        if (isMdlNotFound(e)) throw e; // let cmd() offer the one-click installer
         void vscode.window.showErrorMessage(`Modelith canvas: ${e}`);
       }
     }),
   );
 
   cmd("modelith.stopServer", () => canvas.stop());
+
+  // Palette-discoverable one-click CLI install (also offered automatically when a
+  // command finds no `mdl`). Registered directly, not via cmd(), so it never
+  // recurses into the not-found handler.
+  ctx.subscriptions.push(
+    vscode.commands.registerCommand("modelith.installCli", () => offerCliInstall()),
+  );
 
   cmd("modelith.generate", () =>
     withModelDir(async (dir) => {
