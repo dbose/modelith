@@ -87,7 +87,11 @@ def _project_name_from_path(path: Path) -> str:
 
 @app.command()
 def init(
-    path: Path = typer.Argument(Path("."), help="Directory to scaffold in"),
+    path: Path = typer.Argument(
+        None,
+        help="Directory to scaffold in. Defaults to the current directory, except "
+        "`--demo`, which defaults to ~/modelith-demo so it never writes into your repo.",
+    ),
     name: str = typer.Option(
         None,
         help="Project name. Defaults to the target directory name.",
@@ -113,26 +117,35 @@ def init(
     The project name defaults to the target directory (``mdl init my-model`` names
     the project ``my_model``); pass ``--name`` to override. ``--demo`` instead lays
     down a ready-made example you can `serve`, `validate`, `generate`, and `dbt build`
-    with no configuration.
+    with no configuration; with no path it writes to ``~/modelith-demo`` so it never
+    touches the repo you are standing in.
     """
     from mdl_cli.collab import ensure_git_hooks, scaffold_workspace
 
     if demo:
         from mdl_cli.demo import scaffold_demo
 
-        written = scaffold_demo(path)
+        # The demo must never land in the engineer's own repo. With no explicit path
+        # it goes to ~/modelith-demo (portable across mac/Linux/Windows via Path.home);
+        # an explicit `mdl init --demo <path>` still wins.
+        target = path if path is not None else Path.home() / "modelith-demo"
+        written = scaffold_demo(target)
         typer.secho(
-            f"Scaffolded a 7-entity demo model ({len(written)} files) under {path}",
+            f"Scaffolded a 7-entity demo model ({len(written)} files) under {target}",
             fg=typer.colors.GREEN,
         )
         typer.secho(
-            "  Next: mdl serve -m model   (populated ERD)\n"
-            "        mdl validate -m model\n"
-            "        mdl generate -m model -o transform/warehouse\n"
-            "        cd transform/warehouse && dbt build   (needs dbt-duckdb)",
+            f"  Next: mdl serve -m {target}/model   (populated ERD)\n"
+            f"        mdl validate -m {target}/model\n"
+            f"        mdl generate -m {target}/model -o {target}/transform/warehouse\n"
+            f"        cd {target}/transform/warehouse && dbt build   (needs dbt-duckdb)",
             fg=typer.colors.CYAN,
         )
         return
+
+    # Plain init (no --demo): default to the current directory, as before.
+    if path is None:
+        path = Path(".")
 
     if name is None:
         name = _project_name_from_path(path)
