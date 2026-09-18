@@ -22,7 +22,7 @@ exactly as a marketplace install (right-click menus, activation, packaging):
 npm run package                                   # builds + produces modelith-vscode-<version>.vsix
 code --install-extension modelith-vscode-0.1.0.vsix
 # reload VS Code; uninstall a test build with:
-#   code --uninstall-extension modelith.modelith-vscode
+#   code --uninstall-extension BosonResearch.modelith-vscode
 ```
 
 ## Publish to the marketplaces
@@ -41,7 +41,7 @@ All commands below run from the `vscode/` directory with Node 20 on PATH.
 
 ### Before anything
 
-- The manifest already sets `publisher: modelith`, `repository`, `icon`, `keywords`, and
+- The manifest already sets `publisher: BosonResearch`, `repository`, `icon`, `keywords`, and
   `galleryBanner`. If you publish under a different publisher id, change `publisher` in
   `package.json` to match the id you own on each marketplace.
 - Confirm the `repository.url` (`https://github.com/dbose/modelith.git`) is correct and the
@@ -54,11 +54,11 @@ All commands below run from the `vscode/` directory with Node 20 on PATH.
    New Token. Set Organization to "All accessible organizations" and the scope to
    **Marketplace -> Manage**. Copy the token; you will not see it again.
 3. Create the publisher at https://marketplace.visualstudio.com/manage. The publisher id must
-   equal the `publisher` field in `package.json` (`modelith`).
+   equal the `publisher` field in `package.json` (`BosonResearch`).
 4. Log in once:
 
    ```bash
-   npx @vscode/vsce login modelith
+   npx @vscode/vsce login BosonResearch
    # paste the Azure PAT when prompted
    ```
 
@@ -66,11 +66,14 @@ All commands below run from the `vscode/` directory with Node 20 on PATH.
 
 1. Sign in at https://open-vsx.org with GitHub and accept the publisher agreement.
 2. Create an access token under your Open VSX account settings.
-3. Claim the `modelith` namespace (must match the `publisher` field):
+3. Claim the `BosonResearch` namespace (must match the `publisher` field). The extension
+   was previously published under the `modelith` namespace on Open VSX; that id is now
+   deprecated in favour of `BosonResearch.modelith-vscode` so a single id works on both
+   registries.
 
    ```bash
    npm install -g ovsx
-   ovsx create-namespace modelith -p <open-vsx-token>
+   ovsx create-namespace BosonResearch -p <open-vsx-token>
    ```
 
 ## Publish
@@ -95,12 +98,12 @@ Both marketplaces render `vscode/README.md` as the extension's landing page and
 
 ## Verifying a release
 
-- Visual Studio Marketplace: https://marketplace.visualstudio.com/items?itemName=modelith.modelith-vscode
-- Open VSX: https://open-vsx.org/extension/modelith/modelith-vscode
+- Visual Studio Marketplace: https://marketplace.visualstudio.com/items?itemName=BosonResearch.modelith-vscode
+- Open VSX: https://open-vsx.org/extension/BosonResearch/modelith-vscode
 - Install from the marketplace to confirm:
 
   ```bash
-  code --install-extension modelith.modelith-vscode
+  code --install-extension BosonResearch.modelith-vscode
   ```
 
 ## Automating with CI (optional)

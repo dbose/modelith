@@ -9,7 +9,7 @@
   "customizations": {
     "vscode": {
       "extensions": [
-        "modelith.modelith-vscode",
+        "BosonResearch.modelith-vscode",
         "redhat.vscode-yaml",
         "innoverio.vscode-dbt-power-user"
       ],
