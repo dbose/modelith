@@ -1,0 +1,6 @@
+name: warehouse
+version: "1.0.0"
+profile: warehouse
+model-paths: ["models"]
+macro-paths: ["macros"]
+target-path: target

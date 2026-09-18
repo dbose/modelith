@@ -1,0 +1,15 @@
+id: 01KZ2FV3S3JZJQFY7QAA969635
+kind: logical_entity
+name: benchmark
+realises: 01KZ2FV3S38T2N77S0V8RQE4Z1
+attributes:
+  - id: 01KZ2Z2847JT0V7W2BB7JKTD69
+    name: benchmark_code
+    domain: string
+    role: business_key
+    nullable: false
+  - id: 01KZ2Z2EZ23J4F0KCKXZ3GV4ZQ
+    name: benchmark_name
+    domain: string
+    role: attribute
+    nullable: false

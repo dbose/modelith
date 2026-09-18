@@ -1,0 +1,4 @@
+instrument_id,isin,asset_class,counterparty_id
+101,GB0002634946,govt_bond,2
+102,US0378331005,equity,1
+103,GB00B03MLX29,equity,1

@@ -1,0 +1,13 @@
+id: 01KZ30XJ1JZ1KT4KT4S5YBQNB5
+kind: relationship
+name: price_to_instrument
+from:
+  entity: 01KZ2CRW88VH6N972NY2G9VPDX
+  attributes:
+    - 01KZ30XJ1JZRY1V45N4CKKMV85
+to:
+  entity: 01KZ2B1RV0BZ5257G4AFKRW34X
+  attributes:
+    - 01KZ2WQ5DTWCEVGQ568DK327BA
+cardinality: many_to_one
+optionality: mandatory

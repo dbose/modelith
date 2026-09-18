@@ -1,0 +1,4 @@
+transaction_id,trade_date,amount,portfolio_code,counterparty_id
+TXN001,2026-06-15,2738250.00,PF_UK_EQ,1
+TXN002,2026-06-20,161480.00,PF_UK_EQ,1
+TXN003,2026-06-25,49100000.00,PF_FI_CORE,2

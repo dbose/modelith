@@ -1,0 +1,13 @@
+id: 01KZ30YSQ7V3HJXCFXMBRW88RA
+kind: relationship
+name: transaction_to_portfolio
+from:
+  entity: 01KZ2FSTGAEEH1QAZW9HTQVY1W
+  attributes:
+    - 01KZ30YSQ78B6XPFDV3H2GF6CT
+to:
+  entity: 01KZ2CBAD9WD1EH0ZKQP3ESE2N
+  attributes:
+    - 01KZ2Z4MRKZEPPEWP1CE02F36B
+cardinality: many_to_one
+optionality: mandatory

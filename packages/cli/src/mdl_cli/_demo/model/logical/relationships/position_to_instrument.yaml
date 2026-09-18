@@ -1,0 +1,13 @@
+id: 01KZ30PT8AKWRTSBH3V9F84RAM
+kind: relationship
+name: position_to_instrument
+from:
+  entity: 01KZ2CKNG2S3P5AX7PK826ET35
+  attributes:
+    - 01KZ30PT8AEJG9ZB45S4TD7MNC
+to:
+  entity: 01KZ2B1RV0BZ5257G4AFKRW34X
+  attributes:
+    - 01KZ2WQ5DTWCEVGQ568DK327BA
+cardinality: many_to_one
+optionality: mandatory

@@ -1,0 +1,13 @@
+id: 01KZ30Z75KWPCT60D90T4DNC01
+kind: relationship
+name: transaction_to_counterparty
+from:
+  entity: 01KZ2FSTGAEEH1QAZW9HTQVY1W
+  attributes:
+    - 01KZ30Z75KQ5TY8C3CJAKVG5NS
+to:
+  entity: 01KZ2659634FAG7WT6KDWKA62S
+  attributes:
+    - 01KZ265963ANMN3276ZTRPT5K3
+cardinality: many_to_one
+optionality: mandatory

@@ -1,0 +1,20 @@
+id: 01KZ2CBAD9WD1EH0ZKQP3ESE2N
+kind: logical_entity
+name: portfolio
+realises: 01KZ2CBAD92B7NJ7XQ20PA09VK
+attributes:
+  - id: 01KZ2Z4MRKZEPPEWP1CE02F36B
+    name: portfolio_code
+    domain: string
+    role: business_key
+    nullable: false
+  - id: 01KZ2Z5EJDS5HCHA7KVMVTDYTE
+    name: mandate
+    domain: string
+    role: attribute
+    nullable: true
+  - id: 01KZ30ERDDHAA7FD11599HKTRW
+    name: benchmark_code
+    domain: string
+    role: attribute
+    nullable: true
