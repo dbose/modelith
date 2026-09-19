@@ -21,6 +21,7 @@ import {
   upgradeHint,
 } from "./mdl";
 import { registerSchemas } from "./schemas";
+import { initTelemetry, track } from "./telemetry";
 
 let canvas: CanvasManager;
 let client: LanguageClient | undefined;
@@ -36,6 +37,14 @@ function decisionOf(node: unknown): Decision | undefined {
 export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   const out = vscode.window.createOutputChannel("Modelith");
   ctx.subscriptions.push(out);
+
+  // Seed the telemetry gate and subscribe to mid-session telemetry-setting changes
+  // BEFORE the first track() so the enabled state is correct from the start.
+  initTelemetry(ctx, out);
+
+  // Editor-funnel: the extension activated (a dbt/model workspace was opened, or a
+  // command was invoked). Acquisition/retention signal, keyed on machineId.
+  track("extension_activated");
 
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 90);
   status.text = "$(circle-outline) Modelith";
@@ -247,6 +256,10 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   cmd("modelith.openPreview", () =>
     withModelDir(async (dir) => {
       if (!preview) {
+        // Activation wow (editor surface) — the model preview beside the YAML.
+        // Fired on first open of a session, however reached (status bar, walkthrough,
+        // the demo hand-off). `surface` distinguishes it from the full Open Canvas.
+        track("canvas_opened_in_editor", { surface: "preview" });
         preview = vscode.window.createWebviewPanel(
           "modelithPreview",
           "◮ Model Preview",
@@ -278,7 +291,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   cmd("modelith.validate", () =>
     withModelDir(async (dir) => {
       const bin = await findMdl(dir);
-      const r = await runMdl(bin, ["validate", "-m", "."], dir);
+      const r = await runMdl(bin, ["validate", "-m", "."], dir, out);
       out.appendLine(r.stdout + r.stderr);
       out.show(true);
     }),
@@ -288,6 +301,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     withModelDir(async (dir) => {
       try {
         await canvas.open(dir);
+        track("canvas_opened_in_editor"); // activation wow, editor surface
       } catch (e) {
         if (isMdlNotFound(e)) throw e; // let cmd() offer the one-click installer
         void vscode.window.showErrorMessage(`Modelith canvas: ${e}`);
@@ -323,13 +337,57 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     vscode.commands.registerCommand("modelith.installCli", () => offerCliInstall()),
   );
 
+  // Scaffold the bundled demo (walkthrough step 2). `mdl init --demo` with no path
+  // writes to ~/modelith-demo — NEVER the user's own repo — so this does not need
+  // an existing model dir; it runs from the workspace root (or home) purely so
+  // `mdl` resolves. Goes through cmd() so a missing CLI offers the installer.
+  cmd("modelith.initDemo", async () => {
+    track("walkthrough_try_demo_clicked");
+    const os = require("node:os");
+    const path = require("node:path");
+    const cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? os.homedir();
+    const bin = await findMdl(cwd);
+    const r = await runMdl(bin, ["init", "--demo"], cwd, out);
+    out.appendLine(r.stdout + r.stderr);
+    if (r.code !== 0) {
+      out.show(true);
+      return;
+    }
+    const demoDir = path.join(os.homedir(), "modelith-demo");
+    // The user clicked "Create the demo model" — that IS the consent, so open the
+    // new window directly rather than making them chase a corner toast. Hand off via
+    // globalState (shared across windows) so the new window's activate() auto-runs
+    // the walkthrough + canvas + YAML. The new window itself is the feedback.
+    await ctx.globalState.update("modelith.pendingDemoAutoOpen", demoDir);
+    await vscode.commands.executeCommand(
+      "vscode.openFolder",
+      vscode.Uri.file(demoDir),
+      { forceNewWindow: true },
+    );
+  });
+
+  // Re-open the Getting Started walkthrough on demand (the native auto-open only
+  // fires once, on install). Registered directly — it touches no `mdl`. The id is
+  // <publisher>.<extension>#<walkthroughId>; it must match the PUBLISHED publisher
+  // exactly or VS Code silently no-ops.
+  ctx.subscriptions.push(
+    vscode.commands.registerCommand("modelith.openWalkthrough", () => {
+      track("walkthrough_opened");
+      return vscode.commands.executeCommand(
+        "workbench.action.openWalkthrough",
+        "BosonResearch.modelith-vscode#modelith.gettingStarted",
+        false,
+      );
+    }),
+  );
+
   cmd("modelith.generate", () =>
     withModelDir(async (dir) => {
       const bin = await findMdl(dir);
       const dbtDir = await findDbtProjectDir();
       const args = ["generate", "-m", "."];
       if (dbtDir) args.push("-o", dbtDir);
-      const r = await runMdl(bin, args, dir);
+      const r = await runMdl(bin, args, dir, out);
       out.appendLine(r.stdout + r.stderr);
       if (r.code === 3) {
         void vscode.window
@@ -445,7 +503,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
       await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Notification, title: "Modelith: reverse-engineering…" },
         async () => {
-          const r = await runMdl(bin, args, dir);
+          const r = await runMdl(bin, args, dir, out);
           out.appendLine(r.stdout + r.stderr);
           if (r.code !== 0) {
             void vscode.window
@@ -477,7 +535,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   cmd("modelith.lintFix", () =>
     withModelDir(async (dir) => {
       const bin = await findMdl(dir);
-      const r = await runMdl(bin, ["lint", "-m", ".", "--fix"], dir);
+      const r = await runMdl(bin, ["lint", "-m", ".", "--fix"], dir, out);
       out.appendLine(r.stdout + r.stderr);
     }),
   );
@@ -491,7 +549,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
       });
       if (!name) return;
       const bin = await findMdl(dir);
-      const r = await runMdl(bin, ["new", "entity", name, "-m", "."], dir);
+      const r = await runMdl(bin, ["new", "entity", name, "-m", "."], dir, out);
       out.appendLine(r.stdout + r.stderr);
       if (r.code === 0) {
         const file = vscode.Uri.file(
@@ -510,7 +568,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
       void vscode.window.withProgress(
         { location: vscode.ProgressLocation.Notification, title: "Modelith: vendoring FIBO…" },
         async () => {
-          const r = await runMdl(bin, ["ontology", "vendor", "fibo", "-m", "."], dir);
+          const r = await runMdl(bin, ["ontology", "vendor", "fibo", "-m", "."], dir, out);
           out.appendLine(r.stdout + r.stderr);
           if (r.code !== 0) void vscode.window.showErrorMessage("Modelith: vendor failed (see output).");
         },
@@ -545,6 +603,51 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
 
   const modelDir = await findModelDir();
   if (modelDir) void registerSchemas(ctx, modelDir);
+
+  // Demo hand-off: if this window was just opened ON the demo folder by
+  // `modelith.initDemo` (flag set in the previous window, shared via globalState),
+  // continue the walkthrough here and open the canvas beside a logical-model YAML —
+  // so the demo lands with the "wow" already on screen.
+  void continueDemoIfHandedOff(ctx);
+}
+
+async function continueDemoIfHandedOff(ctx: vscode.ExtensionContext): Promise<void> {
+  const pending = ctx.globalState.get<string>("modelith.pendingDemoAutoOpen");
+  if (!pending) return;
+  const here = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  // Only fire in the window actually opened on the demo folder.
+  if (!here || here !== pending) return;
+  await ctx.globalState.update("modelith.pendingDemoAutoOpen", undefined); // one-shot
+  // The activation "wow": the demo landed in a new window with canvas + YAML.
+  track("demo_opened_in_new_window");
+
+  const yamls = await vscode.workspace.findFiles(
+    "model/logical/entities/*.yaml",
+    undefined,
+    1,
+  );
+  try {
+    // Order matters so FOCUS lands on the YAML, ready to edit and watch the canvas
+    // follow. Open the walkthrough and the preview first (both non-focus-stealing),
+    // then show the YAML LAST with focus.
+    // 1. Walkthrough tab, available but not focused. Route through our own command
+    //    so the open is tracked once, in one place (walkthrough_opened).
+    await vscode.commands.executeCommand("modelith.openWalkthrough");
+    // 2. Open a YAML so the preview has a file to follow, then the Model Preview
+    //    BESIDE it (openPreview uses ViewColumn.Beside with preserveFocus).
+    if (yamls.length) {
+      const doc = await vscode.workspace.openTextDocument(yamls[0]);
+      await vscode.window.showTextDocument(doc, vscode.ViewColumn.One, true);
+    }
+    await vscode.commands.executeCommand("modelith.openPreview");
+    // 3. Finally focus the YAML — the user lands here, canvas beside, ready to edit.
+    if (yamls.length) {
+      const doc = await vscode.workspace.openTextDocument(yamls[0]);
+      await vscode.window.showTextDocument(doc, vscode.ViewColumn.One, false);
+    }
+  } catch {
+    // best-effort — the walkthrough buttons still work manually
+  }
 }
 
 export function deactivate(): Thenable<void> | undefined {

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from datetime import UTC
 from pathlib import Path
 
@@ -1881,6 +1882,11 @@ def serve(
         f"Modelith canvas ({mode}): http://{host}:{port}  (model: {model_dir})",
         fg=typer.colors.CYAN,
     )
+    # The "wow" moment. Emit at STARTUP, before the blocking server loop — serve only
+    # "exits" when killed, so the main() wrapper's record() would fire late/unreliably.
+    from mdl_cli import telemetry
+
+    telemetry.emit("canvas_opened", {"surface": "serve"})
     run_server(model_dir, host=host, port=port, read_only=read_only)
 
 
@@ -1960,6 +1966,9 @@ def studio(
         f"Modelith Studio ({mode}{extra}): http://{host}:{port}/sme  (model: {model_dir})",
         fg=typer.colors.CYAN,
     )
+    from mdl_cli import telemetry
+
+    telemetry.emit("canvas_opened", {"surface": "studio"})  # activation wow, at startup
     run_server(
         model_dir,
         host=host,
@@ -2465,5 +2474,58 @@ def _now_iso() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat()
 
 
+def main() -> None:
+    """Console entry point. Wraps the Typer app so anonymous, opt-in telemetry can
+    record the command + exit code exactly once, WITHOUT changing exit behavior.
+
+    `app(standalone_mode=False)` returns instead of raising SystemExit, so we can
+    read the true exit code (including from sub-app commands, which a root callback
+    cannot see) and re-raise it faithfully. Telemetry is entirely fail-soft; it
+    never alters the documented exit codes (0/1/2/3/4).
+    """
+    # Typer vendors its own Click (typer._click), so typer.Exit / UsageError are
+    # NOT the same classes as plain `click.exceptions.*`. Catch the exceptions from
+    # the module Typer actually raises, or an unknown command / usage error would
+    # fall through and lose its exit code (2). Fall back to plain click if a future
+    # Typer relayouts its private module — the wrapper must never fail to import.
+    try:
+        from typer._click import exceptions as click_exc
+    except Exception:  # noqa: BLE001
+        import click.exceptions as click_exc  # type: ignore[no-redef]
+
+    from mdl_cli import telemetry
+
+    command = telemetry.sanitize_command(sys.argv[1:])
+    # Resolve consent BEFORE running, so a first-run "yes" lets this very command
+    # (e.g. the user's first `mdl init`) emit. Non-interactive runs stay silent.
+    telemetry.ensure_consent()
+
+    code = 0
+    try:
+        # In standalone_mode=False, Click RETURNS the command's exit code (an int)
+        # rather than raising SystemExit — so a `typer.Exit(1)` surfaces as a return
+        # value of 1, not an exception. None means success. Only genuine edge cases
+        # (Abort, UsageError, a bare sys.exit) still raise, handled below.
+        rv = app(standalone_mode=False)
+        if isinstance(rv, int):
+            code = rv
+    except click_exc.Exit as e:  # belt-and-suspenders: an explicitly raised Exit
+        code = e.exit_code
+    except click_exc.Abort:
+        typer.echo("Aborted.", err=True)
+        code = 1
+    except click_exc.UsageError as e:
+        # standalone_mode=False suppresses Click's own message — echo it ourselves.
+        e.show()
+        code = e.exit_code if e.exit_code is not None else 2
+    except SystemExit as e:  # a command that called sys.exit directly
+        code = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
+    except Exception:
+        telemetry.record(command, 1)
+        raise  # keep the traceback for genuine bugs
+    telemetry.record(command, code)
+    raise SystemExit(code)
+
+
 if __name__ == "__main__":
-    app()
+    main()

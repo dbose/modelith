@@ -7,3 +7,4 @@ icon.svg
 *.vsix
 .vscode/**
 PUBLISHING.md
+scripts/**

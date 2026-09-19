@@ -23,7 +23,7 @@ dependencies = [
 ]
 
 [project.scripts]
-mdl = "mdl_cli.main:app"
+mdl = "mdl_cli.main:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -1000,6 +1000,34 @@ whether it was allowed — never the model's *contents* (those live in git for w
 repo access). Off entirely when neither variable is set. `GET /api/audit` tails the local
 file and is admin-gated under `MDL_AUTH_REQUIRE`.
 
+**Anonymous usage telemetry (distinct from the audit log).** To help prioritize the roadmap,
+Modelith can send *anonymous* product-usage events keyed on a locally generated, hashed
+install id (the CLI) or VS Code's machine id (the extension). Each event carries only the
+coarse shape of usage — an event name (e.g. `model_validated`, `warehouse_reversed`,
+`canvas_opened`), whether it succeeded, the `mdl` version, and a coarse OS/timestamp. It
+**never** sends model contents, schema, file paths, project names, repo URLs, command
+arguments, or error messages.
+
+It is **opt-in and off by default**:
+
+- **CLI** — nothing is sent until you answer "yes" to a one-time prompt, which only appears
+  on an interactive terminal (never in CI, scripts, or the extension's background `mdl` calls).
+- **VS Code extension** — gated on your editor's own telemetry setting
+  (`telemetry.telemetryLevel`); if VS Code telemetry is off, the extension sends nothing.
+
+Disable the CLI's telemetry anytime:
+
+```bash
+export DO_NOT_TRACK=1                 # the community standard, honored
+export MODELITH_TELEMETRY_DISABLED=1  # Modelith-specific
+# or edit ~/.modelith/telemetry.json  ("enabled": false)
+```
+
+Data is sent to a PostHog project in the EU (Frankfurt). This is separate from the per-org
+**audit log** above: that is named, self-hosted governance data to *your* collector; this is
+anonymous product analytics. The emitter is open source — read exactly what is sent in
+`packages/cli/src/mdl_cli/telemetry.py` and `vscode/src/telemetry.ts`.
+
 **Distributing it.** The app is a client over the API, so it can be hosted anywhere:
 
 ```bash
