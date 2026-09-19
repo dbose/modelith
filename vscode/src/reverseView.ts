@@ -49,9 +49,12 @@ export class ReverseReviewProvider implements vscode.TreeDataProvider<Node> {
 
   constructor(private readonly out: vscode.OutputChannel) {}
 
-  /** Re-read the pending proposals from `.mdl/decisions.yaml` and refresh the tree. */
-  async refresh(): Promise<void> {
-    const dir = await findModelDir();
+  /** Re-read the pending proposals from `.mdl/decisions.yaml` and refresh the tree.
+   * Pass `modelDir` to read a SPECIFIC model (e.g. the one a right-click reverse just
+   * wrote); omit it to auto-discover the workspace model. Being explicit avoids reading
+   * the wrong `.mdl/decisions.yaml` when several models live in one workspace. */
+  async refresh(modelDir?: string): Promise<void> {
+    const dir = modelDir ?? (await findModelDir());
     if (!dir) {
       this.decisions = [];
       this.emitter.fire(undefined);

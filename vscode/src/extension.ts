@@ -1,3 +1,4 @@
+import * as fs from "node:fs";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import type { LanguageClient } from "vscode-languageclient/node";
@@ -468,6 +469,59 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
 
   // --- reverse engineering -----------------------------------------------------
 
+  // Run `mdl reverse …` in `cwd`, then surface what needs human review. Shared by the
+  // context-menu Reverse Engineer command. The CLI writes into `cwd/model` (and diverts
+  // to model-reversed-v<N> if that already holds a model — the no-clobber guard lives in
+  // the CLI). On success we refresh + reveal the Reverse Review panel; when the engine
+  // left ambiguous inferences pending, we say so loudly (they are the whole point of the
+  // review flow) with a button that jumps to the panel.
+  const runReverseInto = async (
+    cwd: string,
+    args: string[],
+    reverseView: ReverseReviewProvider,
+  ): Promise<void> => {
+    const bin = await findMdl(cwd);
+    // Where the CLI wrote. Default is <cwd>/<-o value>; the no-clobber guard may divert
+    // to a sibling and announce it as "reversing into <path> instead" — honor that so
+    // the review panel reads the model we actually just created.
+    const outFlag = args[args.indexOf("-o") + 1] ?? "model";
+    let writtenDir = path.isAbsolute(outFlag) ? outFlag : path.join(cwd, outFlag);
+    let ok = false;
+    let summary = "reverse complete";
+    await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Notification, title: "Modelith: reverse-engineering…" },
+      async () => {
+        const r = await runMdl(bin, args, cwd, out);
+        out.appendLine(r.stdout + r.stderr);
+        if (r.code !== 0) {
+          void vscode.window
+            .showErrorMessage("Modelith: reverse failed.", "Show Output")
+            .then((a) => a && out.show());
+          return;
+        }
+        ok = true;
+        summary = r.stdout.split("\n").find((l) => l.includes("reversed")) ?? summary;
+        const diverted = (r.stdout + r.stderr).match(/reversing into (.+?) instead/);
+        if (diverted) writtenDir = diverted[1].trim();
+      },
+    );
+    if (!ok) return;
+    await reverseView.refresh(writtenDir);
+    void vscode.commands.executeCommand("modelithReverse.focus");
+    const pending = reverseView.pendingCount;
+    if (pending > 0) {
+      const REVIEW = "Review decisions";
+      void vscode.window
+        .showInformationMessage(
+          `Modelith: ${summary.trim()} — ${pending} decision${pending === 1 ? "" : "s"} need your review.`,
+          REVIEW,
+        )
+        .then((a) => a === REVIEW && vscode.commands.executeCommand("modelithReverse.focus"));
+    } else {
+      void vscode.window.showInformationMessage(`Modelith: ${summary.trim()}`);
+    }
+  };
+
   cmd("modelith.reverse", () =>
     withModelDir(async (dir) => {
       const source = await vscode.window.showQuickPick(
@@ -519,6 +573,83 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
       void vscode.commands.executeCommand("modelithReverse.focus");
     }),
   );
+
+  // Right-click "Reverse Engineer" on the Explorer. ONE command that dispatches on
+  // what was clicked, so every reverse source shares this entry-point (and the planned
+  // live-datastore path is a filled-in branch, not new UI):
+  //   - dbt_project.yml  -> reverse from its build artifacts (target/manifest.json);
+  //     if none, guide the user to `dbt docs generate` first.
+  //   - a folder / a .sql -> reverse the DDL under it (CLI 0.4.1 accepts a directory).
+  //   - profiles.yml      -> live-datastore reverse: a guided stub for now (install the
+  //     dbt adapter, pick a profile), with its branch reserved for the CLI path.
+  // All paths reverse into a fresh `model/` beside the source, then reveal the Reverse
+  // Review panel so the ambiguous decisions the engine recorded can't be missed.
+  cmd("modelith.reverseEngineer", async (arg: unknown) => {
+    const uri = arg instanceof vscode.Uri ? arg : undefined;
+    if (!uri) {
+      // Invoked from the palette (no clicked resource) — send them to the wizard.
+      await vscode.commands.executeCommand("modelith.reverse");
+      return;
+    }
+    const fsPath = uri.fsPath;
+    const name = path.basename(fsPath);
+    const isDir = fs.existsSync(fsPath) && fs.statSync(fsPath).isDirectory();
+
+    // profiles.yml -> live datastore (planned). Guided stub: reserve the branch.
+    if (name === "profiles.yml") {
+      const INSTALL_DOCS = "How it will work";
+      const choice = await vscode.window.showInformationMessage(
+        "Reverse-engineer from a live datastore is coming next. It will connect through " +
+          "your dbt adapter and this profiles.yml, introspect the warehouse, and reverse it " +
+          "into a Modelith model — the same review flow as a dbt project. For now, reverse " +
+          "from build artifacts (right-click dbt_project.yml) or a DDL folder.",
+        INSTALL_DOCS,
+      );
+      if (choice === INSTALL_DOCS) {
+        void vscode.window.showInformationMessage(
+          "When it ships: install the dbt adapter for your warehouse (e.g. `dbt-snowflake`), " +
+            "ensure this profiles.yml has a working target, then run Reverse Engineer again.",
+        );
+      }
+      return;
+    }
+
+    // dbt_project.yml -> reverse from build artifacts (target/manifest.json).
+    if (name === "dbt_project.yml") {
+      const projectDir = path.dirname(fsPath);
+      const manifest = path.join(projectDir, "target", "manifest.json");
+      if (!fs.existsSync(manifest)) {
+        const GEN = "Run dbt docs generate";
+        const choice = await vscode.window.showWarningMessage(
+          "No dbt build artifacts found (target/manifest.json). Run `dbt docs generate` " +
+            "(or `dbt compile`) in this project first, then Reverse Engineer again — the " +
+            "catalog is what lets reverse detect surrogate keys and SCD2 columns.",
+          GEN,
+        );
+        if (choice === GEN) {
+          const term = vscode.window.createTerminal({ name: "dbt docs generate", cwd: projectDir });
+          term.show(true);
+          term.sendText("dbt docs generate", true);
+        }
+        return;
+      }
+      await runReverseInto(projectDir, ["reverse", "--project", manifest, "-o", "model"], reverse);
+      return;
+    }
+
+    // a folder or a .sql file -> reverse the DDL under/at it.
+    const isSql = name.toLowerCase().endsWith(".sql");
+    if (isDir || isSql) {
+      const cwd = isDir ? fsPath : path.dirname(fsPath);
+      const ddlArg = isDir ? fsPath : fsPath;
+      await runReverseInto(cwd, ["reverse", "--ddl", ddlArg, "-o", "model"], reverse);
+      return;
+    }
+
+    void vscode.window.showInformationMessage(
+      "Reverse Engineer works on a dbt_project.yml, a profiles.yml, a folder of .sql DDL, or a .sql file.",
+    );
+  });
 
   cmd("modelith.reverseRefresh", () => reverse.refresh());
 
