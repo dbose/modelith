@@ -323,6 +323,46 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     vscode.commands.registerCommand("modelith.installCli", () => offerCliInstall()),
   );
 
+  // Scaffold the bundled demo (walkthrough step 2). `mdl init --demo` with no path
+  // writes to ~/modelith-demo — NEVER the user's own repo — so this does not need
+  // an existing model dir; it runs from the workspace root (or home) purely so
+  // `mdl` resolves. Goes through cmd() so a missing CLI offers the installer.
+  cmd("modelith.initDemo", async () => {
+    const cwd =
+      vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? require("node:os").homedir();
+    const bin = await findMdl(cwd);
+    const r = await runMdl(bin, ["init", "--demo"], cwd);
+    out.appendLine(r.stdout + r.stderr);
+    out.show(true);
+    if (r.code === 0) {
+      const OPEN = "Open the demo folder";
+      const choice = await vscode.window.showInformationMessage(
+        "Demo model scaffolded at ~/modelith-demo. Open it to see the canvas.",
+        OPEN,
+      );
+      if (choice === OPEN) {
+        const demo = vscode.Uri.file(
+          require("node:path").join(require("node:os").homedir(), "modelith-demo"),
+        );
+        await vscode.commands.executeCommand("vscode.openFolder", demo, { forceNewWindow: true });
+      }
+    }
+  });
+
+  // Re-open the Getting Started walkthrough on demand (the native auto-open only
+  // fires once, on install). Registered directly — it touches no `mdl`. The id is
+  // <publisher>.<extension>#<walkthroughId>; it must match the PUBLISHED publisher
+  // exactly or VS Code silently no-ops.
+  ctx.subscriptions.push(
+    vscode.commands.registerCommand("modelith.openWalkthrough", () =>
+      vscode.commands.executeCommand(
+        "workbench.action.openWalkthrough",
+        "BosonResearch.modelith-vscode#modelith.gettingStarted",
+        false,
+      ),
+    ),
+  );
+
   cmd("modelith.generate", () =>
     withModelDir(async (dir) => {
       const bin = await findMdl(dir);

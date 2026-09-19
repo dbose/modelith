@@ -2,7 +2,7 @@
   "name": "modelith-vscode",
   "displayName": "Modelith",
   "description": "Ontology-anchored, git-native data modeling for dbt \u2014 validate, generate, drift, and the Modelith canvas inside VS Code.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "BosonResearch",
   "license": "Apache-2.0",
   "icon": "icon.png",
@@ -190,6 +190,14 @@
       {
         "command": "modelith.installCli",
         "title": "Modelith: Install the CLI (mdl)"
+      },
+      {
+        "command": "modelith.initDemo",
+        "title": "Modelith: Try the Demo Model"
+      },
+      {
+        "command": "modelith.openWalkthrough",
+        "title": "Modelith: Open the Getting Started Walkthrough"
       }
     ],
     "configuration": {
@@ -246,6 +254,63 @@
       }
     },
     "yamlValidation": [],
+    "walkthroughs": [
+      {
+        "id": "modelith.gettingStarted",
+        "title": "Get Started with Modelith",
+        "description": "Install the CLI, scaffold a demo model, and see the live ER canvas beside your dbt YAML.",
+        "steps": [
+          {
+            "id": "installCli",
+            "title": "Install the Modelith CLI",
+            "description": "The extension drives the `mdl` command-line tool. Install it once and everything else works with zero config.\n[Install the CLI](command:modelith.installCli)",
+            "media": {
+              "image": "media/canvas.gif",
+              "altText": "The Modelith ER canvas rendering a model beside its YAML"
+            },
+            "completionEvents": [
+              "onCommand:modelith.installCli"
+            ]
+          },
+          {
+            "id": "tryDemo",
+            "title": "Try the demo model",
+            "description": "Scaffold a populated 7-entity example (written to ~/modelith-demo, never your repo) so the canvas has something real to show.\n[Create the demo model](command:modelith.initDemo)",
+            "media": {
+              "image": "media/canvas.gif",
+              "altText": "A populated entity-relationship model"
+            },
+            "completionEvents": [
+              "onCommand:modelith.initDemo"
+            ]
+          },
+          {
+            "id": "openCanvas",
+            "title": "Open the canvas",
+            "description": "Open the entity-relationship canvas and watch it follow your YAML as you edit.\n[Open the Canvas](command:modelith.openCanvas)",
+            "media": {
+              "image": "media/canvas.gif",
+              "altText": "The Modelith canvas"
+            },
+            "completionEvents": [
+              "onCommand:modelith.openCanvas"
+            ]
+          },
+          {
+            "id": "validate",
+            "title": "Validate the model",
+            "description": "Run validation and reach a green check — schema, refs, naming, and ontology all pass.\n[Validate the Model](command:modelith.validate)",
+            "media": {
+              "image": "media/canvas.gif",
+              "altText": "A validated model"
+            },
+            "completionEvents": [
+              "onCommand:modelith.validate"
+            ]
+          }
+        ]
+      }
+    ],
     "menus": {
       "explorer/context": [
         {

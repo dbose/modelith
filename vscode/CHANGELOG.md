@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0
+
+- **Getting Started walkthrough.** A native VS Code walkthrough opens after install
+  and guides you through the whole first-run: install the CLI, scaffold the demo
+  model, open the ER canvas, and reach a green validate — each step a one-click
+  button that ticks off as you go. Re-open it anytime with *Modelith: Open the
+  Getting Started Walkthrough*.
+- **Try the Demo Model** command (`modelith.initDemo`) — scaffolds the bundled
+  7-entity example to `~/modelith-demo` (never your own repo) so the canvas has
+  something real to show on first run.
+
 ## 0.2.0
 
 - **One-click CLI install.** When the `mdl` command-line tool isn't found, the
