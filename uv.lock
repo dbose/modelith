@@ -943,11 +943,12 @@ requires-dist = [
 
 [[package]]
 name = "modelith-dbt"
-version = "0.2.0"
+version = "0.4.0"
 source = { editable = "." }
 dependencies = [
     { name = "dbt-artifacts-parser" },
     { name = "fastapi" },
+    { name = "httpx" },
     { name = "jinja2" },
     { name = "mcp" },
     { name = "pydantic" },
@@ -980,6 +981,7 @@ dev = [
 requires-dist = [
     { name = "dbt-artifacts-parser", specifier = ">=0.5" },
     { name = "fastapi", specifier = ">=0.110" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "jinja2", specifier = ">=3.1" },
     { name = "mcp", specifier = ">=1.2,<2" },
     { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'audit'", specifier = ">=1.20" },
