@@ -1002,7 +1002,8 @@ file and is admin-gated under `MDL_AUTH_REQUIRE`.
 
 **Anonymous usage telemetry (distinct from the audit log).** To help prioritize the roadmap,
 Modelith can send *anonymous* product-usage events keyed on a locally generated, hashed
-install id (the CLI) or VS Code's machine id (the extension). Each event carries only the
+install id shared by the CLI and the extension (both read `~/.modelith/telemetry.json`, so
+one anonymous id spans your CLI and editor usage). Each event carries only the
 coarse shape of usage — an event name (e.g. `model_validated`, `warehouse_reversed`,
 `canvas_opened`), whether it succeeded, the `mdl` version, and a coarse OS/timestamp. It
 **never** sends model contents, schema, file paths, project names, repo URLs, command
