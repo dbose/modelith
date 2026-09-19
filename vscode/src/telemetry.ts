@@ -42,12 +42,7 @@ let cachedId: string | undefined;
 function sharedInstallId(): string | undefined {
   if (cachedId) return cachedId;
   try {
-    let state: Record<string, unknown> = {};
-    try {
-      state = JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
-    } catch {
-      /* missing/corrupt -> mint below */
-    }
+    const state = readState();
     const existing = state.install_id;
     if (typeof existing === "string" && existing.length === 64) {
       cachedId = existing;
@@ -56,8 +51,7 @@ function sharedInstallId(): string | undefined {
     // Mint an id in the CLI's exact format (sha256 of a uuid4; raw uuid discarded).
     const hashed = createHash("sha256").update(randomUUID()).digest("hex");
     state.install_id = hashed;
-    fs.mkdirSync(STATE_DIR, { recursive: true });
-    fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), "utf8");
+    writeState(state);
     cachedId = hashed;
     return cachedId;
   } catch {
@@ -65,17 +59,67 @@ function sharedInstallId(): string | undefined {
   }
 }
 
+function readState(): Record<string, unknown> {
+  try {
+    return JSON.parse(fs.readFileSync(STATE_FILE, "utf8"));
+  } catch {
+    return {};
+  }
+}
+
+function writeState(state: Record<string, unknown>): void {
+  fs.mkdirSync(STATE_DIR, { recursive: true });
+  fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2), "utf8");
+}
+
 /**
- * Initialize gating. Seeds VS Code's telemetry setting and subscribes to changes so
- * a mid-session toggle takes effect at once. Call once from activate().
+ * Flow VS Code's telemetry consent through to the shared CLI state so that `mdl`
+ * runs (including in-VS-Code terminal and standalone) inherit it — the user opted
+ * into anonymous telemetry via VS Code, and we honor that across both surfaces.
+ *
+ * Writes `enabled`/`consented` only to grant (never to REVOKE the CLI's own
+ * interactive opt-in): if the CLI already recorded a decision (`consented: true`),
+ * we leave it untouched — a user who explicitly answered the CLI prompt owns that
+ * choice. We only fill in consent for a file that has none yet, and only to enable.
+ * Kill-switches (DO_NOT_TRACK / MODELITH_TELEMETRY_DISABLED) still force the CLI off
+ * regardless, so there is always a documented escape hatch.
+ */
+function syncSharedConsent(enabled: boolean): void {
+  try {
+    const state = readState();
+    // Never override an explicit CLI decision.
+    if (state.consented === true) return;
+    // Only propagate ENABLE (VS Code telemetry on -> grant). If VS Code telemetry is
+    // off we simply don't grant here; we never write enabled:false over an
+    // un-decided file, leaving the CLI free to prompt later.
+    if (!enabled) return;
+    state.enabled = true;
+    state.consented = true;
+    state.consent_source = "vscode";
+    if (typeof state.install_id !== "string" || (state.install_id as string).length !== 64) {
+      state.install_id = createHash("sha256").update(randomUUID()).digest("hex");
+    }
+    writeState(state);
+    cachedId = state.install_id as string;
+  } catch {
+    /* best-effort */
+  }
+}
+
+/**
+ * Initialize gating. Seeds VS Code's telemetry setting, flows that consent through
+ * to the shared CLI state, and subscribes to changes so a mid-session toggle takes
+ * effect at once. Call once from activate().
  */
 export function initTelemetry(ctx: vscode.ExtensionContext, channel?: vscode.OutputChannel): void {
   out = channel;
   try {
     telemetryEnabled = vscode.env.isTelemetryEnabled;
+    syncSharedConsent(telemetryEnabled); // grant CLI consent from the editor setting
     ctx.subscriptions.push(
       vscode.env.onDidChangeTelemetryEnabled((isEnabled) => {
         telemetryEnabled = isEnabled;
+        syncSharedConsent(isEnabled);
         out?.appendLine(
           `[telemetry] usage analytics ${isEnabled ? "enabled" : "disabled"} (VS Code setting changed)`,
         );

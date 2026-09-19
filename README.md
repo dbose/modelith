@@ -1009,19 +1009,24 @@ coarse shape of usage — an event name (e.g. `model_validated`, `warehouse_reve
 **never** sends model contents, schema, file paths, project names, repo URLs, command
 arguments, or error messages.
 
-It is **opt-in and off by default**:
+It is **opt-in and off by default**, with two ways to opt in:
 
-- **CLI** — nothing is sent until you answer "yes" to a one-time prompt, which only appears
-  on an interactive terminal (never in CI, scripts, or the extension's background `mdl` calls).
-- **VS Code extension** — gated on your editor's own telemetry setting
-  (`telemetry.telemetryLevel`); if VS Code telemetry is off, the extension sends nothing.
+- **CLI on its own** — nothing is sent until you answer "yes" to a one-time prompt, which
+  only appears on an interactive terminal (never in CI, scripts, or background calls).
+- **Via the VS Code extension** — if your editor's telemetry setting
+  (`telemetry.telemetryLevel`) is enabled, the extension treats that as consent and records
+  it in `~/.modelith/telemetry.json`. Because that file is shared, **`mdl` runs then also
+  emit** (in the VS Code terminal and elsewhere) under the same anonymous id — so your editor
+  and CLI usage form one funnel. If VS Code telemetry is off, neither surface sends anything.
+  An explicit CLI opt-out you made in the prompt is never overridden by the editor setting.
 
-Disable the CLI's telemetry anytime:
+Either way it stays anonymous, and you can turn it off everywhere at any time:
 
 ```bash
-export DO_NOT_TRACK=1                 # the community standard, honored
+export DO_NOT_TRACK=1                 # the community standard, honored (overrides all)
 export MODELITH_TELEMETRY_DISABLED=1  # Modelith-specific
 # or edit ~/.modelith/telemetry.json  ("enabled": false)
+# or turn off VS Code telemetry (telemetry.telemetryLevel: "off")
 ```
 
 Data is sent to a PostHog project in the EU (Frankfurt). This is separate from the per-org
