@@ -10,7 +10,10 @@
   previews the coming live-datastore path. Every reverse writes into a fresh `model/`
   beside the source (never overwriting an existing model) and then opens the Reverse
   Review panel, calling out how many ambiguous decisions need your accept/reject.
-  Requires the `mdl` CLI 0.4.1+ for folder reverse.
+  Requires the `mdl` CLI 0.4.1+ for folder reverse. To review *every* inference
+  manually regardless of confidence, set `reverse.auto_accept: none` in
+  `mdl-project.yaml` (CLI 0.4.2+) — the right-click reverse honors it and routes
+  everything to the Reverse Review panel.
 
 ## 0.3.1
 

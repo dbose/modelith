@@ -335,7 +335,20 @@ naming, recording every decision in a reviewable ledger. After the run it prints
 classification summary (what was excluded, marked a rollup, or stripped) so a
 misclassification on non-standard naming is visible immediately, not discovered at PR
 time; the conventions it keys off are overridable via `mdl reverse --naming <file.yaml>`
-(medallion `gold_`, `f_`/`d_`, non-English). See [Reverse engineering a real warehouse](#reverse-engineering-a-real-warehouse) below.
+(medallion `gold_`, `f_`/`d_`, non-English). Reverse also accepts a **directory of `.sql`
+DDL** (`--ddl <dir>`), reversed as one warehouse so cross-file foreign keys resolve, and
+never overwrites an existing model (it diverts to a suffixed sibling). By default it
+auto-accepts high-confidence inferences and leaves the rest for review; set the
+confidence floor — up to reviewing **everything** manually — with `--auto-accept
+<high|medium-high|medium|low|none>` (or `--review-all`), or persist it in config:
+
+```yaml
+# mdl-project.yaml
+reverse:
+  auto_accept: none   # review every inference regardless of score
+```
+
+See [Reverse engineering a real warehouse](#reverse-engineering-a-real-warehouse) below.
 
 **Import & interchange.** Bring a model in from the wider toolset and hand it back out.
 Import **SQL DDL** (parsed with a real SQL AST, so dialects, quoting, composite keys, and

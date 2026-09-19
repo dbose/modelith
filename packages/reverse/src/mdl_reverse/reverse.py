@@ -31,7 +31,14 @@ from mdl_core.ir import (
     RelationshipEnd,
 )
 from mdl_reverse import lifting
-from mdl_reverse.ledger import Confidence, Decision, DecisionLedger, Verdict
+from mdl_reverse.ledger import (
+    DEFAULT_AUTO_ACCEPT,
+    Confidence,
+    Decision,
+    DecisionLedger,
+    Verdict,
+    verdict_for,
+)
 from mdl_reverse.manifest import ManifestModel, ManifestProjection
 
 # SQL type -> abstract domain base type (inverse of the platform maps). Kept small
@@ -155,19 +162,30 @@ def reverse(
     target: str = "duckdb_dev",
     ledger: DecisionLedger | None = None,
     interactive: bool = False,
-    auto_accept_high: bool = True,
+    auto_accept: Confidence | None = DEFAULT_AUTO_ACCEPT,
+    auto_accept_high: bool | None = None,
     naming: lifting.ReverseNaming | None = None,
 ) -> ReverseResult:
-    """Lift a manifest into IR. `auto_accept_high` accepts high-confidence signals
-    (FK constraints, relationships tests) by default per §6.2; medium signals are
-    proposed only. `interactive=False` (the default, CI-safe) records proposals
-    but does not prompt.
+    """Lift a manifest into IR. `auto_accept` is the confidence FLOOR: any inference at
+    or above it is accepted automatically; everything below is left `proposed` for
+    manual review in the ledger. `None` means a manual-always policy — nothing is
+    auto-accepted regardless of score. The default floor (medium-high) accepts
+    high-confidence signals (FK constraints, relationships tests) per §6.2.
+
+    `auto_accept_high` is the deprecated boolean predecessor: True -> the default floor,
+    False -> None (manual-always). If given, it overrides `auto_accept`.
+
+    `interactive=False` (the default, CI-safe) records proposals but does not prompt.
 
     `naming` overrides the built-in reverse conventions (rollup/staging/surrogate/scd2
     prefixes) so divergent-named projects (medallion `gold_`, `f_`/`d_`, non-English)
     are handled; None uses the defaults."""
     ledger = ledger or DecisionLedger()
     naming = naming or lifting.DEFAULT_NAMING
+    # The deprecated boolean, if explicitly passed, wins for back-compat.
+    if auto_accept_high is not None:
+        auto_accept = DEFAULT_AUTO_ACCEPT if auto_accept_high else None
+    floor = auto_accept
     config = ProjectConfig(
         name=project_name,
         dbt_target=target,
@@ -191,7 +209,7 @@ def reverse(
     le_by_name: dict[str, LogicalEntity] = {}
     for name in sorted(business):
         mm = business[name]
-        le, ce, entity_proposals = _lift_entity(mm, name, ledger, auto_accept_high, naming)
+        le, ce, entity_proposals = _lift_entity(mm, name, ledger, floor, naming)
         model.add(ce)
         model.add(le)
         le_by_name[name] = le
@@ -201,7 +219,7 @@ def reverse(
     for name in sorted(business):
         mm = business[name]
         rel_proposals = _infer_relationships(
-            mm, name, le_by_name, known_models, ledger, model, auto_accept_high
+            mm, name, le_by_name, known_models, ledger, model, floor
         )
         proposals.extend(rel_proposals)
 
@@ -212,7 +230,7 @@ def _lift_entity(
     mm: ManifestModel,
     name: str,
     ledger: DecisionLedger,
-    auto_accept_high: bool,
+    floor: Confidence | None,
     naming: lifting.ReverseNaming = lifting.DEFAULT_NAMING,
 ) -> tuple[LogicalEntity, ConceptualEntity, list[Decision]]:
     proposals: list[Decision] = []
@@ -234,7 +252,7 @@ def _lift_entity(
             confidence=Confidence.medium_high,
             subject=f"model {name!r} looks like SCD2 ({', '.join(scd.tracking_cols)})",
             evidence={"model": name, "columns": scd.tracking_cols},
-            verdict=Verdict.accepted if auto_accept_high else Verdict.proposed,
+            verdict=verdict_for(Confidence.medium_high, floor),
         )
         if ledger.should_propose(d):
             ledger.record(d)
@@ -247,6 +265,7 @@ def _lift_entity(
             confidence=Confidence.medium,
             subject=f"model {name!r} looks like a Data Vault {dv.kind}",
             evidence={"model": name, "kind": dv.kind},
+            verdict=verdict_for(Confidence.medium, floor),
         )
         if ledger.should_propose(d):
             ledger.record(d)
@@ -281,7 +300,7 @@ def _lift_entity(
         if lifting.is_surrogate_key(
             col_name, entity=name, data_type=col.data_type, naming=naming
         ):
-            _propose_strip(name, col_name, "surrogate_key", ledger, proposals, auto_accept_high)
+            _propose_strip(name, col_name, "surrogate_key", ledger, proposals, floor)
             continue
         if cl in scd_tracking:
             continue
@@ -314,7 +333,7 @@ def _lift_entity(
             confidence=Confidence.medium_high,
             subject=f"model {name!r} looks like a reporting rollup; kept unmanaged",
             evidence={"model": name, "reason": "rollup name + no business key"},
-            verdict=Verdict.accepted if auto_accept_high else Verdict.proposed,
+            verdict=verdict_for(Confidence.medium_high, floor),
         )
         if ledger.should_propose(d):
             ledger.record(d)
@@ -343,7 +362,7 @@ def _propose_strip(
     kind: str,
     ledger: DecisionLedger,
     proposals: list[Decision],
-    auto_accept_high: bool,
+    floor: Confidence | None,
 ) -> None:
     d = Decision(
         kind="strip_column",
@@ -351,7 +370,7 @@ def _propose_strip(
         confidence=Confidence.medium_high,
         subject=f"strip {kind} {model_name}.{col} from the logical view",
         evidence={"model": model_name, "column": col, "reason": kind},
-        verdict=Verdict.accepted if auto_accept_high else Verdict.proposed,
+        verdict=verdict_for(Confidence.medium_high, floor),
     )
     if ledger.should_propose(d):
         ledger.record(d)
@@ -365,7 +384,7 @@ def _infer_relationships(
     known_models: set[str],
     ledger: DecisionLedger,
     model: Model,
-    auto_accept_high: bool,
+    floor: Confidence | None,
 ) -> list[Decision]:
     proposals: list[Decision] = []
     le = le_by_name[name]
@@ -381,7 +400,7 @@ def _infer_relationships(
             confidence=Confidence.high,
             subject=f"{name}.{col} -> {to} (dbt relationships test)",
             evidence={"from": name, "column": col, "to": to, "signal": "relationships_test"},
-            verdict=Verdict.accepted if auto_accept_high else Verdict.proposed,
+            verdict=verdict_for(Confidence.high, floor),
         )
         if ledger.should_propose(d):
             ledger.record(d)
@@ -389,11 +408,13 @@ def _infer_relationships(
         if d.verdict == Verdict.accepted:
             _add_relationship(model, le, target_le, col, name, to)
 
-    # Medium-confidence: name+type heuristic (*_id matching a model). Propose only.
+    # Medium-confidence: name+type heuristic (*_id matching a model). Proposed unless
+    # the auto-accept floor reaches medium (then accepted + materialised, like a test).
     declared = {(c, t) for c, t in mm.relationship_tests}
     for guess in lifting.foreign_key_candidates(name, list(mm.columns), known_models):
         if (guess.column, guess.target_entity) in declared:
             continue  # already covered by a test
+        target_le = le_by_name.get(guess.target_entity)
         d = Decision(
             kind="relationship",
             signal="name_type",
@@ -405,11 +426,13 @@ def _infer_relationships(
                 "to": guess.target_entity,
                 "signal": "name_type",
             },
+            verdict=verdict_for(Confidence.medium, floor),
         )
         if ledger.should_propose(d):
             ledger.record(d)
             proposals.append(d)
-        # medium signals are never auto-accepted (§6.2) -> not added to the model
+        if d.verdict == Verdict.accepted and target_le is not None:
+            _add_relationship(model, le, target_le, guess.column, name, guess.target_entity)
 
     return proposals
 
