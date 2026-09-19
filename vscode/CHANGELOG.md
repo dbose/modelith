@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.1
+
+- **Unified telemetry across the CLI and extension.** Both now share one anonymous
+  install id (`~/.modelith/telemetry.json`), so editor and CLI usage form a single
+  product funnel. When your VS Code telemetry setting is enabled, the extension records
+  that consent in the shared file, so `mdl` runs (including in the VS Code terminal) emit
+  too — under the same anonymous id. An explicit CLI opt-out is never overridden, and
+  `DO_NOT_TRACK=1` turns everything off. Nothing new is collected.
+
 ## 0.3.0
 
 - **Getting Started walkthrough.** A native VS Code walkthrough opens after install
