@@ -1000,6 +1000,23 @@ whether it was allowed — never the model's *contents* (those live in git for w
 repo access). Off entirely when neither variable is set. `GET /api/audit` tails the local
 file and is admin-gated under `MDL_AUTH_REQUIRE`.
 
+**Anonymous usage telemetry (distinct from the audit log).** To help improve Modelith, the
+`mdl` CLI can send *anonymous* product-usage stats — which command ran, whether it passed,
+the `mdl` version, and a coarse OS/timestamp — keyed on a locally generated, hashed install
+id. It is **opt-in and off by default**: nothing is sent until you answer "yes" to a
+one-time prompt, which only appears on an interactive terminal (never in CI, scripts, or the
+VS Code extension's background calls). It **never** sends model contents, schema, file paths,
+project names, repo URLs, arguments, or error messages. Disable it anytime:
+
+```bash
+export DO_NOT_TRACK=1                 # the community standard, honored
+export MODELITH_TELEMETRY_DISABLED=1  # Modelith-specific
+# or edit ~/.modelith/telemetry.json  ("enabled": false)
+```
+
+This is separate from the per-org **audit log** above: that is named, self-hosted governance
+data to *your* collector; this is anonymous product analytics to help prioritize the roadmap.
+
 **Distributing it.** The app is a client over the API, so it can be hosted anywhere:
 
 ```bash

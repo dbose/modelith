@@ -3,7 +3,7 @@
 # project, so the install name is `modelith-dbt` (install: uv tool install
 # modelith-dbt). The command stays `mdl`; the import modules stay mdl_*.
 name = "modelith-dbt"
-version = "0.3.3"
+version = "0.4.0"
 description = "Ontology-anchored, git-native data modeling tool for dbt-core teams"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -28,6 +28,7 @@ dependencies = [
     "pygls>=2.0",
     "sqlglot>=25",
     "mcp>=1.2,<2",
+    "httpx>=0.27",  # ontology remote resolvers + the telemetry emitter
 ]
 
 # Optional OpenTelemetry export for the audit log (spec §20). `pip install
@@ -42,7 +43,7 @@ audit = [
 # Single `mdl` command. Not exposing a `modelith` script avoids colliding with
 # the unrelated `modelith` package that already exists on PyPI.
 [project.scripts]
-mdl = "mdl_cli.main:app"
+mdl = "mdl_cli.main:main"
 
 [build-system]
 requires = ["hatchling"]
