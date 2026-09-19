@@ -145,7 +145,15 @@ export interface RunResult {
   stderr: string;
 }
 
-export function runMdl(bin: MdlBin, args: string[], cwd: string): Promise<RunResult> {
+export function runMdl(
+  bin: MdlBin,
+  args: string[],
+  cwd: string,
+  out?: vscode.OutputChannel,
+): Promise<RunResult> {
+  // Echo the exact CLI invocation before running, so every model UI action is
+  // transparent in the Modelith output (matching the `[canvas] mdl serve …` line).
+  out?.appendLine(`[run] ${bin.label} ${args.join(" ")} (cwd ${cwd})`);
   return new Promise((res) => {
     const p = cp.spawn(bin.cmd, [...bin.args, ...args], { cwd, timeout: 120000 });
     let stdout = "";

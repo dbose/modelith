@@ -40,8 +40,8 @@ from typing import Any
 # PostHog project write key: a CLIENT-side key, safe to ship in open source (it can
 # only WRITE events, never read). Replace with the real project key before launch;
 # with the placeholder, events are simply dropped by PostHog.
-POSTHOG_HOST = "https://us.i.posthog.com"
-POSTHOG_PROJECT_API_KEY = "phc_REPLACE_ME_WITH_REAL_PROJECT_KEY"
+POSTHOG_HOST = "https://eu.i.posthog.com"
+POSTHOG_PROJECT_API_KEY = "phc_kKkkkNu4rjarbd2VgWn5dBiEmEGJynAp878ML5uaVHJT"
 POSTHOG_CAPTURE_PATH = "/capture/"
 TELEMETRY_TIMEOUT = 1.5  # seconds; the POST is best-effort with a short cap
 
@@ -193,54 +193,120 @@ def _mdl_version() -> str:
     return "unknown"
 
 
-def _build_event(command: str, exit_code: int, install_id: str) -> dict[str, Any]:
-    """OTel-log-shaped event: a stable name + attributes + distinct_id. Transport
-    neutral — the PostHog sink maps it, and a future OTLP sink can reuse it as-is."""
+# AARRR / activation event taxonomy. Distinct semantic events give clean funnels in
+# PostHog (each step is its own named event) and let us see WHERE and WHY users drop
+# off. A command maps to a semantic event on SUCCESS; failures/other commands fall
+# back to the catch-all `command_run`. Every event stays anonymous — no PII, no model
+# contents, no paths — only the coarse shape of usage.
+#
+# Funnel (Acquisition -> Activation -> Retention):
+#   cli_installed  (once)      -> Acquisition
+#   demo_scaffolded / model_initialized / warehouse_reversed  -> Activation: intent
+#   model_validated            -> Activation: first value (the north-star)
+#   canvas_opened              -> Activation: the "wow" (emitted at serve/studio start)
+#   dbt_generated              -> Activation: output
+#   drift_checked              -> Retention signal
+#   validation_failed          -> a DROP-OFF reason (with a coarse error_class)
+_EVENT_FOR_COMMAND = {
+    "validate": "model_validated",
+    "reverse": "warehouse_reversed",
+    "generate": "dbt_generated",
+    "drift": "drift_checked",
+    # `init` splits into demo vs real at emit time; `serve`/`studio` emit at startup
+    # via emit("canvas_opened") from inside the command, not here.
+}
+
+
+def _base_props() -> dict[str, Any]:
     import platform
 
     return {
-        "name": "command_run",
-        "distinct_id": install_id,
-        "timestamp": datetime.now(UTC).replace(minute=0, second=0, microsecond=0).isoformat(),
-        "attributes": {
-            "command": command,
-            "success": exit_code == 0,
-            "exit_code": exit_code,
-            "mdl_version": _mdl_version(),
-            "os": platform.system(),
-        },
+        "mdl_version": _mdl_version(),
+        "os": platform.system(),
+        "$process_person_profile": False,  # anonymous: no person profile in PostHog
     }
 
 
-def _sink_posthog(event: dict[str, Any]) -> None:
-    """Map the OTel-shaped event to PostHog /capture and POST it, best-effort."""
-    import httpx
+def _post(event_name: str, distinct_id: str, props: dict[str, Any]) -> None:
+    """POST one event to PostHog /capture, best-effort (matches client.capture()).
 
-    body = {
-        "api_key": POSTHOG_PROJECT_API_KEY,
-        "event": event["name"],
-        "distinct_id": event["distinct_id"],
-        "timestamp": event["timestamp"],
-        "properties": {**event["attributes"], "$process_person_profile": False},
-    }
-    httpx.post(
-        f"{POSTHOG_HOST}{POSTHOG_CAPTURE_PATH}",
-        json=body,
-        timeout=TELEMETRY_TIMEOUT,
-    )
+    Swallows its OWN errors so that when several events are sent in one invocation
+    (e.g. command_run + model_validated), a single failed/slow POST never blocks the
+    others — a network blip must not drop the north-star `model_validated` just
+    because an earlier post timed out."""
+    try:
+        import httpx
+
+        httpx.post(
+            f"{POSTHOG_HOST}{POSTHOG_CAPTURE_PATH}",
+            json={
+                "api_key": POSTHOG_PROJECT_API_KEY,
+                "event": event_name,
+                "distinct_id": distinct_id,
+                "timestamp": datetime.now(UTC)
+                .replace(minute=0, second=0, microsecond=0)
+                .isoformat(),
+                "properties": {**_base_props(), **props},
+            },
+            timeout=TELEMETRY_TIMEOUT,
+        )
+    except Exception:  # noqa: BLE001 - one failed post must not block the rest
+        pass
+
+
+def emit(event_name: str, props: dict[str, Any] | None = None) -> None:
+    """Emit ONE named funnel event, fire-and-forget. Use for semantic events fired
+    from inside a command (e.g. `canvas_opened` at serve startup). No-op unless
+    telemetry is enabled. Never raises."""
+    try:
+        enabled, state = is_enabled()
+        if not enabled:
+            return
+        _post(event_name, _install_id(state), props or {})
+    except Exception:  # noqa: BLE001 - best-effort, never fatal
+        pass
+
+
+def _maybe_emit_installed(state: dict, install_id: str) -> None:
+    """Fire `cli_installed` exactly once per install, the first time telemetry emits.
+    Marked in telemetry.json so it never repeats (Acquisition = first appearance)."""
+    if state.get("installed_sent"):
+        return
+    _post("cli_installed", install_id, {})
+    state["installed_sent"] = True
+    _save_state(state)
 
 
 def record(command: str, exit_code: int) -> None:
-    """Fire-and-forget: build the event and dispatch it to the configured sink.
+    """Fire-and-forget, called once per invocation from main(). Emits the Acquisition
+    marker on first run, then the semantic activation event for the command (on
+    success), always plus the catch-all `command_run` for retention/coverage.
 
-    Entirely wrapped in try/except — telemetry must never break a command. Emits
-    nothing unless telemetry is enabled (consent granted, no kill-switch)."""
+    Entirely wrapped in try/except — telemetry must never break a command."""
     try:
         enabled, state = is_enabled()
         if not enabled:
             return
         install_id = _install_id(state)
-        event = _build_event(command, exit_code, install_id)
-        _sink_posthog(event)
+        success = exit_code == 0
+
+        # Acquisition: cli_installed once, ever.
+        _maybe_emit_installed(state, install_id)
+
+        # Catch-all for retention/coverage — every command, success or not.
+        _post("command_run", install_id, {"command": command, "success": success,
+                                          "exit_code": exit_code})
+
+        # Semantic activation event (success only), so funnels read cleanly.
+        if success:
+            if command == "init":
+                # demo vs a real model start — very different intent.
+                is_demo = "--demo" in sys.argv[1:]
+                _post("demo_scaffolded" if is_demo else "model_initialized", install_id, {})
+            elif command in _EVENT_FOR_COMMAND:
+                _post(_EVENT_FOR_COMMAND[command], install_id, {})
+        elif command == "validate":
+            # A drop-off reason: validation failed. error_class stays coarse.
+            _post("validation_failed", install_id, {})
     except Exception:  # noqa: BLE001 - telemetry is best-effort, never fatal
         pass

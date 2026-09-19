@@ -1882,6 +1882,11 @@ def serve(
         f"Modelith canvas ({mode}): http://{host}:{port}  (model: {model_dir})",
         fg=typer.colors.CYAN,
     )
+    # The "wow" moment. Emit at STARTUP, before the blocking server loop — serve only
+    # "exits" when killed, so the main() wrapper's record() would fire late/unreliably.
+    from mdl_cli import telemetry
+
+    telemetry.emit("canvas_opened", {"surface": "serve"})
     run_server(model_dir, host=host, port=port, read_only=read_only)
 
 
@@ -1961,6 +1966,9 @@ def studio(
         f"Modelith Studio ({mode}{extra}): http://{host}:{port}/sme  (model: {model_dir})",
         fg=typer.colors.CYAN,
     )
+    from mdl_cli import telemetry
+
+    telemetry.emit("canvas_opened", {"surface": "studio"})  # activation wow, at startup
     run_server(
         model_dir,
         host=host,

@@ -41,9 +41,9 @@
         // The extension finds a model when you create/reverse one, or you can point
         // it at ~/modelith-demo/model after `mdl init --demo`.
         //
-        // Full-window canvas via a forwarded port (recommended for containers).
-        // Switch to "tab" to test the embedded webview instead.
-        "modelith.canvas.display": "external"
+        // Canvas opens INSIDE VS Code as a webview tab (not an external browser).
+        // Set "external" to open it via a forwarded port in your system browser.
+        "modelith.canvas.display": "tab"
       }
     }
   },

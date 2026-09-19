@@ -32,3 +32,6 @@ demo/**/dbt_packages/
 
 # macOS
 .DS_Store
+
+# Container-generated YAML-schema settings (paths are machine-specific).
+.vscode/settings.json

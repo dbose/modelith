@@ -299,7 +299,7 @@
           {
             "id": "validate",
             "title": "Validate the model",
-            "description": "Run validation and reach a green check — schema, refs, naming, and ontology all pass.\n[Validate the Model](command:modelith.validate)",
+            "description": "Run validation and reach a green check \u2014 schema, refs, naming, and ontology all pass.\n[Validate the Model](command:modelith.validate)",
             "media": {
               "image": "media/canvas.gif",
               "altText": "A validated model"
@@ -388,6 +388,7 @@
     "build": "npm run check-node && tsc --noEmit && node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
     "typecheck": "tsc --noEmit",
+    "regression": "bash scripts/regression.sh",
     "package": "npm run check-node && npx @vscode/vsce package --no-dependencies",
     "publish": "npm run check-node && npx @vscode/vsce publish --no-dependencies"
   },

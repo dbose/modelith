@@ -145,6 +145,75 @@ def test_record_payload_shape_and_no_leakage(state_in_tmp, monkeypatch):
     assert "ontology search" in blob and "mdl-project" not in blob
 
 
+def _consent_yes_and_spy(monkeypatch):
+    """Grant consent and return a list that collects every emitted event name."""
+    _fake_tty(monkeypatch, is_tty=True)
+    with mock.patch("typer.confirm", return_value=True):
+        t.ensure_consent()
+    events: list[str] = []
+    monkeypatch.setattr(
+        "httpx.post",
+        lambda url, json=None, timeout=None: events.append(json["event"]),
+    )
+    return events
+
+
+# --- AARRR event taxonomy ---------------------------------------------------------
+def test_cli_installed_fires_once(state_in_tmp, monkeypatch):
+    events = _consent_yes_and_spy(monkeypatch)
+    monkeypatch.setattr("sys.argv", ["mdl", "validate", "-m", "."])
+    t.record("validate", 0)
+    assert "cli_installed" in events  # acquisition marker on first emit
+    events.clear()
+    t.record("validate", 0)  # second run
+    assert "cli_installed" not in events  # never repeats
+
+
+def test_init_demo_vs_real_split(state_in_tmp, monkeypatch):
+    events = _consent_yes_and_spy(monkeypatch)
+    monkeypatch.setattr("sys.argv", ["mdl", "init", "--demo"])
+    t.record("init", 0)
+    assert "demo_scaffolded" in events and "model_initialized" not in events
+    events.clear()
+    monkeypatch.setattr("sys.argv", ["mdl", "init"])
+    t.record("init", 0)
+    assert "model_initialized" in events and "demo_scaffolded" not in events
+
+
+@pytest.mark.parametrize(
+    "command,exit_code,expected",
+    [
+        ("validate", 0, "model_validated"),
+        ("validate", 1, "validation_failed"),  # a drop-off reason
+        ("reverse", 0, "warehouse_reversed"),
+        ("generate", 0, "dbt_generated"),
+        ("drift", 0, "drift_checked"),
+    ],
+)
+def test_semantic_event_for_command(state_in_tmp, monkeypatch, command, exit_code, expected):
+    events = _consent_yes_and_spy(monkeypatch)
+    monkeypatch.setattr("sys.argv", ["mdl", command])
+    t.record(command, exit_code)
+    assert expected in events
+    assert "command_run" in events  # catch-all always fires too
+
+
+def test_emit_canvas_opened_standalone(state_in_tmp, monkeypatch):
+    events = _consent_yes_and_spy(monkeypatch)
+    t.emit("canvas_opened", {"surface": "serve"})
+    assert events == ["canvas_opened"]
+
+
+def test_emit_noop_when_disabled(state_in_tmp, monkeypatch):
+    _fake_tty(monkeypatch, is_tty=True)
+    with mock.patch("typer.confirm", return_value=False):
+        t.ensure_consent()  # opted out
+    post = mock.Mock()
+    monkeypatch.setattr("httpx.post", post)
+    t.emit("canvas_opened", {"surface": "serve"})
+    post.assert_not_called()
+
+
 def test_record_swallows_network_error(state_in_tmp, monkeypatch):
     _fake_tty(monkeypatch, is_tty=True)
     with mock.patch("typer.confirm", return_value=True):
