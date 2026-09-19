@@ -35,6 +35,42 @@ function decisionOf(node: unknown): Decision | undefined {
   return undefined;
 }
 
+/** What a reverse target folder already contains. Reverse must never silently write
+ * into something it doesn't recognise, so we classify the target by cheap structural
+ * signals (the same way `git init` / `dbt init` probe a directory) before writing. */
+type TargetState =
+  | "empty" //  absent or empty -> safe to write, zero friction
+  | "model" //  a Modelith model (has mdl-project.yaml) -> offer new-folder/drift/overwrite
+  | "partial" // Modelith layout (logical/ or conceptual/) but no project file -> damaged
+  | "foreign"; // non-empty, none of the above -> write into a model/ subfolder
+
+function classifyTarget(dir: string): TargetState {
+  try {
+    if (!fs.existsSync(dir)) return "empty";
+    if (fs.existsSync(path.join(dir, "mdl-project.yaml"))) return "model";
+    const entries = fs.readdirSync(dir);
+    if (entries.length === 0) return "empty";
+    // Modelith's signature layout (see mdl_reverse.writer.write_model): a model dir
+    // holds logical/ and conceptual/ trees. Their presence without a project file means
+    // a model whose mdl-project.yaml was renamed/deleted — recognisable, not foreign.
+    if (entries.includes("logical") || entries.includes("conceptual")) return "partial";
+    return "foreign";
+  } catch {
+    // If we can't read it, treat it as foreign (the cautious branch) rather than empty.
+    return "foreign";
+  }
+}
+
+/** Next free `model-reversed-v<N>` sibling name for a target dir, mirroring the CLI's
+ * no-clobber guard so the extension proposes the same default the CLI would pick. */
+function suggestSiblingName(targetDir: string): string {
+  const parent = path.dirname(targetDir);
+  const stem = `${path.basename(targetDir)}-reversed`;
+  let n = 1;
+  while (fs.existsSync(path.join(parent, `${stem}-v${n}`))) n += 1;
+  return `${stem}-v${n}`;
+}
+
 export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   const out = vscode.window.createOutputChannel("Modelith");
   ctx.subscriptions.push(out);
@@ -522,6 +558,123 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     }
   };
 
+  // Decide WHERE a right-click reverse should write, handling every "something is
+  // already here" case so we never silently overwrite or mix into an existing model.
+  // Returns the target dir to write into (absolute), or undefined to abort (the user
+  // cancelled, or chose to check drift instead — which we launch here). `manifest` is
+  // the drift source when one is resolvable (dbt reverse); undefined for DDL reverse,
+  // where a drift comparison is impossible and that arm is hidden.
+  const resolveReverseTarget = async (
+    defaultTarget: string,
+    manifest: string | undefined,
+  ): Promise<{ target: string; force: boolean } | undefined> => {
+    // A model living elsewhere in the workspace is the strongest signal the user may
+    // want drift, not a second model — surface it first (only if we can drift it).
+    const existing = await findModelDir();
+    if (existing && path.resolve(existing) !== path.resolve(defaultTarget) && manifest) {
+      const DRIFT = "Check drift instead";
+      const GO = "Continue reversing";
+      const choice = await vscode.window.showInformationMessage(
+        `You already have a Modelith model at ${vscode.workspace.asRelativePath(existing)}. ` +
+          "Check drift against it, or reverse this source into a new model?",
+        { modal: true },
+        DRIFT,
+        GO,
+      );
+      if (!choice) return undefined; // cancelled
+      if (choice === DRIFT) {
+        await vscode.commands.executeCommand("modelith.driftCheck");
+        return undefined;
+      }
+      // GO -> fall through to target classification
+    }
+
+    const state = classifyTarget(defaultTarget);
+    if (state === "empty") return { target: defaultTarget, force: false }; // happy path
+
+    const rel = vscode.workspace.asRelativePath(defaultTarget);
+    const NEW_FOLDER = "Reverse into a new folder";
+    const OVERWRITE = "Overwrite existing model";
+    const DRIFT = "Check drift instead";
+
+    let choice: string | undefined;
+    if (state === "model") {
+      const actions = manifest ? [NEW_FOLDER, DRIFT, OVERWRITE] : [NEW_FOLDER, OVERWRITE];
+      choice = await vscode.window.showWarningMessage(
+        `A Modelith model already exists at ${rel}. Reverse into a new folder, ` +
+          (manifest ? "check drift against the existing model, " : "") +
+          "or overwrite it?",
+        { modal: true },
+        ...actions,
+      );
+    } else if (state === "partial") {
+      choice = await vscode.window.showWarningMessage(
+        `${rel} looks like a Modelith model with a missing or renamed project file. ` +
+          "Reverse into a new folder, or overwrite what's there?",
+        { modal: true },
+        NEW_FOLDER,
+        OVERWRITE,
+      );
+    } else {
+      // foreign: non-empty folder that isn't a model. Offer a self-contained subfolder.
+      const SUBFOLDER = "Reverse into a subfolder";
+      choice = await vscode.window.showWarningMessage(
+        `${rel} isn't empty and isn't a Modelith model. Reverse into a new subfolder inside it?`,
+        { modal: true },
+        SUBFOLDER,
+      );
+      if (choice !== SUBFOLDER) return undefined;
+      return promptForFolder(path.join(defaultTarget, "model"));
+    }
+
+    if (!choice) return undefined; // cancelled / dismissed
+    if (choice === DRIFT) {
+      await vscode.commands.executeCommand("modelith.driftCheck");
+      return undefined;
+    }
+    if (choice === OVERWRITE) return { target: defaultTarget, force: true }; // in place
+    // NEW_FOLDER -> pre-fill the CLI's own next-free sibling name, let the user edit.
+    const suggested = path.join(path.dirname(defaultTarget), suggestSiblingName(defaultTarget));
+    return promptForFolder(suggested);
+  };
+
+  // A pre-filled, editable, validated target-folder input box. Returns the chosen path
+  // (force:false — a fresh folder), or undefined if cancelled. Rejects an existing model.
+  const promptForFolder = async (
+    suggestedAbs: string,
+  ): Promise<{ target: string; force: boolean } | undefined> => {
+    const rel = vscode.workspace.asRelativePath(suggestedAbs);
+    const picked = await vscode.window.showInputBox({
+      title: "Reverse Engineer — target folder",
+      prompt: "Where to write the reversed model (relative to the workspace)",
+      value: rel,
+      valueSelection: [Math.max(0, rel.lastIndexOf("/") + 1), rel.length],
+      validateInput: (v) => {
+        const t = v.trim();
+        if (!t) return "Enter a folder path.";
+        const abs = path.isAbsolute(t)
+          ? t
+          : path.join(
+              vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? path.dirname(suggestedAbs),
+              t,
+            );
+        if (fs.existsSync(path.join(abs, "mdl-project.yaml"))) {
+          return "A Modelith model already exists there — choose another folder.";
+        }
+        return undefined;
+      },
+    });
+    if (picked === undefined) return undefined;
+    const t = picked.trim();
+    const abs = path.isAbsolute(t)
+      ? t
+      : path.join(
+          vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? path.dirname(suggestedAbs),
+          t,
+        );
+    return { target: abs, force: false };
+  };
+
   cmd("modelith.reverse", () =>
     withModelDir(async (dir) => {
       const source = await vscode.window.showQuickPick(
@@ -633,7 +786,12 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
         }
         return;
       }
-      await runReverseInto(projectDir, ["reverse", "--project", manifest, "-o", "model"], reverse);
+      // dbt reverse CAN drift (a manifest exists), so the drift arm is available.
+      const res = await resolveReverseTarget(path.join(projectDir, "model"), manifest);
+      if (!res) return; // cancelled, or handed off to drift
+      const args = ["reverse", "--project", manifest, "-o", res.target];
+      if (res.force) args.push("--force");
+      await runReverseInto(projectDir, args, reverse);
       return;
     }
 
@@ -641,8 +799,13 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     const isSql = name.toLowerCase().endsWith(".sql");
     if (isDir || isSql) {
       const cwd = isDir ? fsPath : path.dirname(fsPath);
-      const ddlArg = isDir ? fsPath : fsPath;
-      await runReverseInto(cwd, ["reverse", "--ddl", ddlArg, "-o", "model"], reverse);
+      const ddlArg = fsPath;
+      // DDL reverse has no manifest -> no drift comparison possible (arm hidden).
+      const res = await resolveReverseTarget(path.join(cwd, "model"), undefined);
+      if (!res) return;
+      const args = ["reverse", "--ddl", ddlArg, "-o", res.target];
+      if (res.force) args.push("--force");
+      await runReverseInto(cwd, args, reverse);
       return;
     }
 

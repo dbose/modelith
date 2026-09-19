@@ -416,6 +416,13 @@ def reverse(
         help="Review every inference manually — nothing is auto-accepted (alias for "
         "--auto-accept none).",
     ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Reverse into --out even if it already holds a model, overwriting it. By "
+        "default reverse diverts to a fresh model-reversed-v<N> sibling to protect an "
+        "existing model.",
+    ),
 ) -> None:
     """Reverse-engineer a dbt project into a Modelith model (spec §6).
 
@@ -449,10 +456,12 @@ def reverse(
         )
         raise typer.Exit(1)
 
-    # Never clobber an existing model. If --out already holds one (mdl-project.yaml),
-    # divert to a fresh, suffixed sibling (model-reversed-v1, -v2, …) and say so — a
-    # reverse into a populated model dir would otherwise overwrite hand-authored work.
-    out = _nonclobbering_out(out)
+    # Never clobber an existing model unless --force. If --out already holds one
+    # (mdl-project.yaml), divert to a fresh, suffixed sibling (model-reversed-v1, -v2, …)
+    # and say so — a reverse into a populated model dir would otherwise overwrite
+    # hand-authored work. --force is the explicit opt-in to overwrite in place.
+    if not force:
+        out = _nonclobbering_out(out)
 
     if ddl:
         from mdl_reverse.ddl_projection import ddl_projection

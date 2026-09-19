@@ -233,3 +233,21 @@ def test_reverse_auto_accept_from_naming_config(tmp_path: Path):
     )
     assert r.exit_code == 0, r.output
     assert any(d["confidence"] == "high" for d in _pending_json(out))
+
+
+def test_reverse_force_overwrites_in_place(tmp_path: Path):
+    """--force reverses into -o even when it holds a model, no divert to a sibling."""
+    f = tmp_path / "schema.sql"
+    f.write_text(_REGION_SQL, encoding="utf-8")
+    out = tmp_path / "model"
+    out.mkdir()
+    (out / "mdl-project.yaml").write_text("name: hand_authored\n", encoding="utf-8")
+
+    result = runner.invoke(
+        app, ["reverse", "--ddl", str(f), "-o", str(out), "--no-review", "--force"]
+    )
+    assert result.exit_code == 0, result.output
+    # wrote in place (no -v1 sibling), and the marker is now the reversed model's
+    assert not (tmp_path / "model-reversed-v1").exists()
+    assert "region" in _entities(out)
+    assert "hand_authored" not in (out / "mdl-project.yaml").read_text(encoding="utf-8")
