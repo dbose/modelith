@@ -325,6 +325,48 @@ def generate(
     typer.secho(f"{verb} {len(result.files)} files to {out}", fg=typer.colors.GREEN)
 
 
+def _read_ddl_source(ddl: Path) -> str:
+    """Return the DDL text for --ddl, whether it points at one .sql file or a directory.
+
+    A directory is reversed as a single warehouse: every *.sql under it (recursively,
+    sorted for determinism) is concatenated into one script, so CREATE TABLEs split
+    across files and foreign keys that cross files resolve — parse_sql_ddl sees them all
+    in one pass. A `-- file: <name>` banner precedes each file so parse warnings are
+    traceable to their source. An empty directory is an error (nothing to reverse)."""
+    if ddl.is_dir():
+        files = sorted(ddl.rglob("*.sql"))
+        if not files:
+            typer.secho(f"no .sql files found under {ddl}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(1)
+        parts = []
+        for f in files:
+            parts.append(f"-- file: {f.relative_to(ddl)}\n{f.read_text(encoding='utf-8')}")
+        typer.secho(
+            f"  reversing {len(files)} DDL file(s) under {ddl} as one warehouse",
+            fg=typer.colors.CYAN,
+        )
+        return "\n\n".join(parts)
+    return ddl.read_text(encoding="utf-8")
+
+
+def _nonclobbering_out(out: Path) -> Path:
+    """If `out` already contains a Modelith model (mdl-project.yaml), return a fresh
+    suffixed sibling (model-reversed-v1, -v2, …) so a reverse never overwrites an
+    existing model, and print where it diverted. If `out` is empty or absent, use it."""
+    if not (out / "mdl-project.yaml").exists():
+        return out
+    base = out.parent
+    stem = f"{out.name}-reversed"
+    n = 1
+    while (cand := base / f"{stem}-v{n}").exists():
+        n += 1
+    typer.secho(
+        f"  {out} already holds a model; reversing into {cand} instead (not overwriting)",
+        fg=typer.colors.YELLOW,
+    )
+    return cand
+
+
 @app.command()
 def reverse(
     project: Path = typer.Option(
@@ -333,7 +375,9 @@ def reverse(
     ddl: Path = typer.Option(
         None,
         "--ddl",
-        help="Path to a raw SQL DDL script (CREATE TABLE …). Reversed through the same "
+        help="Path to a raw SQL DDL script (CREATE TABLE …), or a directory of them. "
+        "A directory is reversed as one warehouse: every *.sql under it (recursively) is "
+        "concatenated so foreign keys across files resolve. Reversed through the same "
         "engine as a dbt project: surrogate stripping, SCD2/staging classification, and "
         "the review ledger all apply. Nullability and keys come from the DDL.",
     ),
@@ -382,10 +426,15 @@ def reverse(
         )
         raise typer.Exit(1)
 
+    # Never clobber an existing model. If --out already holds one (mdl-project.yaml),
+    # divert to a fresh, suffixed sibling (model-reversed-v1, -v2, …) and say so — a
+    # reverse into a populated model dir would otherwise overwrite hand-authored work.
+    out = _nonclobbering_out(out)
+
     if ddl:
         from mdl_reverse.ddl_projection import ddl_projection
 
-        proj = ddl_projection(ddl.read_text(encoding="utf-8"), dialect=dialect)
+        proj = ddl_projection(_read_ddl_source(ddl), dialect=dialect)
     elif project.name.endswith(".yml") or project.name.endswith(".yaml"):
         # a dbt schema.yml (warehouse-free path)
         proj = read_schema_yml(project)
