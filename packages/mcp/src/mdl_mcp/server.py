@@ -135,7 +135,9 @@ def build_server(repo_dir: Path) -> FastMCP:
             return _json(
                 {"error": f"no dbt manifest at {man_path} — run `dbt compile` first"}
             )
-        report = compute_drift(repo.model, proj, tgt)
+        report = compute_drift(
+            repo.model, proj, tgt, reverse=getattr(repo.model.config, "reverse", None)
+        )
         name_to_le = model_name_to_ulid(repo, tgt)
 
         def _file_for(model_name: str) -> str | None:

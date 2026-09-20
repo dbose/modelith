@@ -128,7 +128,9 @@ def dbt_diagnostics(ws: ModelWorkspace) -> dict[Path, list[lsp.Diagnostic]]:
     manifest = ws.manifest
     if manifest is not None:
         target = model.config.dbt_target or "duckdb_dev"
-        report = compute_drift(model, manifest, target)
+        report = compute_drift(
+            model, manifest, target, reverse=getattr(model.config, "reverse", None)
+        )
         for item in report.items:
             code = f"MDL-DRIFT-{item.kind.value}"
             sev = _DRIFT_SEV[item.severity]

@@ -62,9 +62,16 @@ export class DriftTreeProvider implements vscode.TreeDataProvider<Node> {
       ? `${item.detail}\n\nFix: ${item.reconcile_action}`
       : item.detail;
     ti.iconPath = SEVERITY_ICON[item.severity];
-    // reconcilable items get a context value so a per-item "Reconcile" inline action
-    // can be contributed in package.json; breaking items get "explain".
-    ti.contextValue = item.reconcilable ? "driftItem:reconcilable" : "driftItem:breaking";
+    // contextValue gates the per-item inline actions in package.json:
+    //  - reconcilable -> "Reconcile"
+    //  - model_removed -> "Map to dbt model…" (often the real fix is a missing mapping,
+    //    not a dropped model), so it needs its own kind-aware value
+    //  - other breaking -> "Explain"
+    ti.contextValue = item.reconcilable
+      ? "driftItem:reconcilable"
+      : item.kind === "model_removed"
+        ? "driftItem:modelRemoved"
+        : "driftItem:breaking";
     return ti;
   }
 
