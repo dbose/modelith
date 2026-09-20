@@ -766,7 +766,9 @@ def drift(
         typer.secho(str(e), fg=typer.colors.RED, err=True)
         raise typer.Exit(4) from e
 
-    report = compute_drift(repo.model, proj, tgt)
+    report = compute_drift(
+        repo.model, proj, tgt, reverse=getattr(repo.model.config, "reverse", None)
+    )
 
     # §7: expired modeling debt escalates from warn to error in --check
     from mdl_cli.collab import expired_debt

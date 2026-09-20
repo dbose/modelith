@@ -33,6 +33,7 @@ from mdl_core.severity import (  # noqa: F401
 )
 from mdl_reverse import lifting
 from mdl_reverse.manifest import ManifestProjection
+from mdl_reverse.mapping import staging_naming_from
 from mdl_reverse.projection import ExpectedModel, project_model
 
 # The severity vocabulary now lives in core so the model-to-model diff shares it.
@@ -127,15 +128,20 @@ class DriftReport:
 
 
 def compute_drift(
-    model: Model, manifest: ManifestProjection, target: str
+    model: Model, manifest: ManifestProjection, target: str, reverse=None
 ) -> DriftReport:
     report = DriftReport(target=target)
-    expected = project_model(model, target)
+    manifest_names = manifest.model_names()
+    # Resolve expected names through the project's reverse convention so an entity `price`
+    # can match the dbt model `stg_price` where the warehouse uses a staging layer. With
+    # no reverse config this is byte-for-byte the historical exact-name projection.
+    expected = project_model(model, target, reverse=reverse, available=manifest_names)
 
     expected_names = set(expected)
-    manifest_names = manifest.model_names()
 
     # Models the model declares but the manifest lacks -> removed from dbt (breaking).
+    # payload map_candidate lets the UI offer "Map to dbt model…" — often the true fix is
+    # a missing mapping, not a dropped model.
     for name in sorted(expected_names - manifest_names):
         report.add(
             DriftItem(
@@ -143,21 +149,28 @@ def compute_drift(
                 kind=DriftKind.model_removed,
                 model=name,
                 detail=f"model {name!r} exists in the Modelith model but not in the dbt project",
+                payload={"map_candidate": True},
             )
         )
 
     # Manifest models with no model counterpart -> unmanaged. Staging/intermediate
     # models are engineer-owned by design (same rule as reverse lifting §6.3), so
-    # they are not drift — flagging every stg_* would bury real findings in noise.
+    # they are not drift — flagging every stg_* would bury real findings in noise. The
+    # project's declared staging prefixes (reverse.layers) feed is_staging here, so a
+    # custom convention suppresses the right models instead of only the built-in stg_.
+    staging_naming = staging_naming_from(reverse)
     deliberately_unmanaged = {
         le.name for le in model.logical_entities.values() if le.unmanaged
     }
+    # A model already claimed by an explicit reverse.model_map target is managed, not
+    # unmanaged — it just materialises an entity under a warehouse-specific name.
+    mapped_targets = set((reverse.model_map or {}).values()) if reverse else set()
     for name in sorted(manifest_names - expected_names):
         mm = manifest.models[name]
-        if lifting.is_staging(name, mm.tags):
+        if lifting.is_staging(name, mm.tags, naming=staging_naming):
             continue
-        if name in deliberately_unmanaged:
-            continue  # engineer-owned by explicit model decision
+        if name in deliberately_unmanaged or name in mapped_targets:
+            continue  # engineer-owned by explicit model decision, or an explicit mapping
         report.add(
             DriftItem(
                 severity=DriftSeverity.unmanaged,

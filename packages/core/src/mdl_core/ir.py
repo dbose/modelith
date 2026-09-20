@@ -432,6 +432,59 @@ class GlossaryConfig(_Base):
     catalog_name: str = "Collibra"  # display name for banners
 
 
+class ReverseLayer(_Base):
+    """One warehouse layer/naming convention for resolving an entity name to the dbt
+    model that materialises it (drift name resolution). Every warehouse names its models
+    differently — a `price` entity may live as `stg_price`, `price`, or `dim_price` — so
+    drift must know the convention instead of assuming an exact-name match.
+
+    A layer produces ONE candidate model name from an entity name, via either:
+    - ``prefix`` — ``<prefix><entity>`` (e.g. ``stg_`` -> ``stg_price``), optional
+      ``suffix`` too; or
+    - ``template`` — a ``{entity}`` format string (e.g. ``dim_{entity}`` -> ``dim_price``).
+    The first layer whose candidate actually exists in the compiled manifest wins.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    name: str  # human label for the layer (staging, dimension, …); not used for matching
+    prefix: str | None = None
+    suffix: str | None = None
+    template: str | None = None  # a {entity} format string; wins over prefix/suffix
+
+
+class ReverseConfig(_Base):
+    """The `reverse:` block of mdl-project.yaml — the single, git-committed source of
+    truth for how this warehouse's dbt models map to Modelith entities. Authored three
+    ways that all converge here: hand-coded YAML, the Drift UI "Map to dbt model…"
+    action, and (later) AI-discovered conventions.
+
+    - ``model_map`` — explicit per-entity overrides (entity name -> exact dbt model
+      name). Wins over every layer pattern.
+    - ``layers`` — ordered warehouse conventions (see ReverseLayer). Tried in order;
+      the first candidate present in the manifest is the match.
+    - ``auto_accept`` — the reverse auto-accept confidence floor (read elsewhere as a
+      raw string; kept here so the whole `reverse:` block round-trips through the typed
+      model and gains schema completion).
+
+    ``extra="allow"`` keeps forward-compat and lets pre-existing raw keys (e.g.
+    ``staging_prefixes`` consumed by ReverseNaming.merged) survive untouched.
+    """
+
+    # protected_namespaces=() so the natural `model_map` field name (a user-facing YAML
+    # key) doesn't collide with pydantic's reserved `model_` prefix on any version.
+    model_config = ConfigDict(extra="allow", protected_namespaces=())
+
+    model_map: dict[str, str] = Field(default_factory=dict)
+    layers: list[ReverseLayer] = Field(default_factory=list)
+    auto_accept: str | None = None
+
+    def is_empty(self) -> bool:
+        """True when no mapping is configured — the resolver then behaves exactly as if
+        no reverse config were present (byte-for-byte the historical exact-name match)."""
+        return not self.model_map and not self.layers
+
+
 class ProjectConfig(_Base):
     model_config = ConfigDict(extra="allow")
 
@@ -447,6 +500,9 @@ class ProjectConfig(_Base):
     ontology_stack: list[dict] = Field(default_factory=list)
     naming: NamingStandards = Field(default_factory=NamingStandards)
     glossary: GlossaryConfig = Field(default_factory=GlossaryConfig)
+    # How this warehouse's dbt models map to entities (drift name resolution). Empty by
+    # default -> drift keeps the exact-name behaviour. See ReverseConfig.
+    reverse: ReverseConfig = Field(default_factory=ReverseConfig)
 
 
 # --- The in-memory graph ---------------------------------------------------

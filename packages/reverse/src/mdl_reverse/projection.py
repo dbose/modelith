@@ -55,8 +55,22 @@ def _map_type(base: str | None) -> str:
     return _TYPE_MAP.get((base or "string").lower(), "VARCHAR")
 
 
-def project_model(model: Model, target: str) -> dict[str, ExpectedModel]:
-    """Return {model_name -> ExpectedModel} for the given physical target."""
+def project_model(
+    model: Model,
+    target: str,
+    reverse=None,
+    available: set[str] | None = None,
+) -> dict[str, ExpectedModel]:
+    """Return {model_name -> ExpectedModel} for the given physical target.
+
+    A physical-table mapping (from reverse) always wins for the expected name. Otherwise
+    the name is resolved through the project's `reverse:` convention (ReverseConfig) so an
+    entity `price` can expect the dbt model `stg_price` where the warehouse uses a staging
+    layer. With no reverse config the name falls back to the bare entity name (unchanged).
+    `available` is the set of manifest model names, letting layer resolution pick the
+    candidate that actually exists."""
+    from mdl_reverse.mapping import resolve_model_name
+
     pt_by_logical = {
         pt.realises: pt for pt in model.physical_tables.values() if pt.target == target
     }
@@ -68,7 +82,7 @@ def project_model(model: Model, target: str) -> dict[str, ExpectedModel]:
         if le.unmanaged:
             continue  # engineer-owned; not part of the emitted contract surface
         pt = pt_by_logical.get(le.id)
-        name = (pt.name.lower() if pt else le.name)
+        name = pt.name.lower() if pt else resolve_model_name(le.name, target, reverse, available)
         cols: dict[str, ExpectedColumn] = {}
         for attr in le.attributes:
             dom = model.domain_by_name(attr.domain)
