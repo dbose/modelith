@@ -19,3 +19,14 @@ naming:
   logical_case: snake
   physical_case: upper_snake
   abbreviations: {}
+# How this warehouse's dbt models map back to entities, so `mdl drift` compares the
+# right things. This demo warehouse materialises each entity as a staging model
+# (price -> stg_price), so drift resolves entity names through a staging layer instead
+# of assuming an exact name match. Add `model_map: {entity: exact_model}` for one-off
+# names, or more `layers` (e.g. {name: dimension, template: "dim_{entity}"}) as the
+# warehouse grows. You can also teach a mapping from the Drift panel ("Map to dbt
+# model…") — it writes here.
+reverse:
+  layers:
+    - name: staging
+      prefix: stg_

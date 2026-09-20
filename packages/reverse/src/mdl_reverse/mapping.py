@@ -57,6 +57,10 @@ def resolve_model_name(
     `available` (the manifest model names) lets layer resolution pick the candidate that
     truly exists; without it, the first layer that yields a candidate wins. An empty or
     absent `reverse` config falls straight through to the bare entity name.
+
+    Precedence: explicit model_map > the bare entity name if the warehouse actually has
+    it (the entity's own/canonical model — e.g. a generated core `price` alongside an
+    upstream `stg_price`) > the first layer candidate present > the bare name.
     """
     if reverse is None or reverse.is_empty():
         return entity_name
@@ -68,7 +72,13 @@ def resolve_model_name(
         if hit:
             return hit
 
-    # 2. layer patterns, in declared order.
+    # 2. the bare name is the canonical match when the warehouse has it — layers are for
+    # when it does NOT (a staging-only warehouse). This keeps a generated core `price`
+    # governed as `price` even when `stg_price` also exists.
+    if available is not None and entity_name in available:
+        return entity_name
+
+    # 3. layer patterns, in declared order.
     first_candidate: str | None = None
     for layer in reverse.layers or []:
         cand = _layer_candidate(layer, entity_name)
@@ -82,7 +92,7 @@ def resolve_model_name(
     if first_candidate is not None:
         return first_candidate
 
-    # 3. bare name (historical behaviour).
+    # 4. bare name (historical behaviour).
     return entity_name
 
 

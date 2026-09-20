@@ -66,6 +66,13 @@ def test_first_layer_present_in_manifest_wins():
     assert resolve_model_name("price", TARGET, rc, available={"stg_price"}) == "stg_price"
 
 
+def test_bare_name_wins_when_present_over_layer():
+    """When both the bare name and a layer candidate exist, the bare name is the
+    entity's canonical model (e.g. a generated core `price` alongside `stg_price`)."""
+    rc = ReverseConfig(layers=[ReverseLayer(name="staging", prefix="stg_")])
+    assert resolve_model_name("price", TARGET, rc, available={"price", "stg_price"}) == "price"
+
+
 def test_no_candidate_present_falls_back_to_bare():
     rc = ReverseConfig(layers=[ReverseLayer(name="staging", prefix="stg_")])
     # available given but candidate absent -> bare name (a TRUE removal downstream)
@@ -184,3 +191,44 @@ def test_model_removed_items_carry_map_candidate_payload(model_dir: Path):
     report = _report(model_dir, reverse=None, mutate=_rename_all_models_to_stg)
     removed = [i for i in report.items if i.kind == DriftKind.model_removed]
     assert removed and all(i.payload.get("map_candidate") for i in removed)
+
+
+def test_scaffolded_demo_has_no_phantom_removed_or_unmanaged_models(tmp_path: Path):
+    """End-to-end regression guard for the exact bug the user hit: the scaffolded demo
+    (`mdl init --demo`) ships a staging-only warehouse (stg_price, …), which before this
+    feature produced 7 false 'model removed (breaking)' items. Its mdl-project.yaml now
+    declares a `reverse.layers` staging convention, so drift resolves each entity to its
+    stg_ model — NO phantom model_removed, and the stg_ models are not reported unmanaged.
+
+    (Scoped to the model-name axis; column/relationship diffs are exercised elsewhere and
+    depend on whether `mdl generate` has run, which is orthogonal to the naming fix.)
+    """
+    from mdl_cli.demo import scaffold_demo
+
+    scaffold_demo(tmp_path)
+    model_dir = tmp_path / "model"
+    repo = ModelRepo.load(model_dir)
+    target = repo.model.config.dbt_target or "duckdb_dev"
+
+    # Mirror the shipped staging warehouse: one stg_<entity> model per entity.
+    raw = manifest_from_model(repo.model, target)
+    for node in raw["nodes"].values():
+        if node.get("resource_type") == "model":
+            node["name"] = f"stg_{node['name']}"
+    proj = read_manifest_dict(raw)
+
+    reverse = getattr(repo.model.config, "reverse", None)
+    assert reverse is not None and not reverse.is_empty(), "demo must ship a reverse block"
+    report = compute_drift(repo.model, proj, target, reverse=reverse)
+
+    phantom = [
+        i
+        for i in report.items
+        if i.kind in (DriftKind.model_removed, DriftKind.unmanaged_model)
+    ]
+    assert phantom == [], [i.detail for i in phantom]
+
+    # And without the reverse block it WOULD be the 7-item false positive (proves the
+    # config is what fixes it, not something else).
+    bad = compute_drift(repo.model, proj, target, reverse=None)
+    assert any(i.kind == DriftKind.model_removed for i in bad.items)
