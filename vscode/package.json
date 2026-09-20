@@ -2,7 +2,7 @@
   "name": "modelith-vscode",
   "displayName": "Modelith",
   "description": "Ontology-anchored, git-native data modeling for dbt \u2014 validate, generate, drift, and the Modelith canvas inside VS Code.",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "publisher": "BosonResearch",
   "license": "Apache-2.0",
   "icon": "icon.png",
@@ -316,6 +316,30 @@
             },
             "completionEvents": [
               "onCommand:modelith.validate"
+            ]
+          },
+          {
+            "id": "generate",
+            "title": "Generate the dbt project",
+            "description": "Turn the model into dbt mart models \u2014 one governed model per entity, with columns, contracts, and relationship tests. Do this before checking drift: the marts are what drift compares against.\n[Generate the dbt Project](command:modelith.generate)",
+            "media": {
+              "image": "media/canvas.gif",
+              "altText": "Generated dbt models"
+            },
+            "completionEvents": [
+              "onCommand:modelith.generate"
+            ]
+          },
+          {
+            "id": "checkDrift",
+            "title": "Check drift vs the warehouse",
+            "description": "Compare the model against the built dbt manifest. After generating (and a `dbt build`), drift is clean \u2014 each entity matches its mart, staging models are ignored.\n[Check Drift](command:modelith.driftCheck)",
+            "media": {
+              "image": "media/canvas.gif",
+              "altText": "A clean drift report"
+            },
+            "completionEvents": [
+              "onCommand:modelith.driftCheck"
             ]
           }
         ]

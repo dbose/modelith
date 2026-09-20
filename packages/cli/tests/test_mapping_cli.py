@@ -22,20 +22,29 @@ def _project(model_dir: Path) -> str:
 
 
 def test_mapping_set_adds_model_map_preserving_layers_and_comments(tmp_path: Path):
+    """`mapping set` folds into an existing reverse block without disturbing a
+    pre-declared layer or its comment (comment-preserving round-trip)."""
     scaffold_demo(tmp_path)
     m = tmp_path / "model"
-    before = _project(m)
+    proj = m / "mdl-project.yaml"
+    # Seed a project that already has a commented reverse.layers block (the demo ships
+    # none — bare-name matching — so we add one here to exercise preservation).
+    proj.write_text(
+        proj.read_text(encoding="utf-8")
+        + "# our warehouse's dimensional layer\n"
+        + "reverse:\n  layers:\n    - name: dimension\n      prefix: dim_\n",
+        encoding="utf-8",
+    )
     r = runner.invoke(app, ["mapping", "set", "price", "fct_price", "-m", str(m)])
     assert r.exit_code == 0, r.output
     text = _project(m)
     # the new mapping is present ...
     assert "model_map:" in text
     assert "price: fct_price" in text
-    # ... and the pre-existing staging layer + its explanatory comment survived
+    # ... and the pre-existing layer + its explanatory comment survived
     assert "layers:" in text
-    assert "prefix: stg_" in text
-    assert "# " in text  # comments preserved (round-trip)
-    assert before != text
+    assert "prefix: dim_" in text
+    assert "# our warehouse's dimensional layer" in text  # comment preserved (round-trip)
 
 
 def test_mapping_unset_removes_entry(tmp_path: Path):

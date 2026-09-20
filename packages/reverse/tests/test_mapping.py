@@ -193,15 +193,17 @@ def test_model_removed_items_carry_map_candidate_payload(model_dir: Path):
     assert removed and all(i.payload.get("map_candidate") for i in removed)
 
 
-def test_scaffolded_demo_has_no_phantom_removed_or_unmanaged_models(tmp_path: Path):
-    """End-to-end regression guard for the exact bug the user hit: the scaffolded demo
-    (`mdl init --demo`) ships a staging-only warehouse (stg_price, …), which before this
-    feature produced 7 false 'model removed (breaking)' items. Its mdl-project.yaml now
-    declares a `reverse.layers` staging convention, so drift resolves each entity to its
-    stg_ model — NO phantom model_removed, and the stg_ models are not reported unmanaged.
+def test_scaffolded_demo_is_drift_clean_after_generate(tmp_path: Path):
+    """The scaffolded demo (`mdl init --demo`) ships NO reverse block, matching demo/ibor.
+    A Modelith entity maps to a dbt MART model (dbt's own 'entity layer'), which is the
+    bare-named core model `mdl generate` writes (benchmark, price, …) — NOT the thin `stg_`
+    passthrough. So once generated, entity `benchmark` matches core mart `benchmark` by
+    bare name, `stg_benchmark` is suppressed as staging, and drift is clean with zero
+    config.
 
-    (Scoped to the model-name axis; column/relationship diffs are exercised elsewhere and
-    depend on whether `mdl generate` has run, which is orthogonal to the naming fix.)
+    Regression guard against the earlier mistake of shipping a `reverse.layers: staging`
+    block, which forced entities onto the passthrough staging models and produced a wall
+    of false column/contract/relationship drift.
     """
     from mdl_cli.demo import scaffold_demo
 
@@ -210,25 +212,51 @@ def test_scaffolded_demo_has_no_phantom_removed_or_unmanaged_models(tmp_path: Pa
     repo = ModelRepo.load(model_dir)
     target = repo.model.config.dbt_target or "duckdb_dev"
 
-    # Mirror the shipped staging warehouse: one stg_<entity> model per entity.
+    # The demo must NOT ship a reverse block — bare-name matching against generated marts
+    # is correct; a staging layer would be the bug.
+    reverse = getattr(repo.model.config, "reverse", None)
+    assert reverse is None or reverse.is_empty(), "demo must not ship a reverse block"
+
+    # Emulate the POST-generate warehouse: a bare-name core mart per entity (full columns
+    # + contract + relationship tests, from manifest_from_model) PLUS a thin stg_ passthrough
+    # (empty columns) that must be suppressed, not matched.
+    raw = manifest_from_model(repo.model, target)
+    for entity in [le.name for le in repo.model.logical_entities.values()]:
+        raw["nodes"][f"model.pension_ibor.stg_{entity}"] = {
+            "resource_type": "model",
+            "name": f"stg_{entity}",
+            "columns": {},
+            "config": {"contract": {"enforced": False}},
+            "tags": [],
+            "meta": {},
+        }
+    proj = read_manifest_dict(raw)
+
+    report = compute_drift(repo.model, proj, target, reverse=reverse)
+    assert report.items == [], [f"{i.kind.value}: {i.detail}" for i in report.items]
+
+
+def test_scaffolded_demo_pre_generate_is_honest_model_removed(tmp_path: Path):
+    """Before `mdl generate`, only the stg_ passthroughs exist and the core marts don't.
+    Drift then honestly reports the marts as `model_removed` (they aren't built yet) —
+    NOT a wall of column/contract diffs against the staging passthrough. This is the
+    'run mdl generate first' signal the walkthrough/README guide the user through."""
+    from mdl_cli.demo import scaffold_demo
+
+    scaffold_demo(tmp_path)
+    repo = ModelRepo.load(tmp_path / "model")
+    target = repo.model.config.dbt_target or "duckdb_dev"
+
+    # Pre-generate: ONLY stg_ models exist (rename every core model to stg_).
     raw = manifest_from_model(repo.model, target)
     for node in raw["nodes"].values():
         if node.get("resource_type") == "model":
             node["name"] = f"stg_{node['name']}"
     proj = read_manifest_dict(raw)
 
-    reverse = getattr(repo.model.config, "reverse", None)
-    assert reverse is not None and not reverse.is_empty(), "demo must ship a reverse block"
-    report = compute_drift(repo.model, proj, target, reverse=reverse)
-
-    phantom = [
-        i
-        for i in report.items
-        if i.kind in (DriftKind.model_removed, DriftKind.unmanaged_model)
-    ]
-    assert phantom == [], [i.detail for i in phantom]
-
-    # And without the reverse block it WOULD be the 7-item false positive (proves the
-    # config is what fixes it, not something else).
-    bad = compute_drift(repo.model, proj, target, reverse=None)
-    assert any(i.kind == DriftKind.model_removed for i in bad.items)
+    report = compute_drift(repo.model, proj, target, reverse=None)
+    kinds = {i.kind for i in report.items}
+    # honest signal: the marts are missing (model_removed), not passthrough column noise
+    assert DriftKind.model_removed in kinds
+    assert DriftKind.column_dropped not in kinds
+    assert DriftKind.contract_disabled not in kinds

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.4
+
+- **Getting Started now walks you to a clean drift check.** The walkthrough gained two
+  steps — *Generate the dbt project* and *Check drift* — in the right order, so you build
+  the dbt mart models before comparing against them. (A Modelith entity maps to a dbt
+  **mart**, the governed model with columns and contracts — not the raw `stg_` staging
+  wrapper.) The bundled demo also ships a short README with the run order, and no longer
+  carries a staging mapping that made an early drift check look alarming. Requires CLI
+  0.4.5+.
+
 ## 0.3.3
 
 - **Teach drift your warehouse's naming.** Drift matched a model entity to a dbt model by
