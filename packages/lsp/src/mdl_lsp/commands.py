@@ -12,7 +12,7 @@ from pathlib import Path
 from mdl_core.commands import apply_command
 from mdl_core.yaml_io import dump_str
 from mdl_lsp.workspace import ModelWorkspace
-from mdl_reverse.ledger import DecisionLedger
+from mdl_reverse.ledger import DEFAULT_AUTO_ACCEPT, DecisionLedger
 from mdl_reverse.reverse import _lift_entity
 
 
@@ -36,7 +36,8 @@ def lift_model(ws: ModelWorkspace, sql_path: str) -> str:
         raise LspCommandError(f"{name!r} is already in the Modelith model")
 
     ledger = DecisionLedger.load(ws.model_dir)
-    le, ce, _proposals = _lift_entity(mm, name, ledger, auto_accept_high=True)
+    # Default auto-accept floor: high-confidence signals are accepted, the rest proposed.
+    le, ce, _proposals = _lift_entity(mm, name, ledger, DEFAULT_AUTO_ACCEPT)
 
     repo = ws.repo
     assert repo is not None

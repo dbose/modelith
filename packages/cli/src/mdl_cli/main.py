@@ -402,6 +402,27 @@ def reverse(
         help="Print a classification summary (what was excluded / marked rollup / "
         "stripped) so misclassifications on non-standard names are visible",
     ),
+    auto_accept: str = typer.Option(
+        None,
+        "--auto-accept",
+        help="Confidence FLOOR for auto-accepting inferences: high | medium-high | "
+        "medium | low | none. At or above the floor is accepted; the rest wait for "
+        "manual review. 'none' reviews everything regardless of score. Overrides the "
+        "`reverse.auto_accept` config; default is medium-high.",
+    ),
+    review_all: bool = typer.Option(
+        False,
+        "--review-all",
+        help="Review every inference manually — nothing is auto-accepted (alias for "
+        "--auto-accept none).",
+    ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Reverse into --out even if it already holds a model, overwriting it. By "
+        "default reverse diverts to a fresh model-reversed-v<N> sibling to protect an "
+        "existing model.",
+    ),
 ) -> None:
     """Reverse-engineer a dbt project into a Modelith model (spec §6).
 
@@ -416,6 +437,15 @@ def reverse(
         reverse:
           rollup_prefixes: [gold_, ber_]     # kept: mart_/rpt_/... + these
           staging_prefixes: [bronze_, silver_]
+
+    Auto-accept policy: reverse accepts inferences at or above a confidence FLOOR and
+    leaves the rest for manual review in the decision ledger (the VS Code Reverse Review
+    panel, or `mdl decisions`). The default floor is medium-high. To review everything
+    manually regardless of score, pass --review-all (or --auto-accept none), or set it in
+    config so it sticks:
+
+        reverse:
+          auto_accept: none        # high | medium-high | medium | low | none
     """
     # Exactly one source: a dbt project (manifest.json / schema.yml) or a SQL DDL script.
     if bool(project) == bool(ddl):
@@ -426,10 +456,12 @@ def reverse(
         )
         raise typer.Exit(1)
 
-    # Never clobber an existing model. If --out already holds one (mdl-project.yaml),
-    # divert to a fresh, suffixed sibling (model-reversed-v1, -v2, …) and say so — a
-    # reverse into a populated model dir would otherwise overwrite hand-authored work.
-    out = _nonclobbering_out(out)
+    # Never clobber an existing model unless --force. If --out already holds one
+    # (mdl-project.yaml), divert to a fresh, suffixed sibling (model-reversed-v1, -v2, …)
+    # and say so — a reverse into a populated model dir would otherwise overwrite
+    # hand-authored work. --force is the explicit opt-in to overwrite in place.
+    if not force:
+        out = _nonclobbering_out(out)
 
     if ddl:
         from mdl_reverse.ddl_projection import ddl_projection
@@ -447,11 +479,12 @@ def reverse(
         typer.secho(f"  {w}", fg=typer.colors.YELLOW)
 
     reverse_naming = _load_reverse_naming(naming, out)
+    floor = _resolve_auto_accept(auto_accept, review_all, naming, out)
 
     ledger = DecisionLedger.load(out)
     result = run_reverse(
         proj, project_name=name, target=target, ledger=ledger,
-        interactive=interactive, naming=reverse_naming,
+        interactive=interactive, naming=reverse_naming, auto_accept=floor,
     )
 
     if interactive:
@@ -548,6 +581,51 @@ def _load_reverse_naming(naming_file: Path | None, out: Path):
             )
 
     return ReverseNaming.merged(overrides) if overrides else None
+
+
+def _resolve_auto_accept(auto_accept: str | None, review_all: bool, naming_file, out: Path):
+    """Resolve the auto-accept confidence floor. Precedence: --review-all / --auto-accept
+    flag, then a `reverse.auto_accept` in the --naming file, then in the target project's
+    mdl-project.yaml, then the default (medium-high). Returns a Confidence floor or None
+    (manual-always). A bad level is a hard error so a typo never silently changes policy."""
+    from mdl_core.yaml_io import load_file
+    from mdl_reverse.ledger import DEFAULT_AUTO_ACCEPT, parse_auto_accept
+
+    def _reverse_block(doc) -> dict:
+        if not isinstance(doc, dict):
+            return {}
+        if isinstance(doc.get("reverse"), dict):
+            return doc["reverse"]
+        nm = doc.get("naming")
+        if isinstance(nm, dict) and isinstance(nm.get("reverse"), dict):
+            return nm["reverse"]
+        return {}
+
+    raw: object = None
+    if review_all:
+        raw = "none"
+    elif auto_accept is not None:
+        raw = auto_accept
+    else:
+        # config: --naming file wins over the out-dir project config
+        for src in (naming_file, out / "mdl-project.yaml"):
+            if src is None or not Path(src).exists():
+                continue
+            try:
+                block = _reverse_block(load_file(Path(src)))
+            except Exception:  # noqa: BLE001 - bad config must not block reverse
+                block = {}
+            if "auto_accept" in block:
+                raw = block["auto_accept"]
+                break
+        else:
+            return DEFAULT_AUTO_ACCEPT
+
+    try:
+        return parse_auto_accept(raw)
+    except ValueError as e:
+        typer.secho(str(e), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from e
 
 
 def _prompt_proposals(ledger: DecisionLedger, result, out: Path, target: str) -> None:

@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.3.2
+
+- **Right-click Reverse Engineer.** Right-click a `dbt_project.yml`, a folder of `.sql`
+  DDL scripts, a single `.sql` file, or a `profiles.yml` in the Explorer and choose
+  *Reverse Engineer to a Modelith Model*. It picks the right source automatically —
+  a dbt project reverses from its build artifacts (and points you at `dbt docs generate`
+  if none exist yet), a folder reverses all its DDL as one warehouse, and `profiles.yml`
+  previews the coming live-datastore path. On a clean workspace it writes straight into
+  `model/` beside the source and opens the Reverse Review panel, calling out how many
+  ambiguous decisions need your accept/reject.
+- **Reverse knows when a model already exists.** It inspects the target before writing,
+  the way `git init` / `dbt init` do, and only prompts when there's a real decision:
+  a full model there offers *reverse into a new folder* (default, name pre-filled and
+  editable), *check drift against it instead*, or *overwrite*; a folder that looks like a
+  damaged model, or an unrelated non-empty folder, is handled distinctly rather than
+  written into blindly. If a model already lives elsewhere in the workspace, reverse
+  offers to check drift against it first — usually what a returning user actually wants.
+  Requires the `mdl` CLI 0.4.1+ for folder reverse, 0.4.3+ for in-place overwrite. To
+  review *every* inference manually regardless of confidence, set `reverse.auto_accept:
+  none` in `mdl-project.yaml` (CLI 0.4.2+).
+
 ## 0.3.1
 
 - **Unified telemetry across the CLI and extension.** Both now share one anonymous

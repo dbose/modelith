@@ -151,3 +151,103 @@ def test_reverse_clobber_guard_increments_suffix(tmp_path: Path):
     )
     assert result.exit_code == 0, result.output
     assert (tmp_path / "model-reversed-v2" / "mdl-project.yaml").exists()
+
+
+# --- auto-accept floor (config + flags) --------------------------------------
+
+
+def _pending_json(model: Path) -> list:
+    import json as _json
+
+    from mdl_cli.main import app as _app
+
+    r = runner.invoke(_app, ["decisions", "list", "--pending", "--format", "json", "-m", str(model)])
+    assert r.exit_code == 0, r.output
+    return _json.loads(r.stdout or "[]")
+
+
+# a declared FK (HIGH) so the default floor auto-accepts it and leaves nothing pending,
+# while --review-all leaves it pending.
+_FK_SQL = """
+CREATE TABLE customer (customer_id BIGINT PRIMARY KEY, region_id BIGINT REFERENCES region(region_id));
+CREATE TABLE region (region_id BIGINT PRIMARY KEY, region_name TEXT);
+"""
+
+
+def test_reverse_default_floor_auto_accepts_high(tmp_path: Path):
+    """With the default floor, a declared FK (HIGH) is auto-accepted: nothing pending."""
+    f = tmp_path / "s.sql"
+    f.write_text(_FK_SQL, encoding="utf-8")
+    out = tmp_path / "model"
+    r = runner.invoke(app, ["reverse", "--ddl", str(f), "-o", str(out), "--no-review"])
+    assert r.exit_code == 0, r.output
+    assert _pending_json(out) == []
+
+
+def test_reverse_review_all_proposes_everything(tmp_path: Path):
+    """--review-all leaves even the HIGH FK pending for manual accept/reject."""
+    f = tmp_path / "s.sql"
+    f.write_text(_FK_SQL, encoding="utf-8")
+    out = tmp_path / "model"
+    r = runner.invoke(
+        app, ["reverse", "--ddl", str(f), "-o", str(out), "--no-review", "--review-all"]
+    )
+    assert r.exit_code == 0, r.output
+    pending = _pending_json(out)
+    assert any(d["confidence"] == "high" for d in pending)
+
+
+def test_reverse_auto_accept_none_equivalent(tmp_path: Path):
+    """--auto-accept none behaves like --review-all."""
+    f = tmp_path / "s.sql"
+    f.write_text(_FK_SQL, encoding="utf-8")
+    out = tmp_path / "model"
+    r = runner.invoke(
+        app, ["reverse", "--ddl", str(f), "-o", str(out), "--no-review", "--auto-accept", "none"]
+    )
+    assert r.exit_code == 0, r.output
+    assert any(d["confidence"] == "high" for d in _pending_json(out))
+
+
+def test_reverse_auto_accept_bad_level_errors(tmp_path: Path):
+    """A typo'd level is a hard error, not a silent default."""
+    f = tmp_path / "s.sql"
+    f.write_text(_FK_SQL, encoding="utf-8")
+    out = tmp_path / "model"
+    r = runner.invoke(
+        app, ["reverse", "--ddl", str(f), "-o", str(out), "--no-review", "--auto-accept", "sometimes"]
+    )
+    assert r.exit_code == 1, r.output
+    assert "unknown auto_accept" in r.output
+
+
+def test_reverse_auto_accept_from_naming_config(tmp_path: Path):
+    """`reverse.auto_accept: none` in a --naming config gates everything to review."""
+    f = tmp_path / "s.sql"
+    f.write_text(_FK_SQL, encoding="utf-8")
+    cfg = tmp_path / "rev.yaml"
+    cfg.write_text("reverse:\n  auto_accept: none\n", encoding="utf-8")
+    out = tmp_path / "model"
+    r = runner.invoke(
+        app, ["reverse", "--ddl", str(f), "-o", str(out), "--no-review", "--naming", str(cfg)]
+    )
+    assert r.exit_code == 0, r.output
+    assert any(d["confidence"] == "high" for d in _pending_json(out))
+
+
+def test_reverse_force_overwrites_in_place(tmp_path: Path):
+    """--force reverses into -o even when it holds a model, no divert to a sibling."""
+    f = tmp_path / "schema.sql"
+    f.write_text(_REGION_SQL, encoding="utf-8")
+    out = tmp_path / "model"
+    out.mkdir()
+    (out / "mdl-project.yaml").write_text("name: hand_authored\n", encoding="utf-8")
+
+    result = runner.invoke(
+        app, ["reverse", "--ddl", str(f), "-o", str(out), "--no-review", "--force"]
+    )
+    assert result.exit_code == 0, result.output
+    # wrote in place (no -v1 sibling), and the marker is now the reversed model's
+    assert not (tmp_path / "model-reversed-v1").exists()
+    assert "region" in _entities(out)
+    assert "hand_authored" not in (out / "mdl-project.yaml").read_text(encoding="utf-8")

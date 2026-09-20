@@ -35,6 +35,50 @@ class Confidence(str, Enum):
     medium = "medium"
     low = "low"
 
+    @property
+    def rank(self) -> int:
+        """Higher = more confident. Lets an auto-accept floor be a simple >= compare."""
+        return {"high": 3, "medium-high": 2, "medium": 1, "low": 0}[self.value]
+
+
+# The auto-accept floor: reverse auto-accepts any inference at or above this confidence
+# and leaves everything below it `proposed` for manual review. `None` means "none" — a
+# manual-always policy where every inference, regardless of score, awaits a human. The
+# default floor (medium-high) preserves the historical auto_accept_high=True behaviour.
+DEFAULT_AUTO_ACCEPT: Confidence = Confidence.medium_high
+
+
+def verdict_for(confidence: Confidence, floor: Confidence | None) -> Verdict:
+    """Map a proposal's confidence against the auto-accept floor to an initial verdict.
+    At or above the floor -> accepted; below it, or floor None -> proposed."""
+    if floor is not None and confidence.rank >= floor.rank:
+        return Verdict.accepted
+    return Verdict.proposed
+
+
+def parse_auto_accept(value: object) -> Confidence | None:
+    """Parse a configured auto-accept level into a floor. Accepts a Confidence value
+    (high|medium-high|medium|low), the sentinel `none`/`false` (manual-always), or
+    `true`/None (the default floor). Underscores and case are tolerated. Raises
+    ValueError on an unrecognised string so a typo surfaces instead of silently
+    defaulting."""
+    if value is None or value is True:
+        return DEFAULT_AUTO_ACCEPT
+    if value is False:
+        return None
+    s = str(value).strip().lower().replace("_", "-")
+    if s in {"none", "off", "manual", "false"}:
+        return None
+    if s in {"all", "true", "default"}:
+        return DEFAULT_AUTO_ACCEPT
+    try:
+        return Confidence(s)
+    except ValueError as e:
+        raise ValueError(
+            f"unknown auto_accept level {value!r}; expected one of "
+            "high, medium-high, medium, low, none"
+        ) from e
+
 
 @dataclass
 class Decision:

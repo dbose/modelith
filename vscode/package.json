@@ -2,7 +2,7 @@
   "name": "modelith-vscode",
   "displayName": "Modelith",
   "description": "Ontology-anchored, git-native data modeling for dbt \u2014 validate, generate, drift, and the Modelith canvas inside VS Code.",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "publisher": "BosonResearch",
   "license": "Apache-2.0",
   "icon": "icon.png",
@@ -112,6 +112,11 @@
       {
         "command": "modelith.reverse",
         "title": "Modelith: Reverse a Warehouse",
+        "icon": "$(git-pull-request-create)"
+      },
+      {
+        "command": "modelith.reverseEngineer",
+        "title": "Reverse Engineer to a Modelith Model",
         "icon": "$(git-pull-request-create)"
       },
       {
@@ -313,6 +318,11 @@
     ],
     "menus": {
       "explorer/context": [
+        {
+          "command": "modelith.reverseEngineer",
+          "when": "explorerResourceIsFolder || resourceFilename == dbt_project.yml || resourceFilename == profiles.yml || resourceExtname == .sql",
+          "group": "modelith@0"
+        },
         {
           "command": "modelith.liftModel",
           "when": "resourceExtname == .sql",
