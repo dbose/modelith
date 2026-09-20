@@ -1592,6 +1592,154 @@ def _set_decision(model_dir: Path, signal_key: str, verdict: Verdict) -> None:
     typer.secho(f"{verdict.value}: {ledger.decisions[signal_key].subject}", fg=typer.colors.GREEN)
 
 
+# --- entity -> dbt model mapping (reverse.model_map) --------------------------
+#
+# The `reverse:` block of mdl-project.yaml is the single source of truth for how this
+# warehouse's dbt models map to entities. These commands author `reverse.model_map`
+# (comment-preserving round-trip) so the Drift-UI "Map to dbt model…" action, hand
+# editing, and future AI discovery all converge on the same YAML.
+
+mapping_app = typer.Typer(help="Map entities to dbt models for drift (reverse.model_map).")
+app.add_typer(mapping_app, name="mapping")
+
+
+def _write_model_map(model_dir: Path, entity: str, dbt_model: str | None) -> None:
+    """Set (dbt_model given) or remove (None) reverse.model_map[entity] in
+    mdl-project.yaml, preserving comments and formatting."""
+    from mdl_core.yaml_io import dump_file, load_file
+
+    proj_path = model_dir / "mdl-project.yaml"
+    if not proj_path.exists():
+        typer.secho(f"no mdl-project.yaml in {model_dir}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+    doc = load_file(proj_path)
+    rev = doc.get("reverse")
+    if not isinstance(rev, dict):
+        rev = {}
+        doc["reverse"] = rev
+    mm = rev.get("model_map")
+    if not isinstance(mm, dict):
+        mm = {}
+        rev["model_map"] = mm
+    if dbt_model is None:
+        if entity in mm:
+            del mm[entity]
+            typer.secho(f"unmapped {entity}", fg=typer.colors.GREEN)
+        else:
+            typer.secho(f"{entity} was not mapped", fg=typer.colors.YELLOW)
+    else:
+        mm[entity] = dbt_model
+        typer.secho(f"mapped {entity} -> {dbt_model}", fg=typer.colors.GREEN)
+    dump_file(proj_path, doc)
+
+
+@mapping_app.command("set")
+def mapping_set(
+    entity: str = typer.Argument(..., help="Modelith logical entity name"),
+    dbt_model: str = typer.Argument(..., help="Exact dbt model name it materialises as"),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+) -> None:
+    """Map an entity to the dbt model that materialises it (an explicit override that
+    wins over any layer pattern). Written to reverse.model_map in mdl-project.yaml."""
+    _write_model_map(model_dir, entity, dbt_model)
+
+
+@mapping_app.command("unset")
+def mapping_unset(
+    entity: str = typer.Argument(...),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+) -> None:
+    """Remove an entity's explicit mapping (falls back to layers / bare name)."""
+    _write_model_map(model_dir, entity, None)
+
+
+@mapping_app.command("list")
+def mapping_list(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    fmt: str = typer.Option("text", "--format", help="text|json (json feeds the Drift UI)"),
+    manifest: Path = typer.Option(
+        None, "--manifest", help="Manifest to compute the unmatched entity/model sets from"
+    ),
+    rank_for: str = typer.Option(
+        None, "--rank-for", help="Rank unmatched dbt models by similarity to this entity"
+    ),
+) -> None:
+    """Show current mappings and, with --manifest, the entities that still don't match a
+    dbt model plus the unclaimed dbt models. With --rank-for <entity>, the unmatched
+    models come back best-match-first (e.g. stg_price on top for price) — the candidate
+    list the Drift-UI "Map to dbt model…" picker shows."""
+    from mdl_reverse.mapping import resolve_model_name
+    from mdl_reverse.projection import project_model
+
+    repo = _load(model_dir)
+    reverse = getattr(repo.model.config, "reverse", None)
+    current = dict(getattr(reverse, "model_map", {}) or {})
+    target = repo.model.config.dbt_target or "duckdb_dev"
+
+    unmatched_entities: list[str] = []
+    unclaimed_models: list[str] = []
+    if manifest is not None:
+        try:
+            proj = read_manifest(manifest)
+        except FileNotFoundError as e:
+            typer.secho(str(e), fg=typer.colors.RED, err=True)
+            raise typer.Exit(4) from e
+        manifest_names = proj.model_names()
+        expected = project_model(repo.model, target, reverse=reverse, available=manifest_names)
+        expected_names = set(expected)
+        unmatched_entities = sorted(
+            le.name
+            for le in repo.model.logical_entities.values()
+            if not le.unmanaged
+            and resolve_model_name(le.name, target, reverse, manifest_names) not in manifest_names
+        )
+        unclaimed_models = sorted(manifest_names - expected_names)
+        if rank_for:
+            unclaimed_models = _rank_by_similarity(rank_for, unclaimed_models)
+
+    if fmt == "json":
+        typer.echo(
+            json.dumps(
+                {
+                    "model_map": current,
+                    "unmatched_entities": unmatched_entities,
+                    "unclaimed_models": unclaimed_models,
+                },
+                default=str,
+            )
+        )
+        return
+    if current:
+        typer.secho("mappings:", bold=True)
+        for k, v in current.items():
+            typer.echo(f"  {k} -> {v}")
+    else:
+        typer.secho("no explicit mappings", fg=typer.colors.YELLOW)
+    if manifest is not None:
+        typer.secho(f"unmatched entities ({len(unmatched_entities)}):", bold=True)
+        for e in unmatched_entities:
+            typer.echo(f"  {e}")
+        typer.secho(f"unclaimed dbt models ({len(unclaimed_models)}):", bold=True)
+        for m in unclaimed_models:
+            typer.echo(f"  {m}")
+
+
+def _rank_by_similarity(entity: str, candidates: list[str]) -> list[str]:
+    """Order candidate dbt models best-match-first for an entity name, using a stdlib
+    ratio (no dependency). A candidate that CONTAINS the entity (stg_price for price)
+    is boosted so the obvious staging/dim match sorts to the top."""
+    import difflib
+
+    el = entity.lower()
+
+    def score(c: str) -> float:
+        cl = c.lower()
+        base = difflib.SequenceMatcher(None, el, cl).ratio()
+        return base + (0.5 if el in cl else 0.0)
+
+    return sorted(candidates, key=lambda c: (-score(c), c))
+
+
 @emit_app.command("semantic")
 def emit_semantic(
     fmt: str = typer.Option("metricflow", "--format", help="metricflow|osi"),
