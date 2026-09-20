@@ -503,6 +503,70 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     vscode.commands.executeCommand("modelithDrift.focus"),
   );
 
+  // Inline "Map to dbt model…" on a `model_removed` drift item. Often the entity isn't
+  // really gone from the warehouse — it just materialises under a name this project's
+  // convention doesn't resolve yet (price -> stg_price). Let the user teach the mapping:
+  // pick the real dbt model (candidates ranked by similarity), write it to
+  // reverse.model_map via the CLI, then re-run drift so the false finding clears.
+  cmd("modelith.driftMapModel", (node: unknown) => withModelDir(async (dir) => {
+    const item =
+      node && typeof node === "object" && "item" in node
+        ? (node as { item: { model: string } }).item
+        : undefined;
+    if (!item?.model) return;
+    const entity = item.model;
+    const bin = await findMdl(dir);
+    const manifest = await findManifestPath();
+    if (!manifest) {
+      void vscode.window.showWarningMessage(
+        "Modelith: no dbt manifest found — run `dbt docs generate` (or Check Drift) first.",
+      );
+      return;
+    }
+    // Ask the CLI for the unclaimed dbt models, ranked best-match-first for this entity.
+    const r = await runMdl(
+      bin,
+      ["mapping", "list", "-m", ".", "--manifest", manifest, "--rank-for", entity, "--format", "json"],
+      dir,
+      out,
+    );
+    let candidates: string[] = [];
+    try {
+      candidates = (JSON.parse(r.stdout || "{}").unclaimed_models as string[]) ?? [];
+    } catch {
+      candidates = [];
+    }
+    const ENTER_MANUALLY = "$(edit) Enter a dbt model name…";
+    const items: vscode.QuickPickItem[] = candidates.length
+      ? candidates.map((m) => ({ label: m }))
+      : [{ label: ENTER_MANUALLY, alwaysShow: true }];
+    const picked = await vscode.window.showQuickPick(items, {
+      placeHolder: `Which dbt model materialises “${entity}”?`,
+      matchOnDescription: true,
+    });
+    if (!picked) return;
+    let target = picked.label;
+    if (target === ENTER_MANUALLY || !candidates.includes(target)) {
+      const typed = await vscode.window.showInputBox({
+        title: `Map “${entity}” to a dbt model`,
+        prompt: "Exact dbt model name",
+        validateInput: (v) => (v.trim() ? undefined : "Enter a model name."),
+      });
+      if (!typed) return;
+      target = typed.trim();
+    }
+    const w = await runMdl(bin, ["mapping", "set", entity, target, "-m", "."], dir, out);
+    out.appendLine(w.stdout + w.stderr);
+    if (w.code !== 0) {
+      void vscode.window
+        .showErrorMessage("Modelith: could not write the mapping.", "Show Output")
+        .then((a) => a && out.show());
+      return;
+    }
+    void vscode.window.setStatusBarMessage(`Modelith: mapped ${entity} → ${target} ✓`, 4000);
+    await drift.check(dir); // re-run drift; the false model_removed clears
+  }));
+
   // --- reverse engineering -----------------------------------------------------
 
   // Run `mdl reverse …` in `cwd`, then surface what needs human review. Shared by the

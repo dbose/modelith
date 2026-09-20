@@ -2,7 +2,7 @@
   "name": "modelith-vscode",
   "displayName": "Modelith",
   "description": "Ontology-anchored, git-native data modeling for dbt \u2014 validate, generate, drift, and the Modelith canvas inside VS Code.",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "publisher": "BosonResearch",
   "license": "Apache-2.0",
   "icon": "icon.png",
@@ -151,6 +151,11 @@
       {
         "command": "modelith.driftFocusView",
         "title": "Modelith: Show Drift View"
+      },
+      {
+        "command": "modelith.driftMapModel",
+        "title": "Map to dbt model…",
+        "icon": "$(link)"
       },
       {
         "command": "modelith.lintFix",
@@ -388,6 +393,11 @@
           "command": "modelith.reverseReject",
           "when": "view == modelithReverse && viewItem == reverseDecision",
           "group": "inline@2"
+        },
+        {
+          "command": "modelith.driftMapModel",
+          "when": "view == modelithDrift && viewItem == driftItem:modelRemoved",
+          "group": "inline@1"
         }
       ]
     }

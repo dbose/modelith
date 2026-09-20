@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.3
+
+- **Teach drift your warehouse's naming.** Drift matched a model entity to a dbt model by
+  exact name, so a warehouse that materialises `price` as `stg_price` showed false
+  "model removed" findings. Now a `model removed` item in the Drift panel has an inline
+  **Map to dbt model…** action: pick the real dbt model (candidates ranked best-match
+  first, e.g. `stg_price` for `price`), and the mapping is written to `reverse.model_map`
+  in `mdl-project.yaml` — drift re-runs and the false finding clears. You can also declare
+  whole conventions once with `reverse.layers` (e.g. a `stg_` staging prefix), or hand-edit
+  the YAML; all three converge on the same git-committed config. Requires the `mdl` CLI
+  0.4.4+. The bundled demo now ships this config, so it's drift-clean out of the box.
+
 ## 0.3.2
 
 - **Right-click Reverse Engineer.** Right-click a `dbt_project.yml`, a folder of `.sql`
