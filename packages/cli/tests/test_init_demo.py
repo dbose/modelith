@@ -54,6 +54,18 @@ def test_init_demo_scaffolds_a_populated_model(tmp_path: Path):
     assert (tmp_path / "transform" / "warehouse" / "dbt_project.yml").exists()
     assert (tmp_path / "transform" / "warehouse" / "profiles.yml").exists()
     assert list((tmp_path / "transform" / "warehouse" / "seeds").glob("*.csv"))
+    # a README guides the run order (generate before drift)
+    assert (tmp_path / "README.md").exists()
+
+
+def test_init_demo_config_has_no_reverse_block(tmp_path: Path):
+    """The demo maps entities to dbt MART models (dbt's entity layer) by bare name, so it
+    ships NO reverse block — matching demo/ibor. A staging `reverse.layers` here would
+    force entities onto the thin stg_ passthroughs and produce false drift (regression
+    guard for that mistake)."""
+    runner.invoke(app, ["init", "--demo", str(tmp_path)])
+    proj = (tmp_path / "model" / "mdl-project.yaml").read_text(encoding="utf-8")
+    assert "reverse:" not in proj
 
 
 def test_init_demo_validates_offline(tmp_path: Path):
