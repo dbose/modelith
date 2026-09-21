@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.5
+
+- **Reverse Engineer writes where your model actually is.** Right-clicking a
+  `dbt_project.yml` used to reverse into a `model/` folder *inside* the dbt project
+  (e.g. `transform/warehouse/model`), not your real model. Now reverse defaults to the
+  workspace's Modelith model dir and always shows a pre-filled, editable target picker, so
+  the destination is never a surprise. Re-reversing into an existing model (to rebuild
+  entities you deleted) is offered as an explicit Overwrite.
+- **Honest empty result.** Reversing a warehouse that only has staging models (no marts
+  generated yet) no longer looks like success and no longer leaves an empty model folder
+  behind — you get a clear warning that says to run `mdl generate` first. Requires CLI
+  0.4.6+.
+- The Modelith output channel now logs the source, target, and result of each reverse.
+
 ## 0.3.4
 
 - **Getting Started now walks you to a clean drift check.** The walkthrough gained two

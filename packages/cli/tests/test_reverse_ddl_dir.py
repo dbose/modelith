@@ -251,3 +251,46 @@ def test_reverse_force_overwrites_in_place(tmp_path: Path):
     assert not (tmp_path / "model-reversed-v1").exists()
     assert "region" in _entities(out)
     assert "hand_authored" not in (out / "mdl-project.yaml").read_text(encoding="utf-8")
+
+
+def test_reverse_staging_only_exits_nonzero_and_writes_nothing(tmp_path: Path):
+    """A source with ONLY staging/intermediate models reverses 0 entities. Reverse must
+    fail loud with a remedy and write NO model dir — never a hollow mdl-project.yaml that
+    later reads as 'a model already exists'."""
+    f = tmp_path / "staging.sql"
+    f.write_text(
+        "CREATE TABLE stg_orders (order_id BIGINT);\n"
+        "CREATE TABLE int_enriched (id BIGINT);\n",
+        encoding="utf-8",
+    )
+    out = tmp_path / "model"
+    result = runner.invoke(app, ["reverse", "--ddl", str(f), "-o", str(out), "--no-review"])
+    assert result.exit_code == 1, result.output
+    assert "reversed 0 entities" in result.output.lower()
+    assert "mdl generate" in result.output
+    # nothing written — no hollow model
+    assert not (out / "mdl-project.yaml").exists()
+    assert not (out / ".mdl").exists()
+
+
+def test_reverse_staging_only_does_not_write_even_with_force(tmp_path: Path):
+    """--force overwrites an existing model; it never writes an empty one."""
+    f = tmp_path / "staging.sql"
+    f.write_text("CREATE TABLE stg_x (id BIGINT);\n", encoding="utf-8")
+    out = tmp_path / "model"
+    result = runner.invoke(
+        app, ["reverse", "--ddl", str(f), "-o", str(out), "--no-review", "--force"]
+    )
+    assert result.exit_code == 1, result.output
+    assert not (out / "mdl-project.yaml").exists()
+
+
+def test_reverse_with_entities_still_writes_exit0(tmp_path: Path):
+    """Guard doesn't over-fire: a warehouse with real entities still reverses and writes."""
+    f = tmp_path / "schema.sql"
+    f.write_text(_CUSTOMER_SQL + _REGION_SQL, encoding="utf-8")
+    out = tmp_path / "model"
+    result = runner.invoke(app, ["reverse", "--ddl", str(f), "-o", str(out), "--no-review"])
+    assert result.exit_code == 0, result.output
+    assert (out / "mdl-project.yaml").exists()
+    assert {"customer", "region"} <= _entities(out)
