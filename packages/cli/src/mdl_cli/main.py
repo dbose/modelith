@@ -1793,6 +1793,79 @@ def _rank_by_similarity(entity: str, candidates: list[str]) -> list[str]:
     return sorted(candidates, key=lambda c: (-score(c), c))
 
 
+# --- reverse config authoring (suggest / explain / import / apply) -----------
+#
+# The `reverse:` block of mdl-project.yaml is the single, git-committed source of truth
+# for how a warehouse's dbt models map to entities. These commands let a team DISCOVER a
+# starting config from the warehouse, SEE how it classifies before reversing, and IMPORT
+# a shared standard from another team — all through one comment-preserving writer, so the
+# config is a first-class, shareable, reviewable artifact.
+
+reverse_cfg_app = typer.Typer(help="Author, inspect and share the reverse: config block.")
+app.add_typer(reverse_cfg_app, name="reverse-config")
+
+
+def _write_reverse_block(
+    model_dir: Path, incoming: dict, *, replace: bool = False, source: str | None = None
+) -> dict:
+    """Merge a partial `reverse:` block into mdl-project.yaml, preserving comments. Returns
+    the merged block. Validates the result through ReverseConfig before writing so a
+    malformed merge is rejected, not half-applied. `source` adds a provenance comment."""
+    from mdl_core.ir import ReverseConfig
+    from mdl_core.yaml_io import dump_file, load_file
+    from mdl_reverse.config_io import merge_reverse_block
+
+    proj_path = model_dir / "mdl-project.yaml"
+    if not proj_path.exists():
+        typer.secho(f"no mdl-project.yaml in {model_dir}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+    doc = load_file(proj_path)
+    existing = doc.get("reverse") if isinstance(doc.get("reverse"), dict) else {}
+    merged = merge_reverse_block(existing, incoming, replace=replace)
+    # validate before writing — reject a malformed block wholesale.
+    try:
+        ReverseConfig.model_validate(merged)
+    except Exception as e:  # noqa: BLE001 - surface the validation error, don't half-write
+        typer.secho(f"resulting reverse: block is invalid — not written ({e})",
+                    fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from e
+    doc["reverse"] = merged
+    dump_file(proj_path, doc)
+    if source:
+        typer.secho(f"  (merged from {source})", fg=typer.colors.CYAN)
+    return merged
+
+
+@reverse_cfg_app.command("apply")
+def reverse_config_apply(
+    src: Path = typer.Argument(
+        None, help="A file with a partial reverse: block (YAML/JSON). Omit to read stdin."
+    ),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    replace: bool = typer.Option(
+        False, "--replace", help="Overwrite each provided key wholesale (default: merge additively)"
+    ),
+) -> None:
+    """Merge a partial reverse: block into mdl-project.yaml (comment-preserving). The
+    generic write doorway suggest/import and external tools use. Reads a `reverse:` block
+    or a bare block body from a file or stdin."""
+    import sys as _sys
+
+    from mdl_core.yaml_io import load_str
+
+    text = src.read_text(encoding="utf-8") if src is not None else _sys.stdin.read()
+    data = load_str(text) or {}
+    # accept either a wrapping {reverse: {...}} or the bare block body.
+    block = data.get("reverse") if isinstance(data, dict) and "reverse" in data else data
+    if not isinstance(block, dict):
+        typer.secho(
+            "input is not a reverse: block (expected a mapping)", fg=typer.colors.RED, err=True
+        )
+        raise typer.Exit(1)
+    _write_reverse_block(model_dir, block, replace=replace)
+    typer.secho("applied reverse: config", fg=typer.colors.GREEN)
+
+
 @emit_app.command("semantic")
 def emit_semantic(
     fmt: str = typer.Option("metricflow", "--format", help="metricflow|osi"),
