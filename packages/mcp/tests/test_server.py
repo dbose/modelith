@@ -129,3 +129,63 @@ def test_explain_drift_reports_annotated_items(model_dir, tmp_path):
     # the additive column is reconcilable with an action; no breaking item is
     assert any(i["reconcile_action"] and "loyalty_tier" in i["reconcile_action"] for i in r["items"])
     assert all(not i["reconcilable"] for i in r["items"] if i["severity"] == "breaking")
+
+
+def _write_manifest(path: Path, models: list) -> None:
+    nodes = {}
+    for name, p in models:
+        fqn = ["wh"] + p.replace("models/", "").replace(".sql", "").split("/")
+        nodes[f"model.wh.{name}"] = {
+            "resource_type": "model", "name": name, "original_file_path": p, "fqn": fqn,
+            "columns": {}, "config": {}, "tags": [], "meta": {},
+        }
+    path.write_text(json.dumps({
+        "metadata": {"dbt_schema_version": "https://schemas.getdbt.com/dbt/manifest/v12.json"},
+        "nodes": nodes,
+    }), encoding="utf-8")
+
+
+def test_reverse_config_tools_registered(model_dir):
+    names = _tool_names(build_server(model_dir))
+    assert {
+        "explain_reverse_config",
+        "suggest_reverse_config",
+        "apply_reverse_config",
+    } <= names
+
+
+def test_suggest_reverse_config_tool(model_dir):
+    manifest = model_dir / "target" / "manifest.json"
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    _write_manifest(manifest, [
+        ("dim_a", "models/marts/dim_a.sql"),
+        ("dim_b", "models/marts/dim_b.sql"),
+        ("stg_x", "models/staging/stg_x.sql"),
+    ])
+    srv = build_server(model_dir)
+    out = _call(srv, "suggest_reverse_config", {})
+    assert "reverse" in out and "rationale" in out
+    roles = {layer["role"] for layer in out["reverse"].get("layers", [])}
+    assert "dimension" in roles
+
+
+def test_explain_reverse_config_tool(model_dir):
+    manifest = model_dir / "target" / "manifest.json"
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    _write_manifest(manifest, [("stg_x", "models/staging/stg_x.sql")])
+    srv = build_server(model_dir)
+    rows = _call(srv, "explain_reverse_config", {})
+    by = {r["model"]: r for r in rows}
+    assert by["stg_x"]["role"] == "staging" and by["stg_x"]["excluded"] is True
+
+
+def test_apply_reverse_config_tool_validates(model_dir):
+    srv = build_server(model_dir)
+    # valid block -> merged
+    ok = _call(srv, "apply_reverse_config", {"block": {"exclude": ["*_tmp"]}})
+    assert ok["ok"] is True and "*_tmp" in ok["reverse"]["exclude"]
+    # invalid role -> rejected, error object
+    bad = _call(
+        srv, "apply_reverse_config", {"block": {"layers": [{"name": "x", "role": "nope"}]}}
+    )
+    assert "error" in bad

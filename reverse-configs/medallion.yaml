@@ -1,0 +1,20 @@
+# Modelith reverse: config — medallion (bronze / silver / gold) starter pack.
+#
+#   mdl reverse-config import reverse-configs/medallion.yaml -m model
+#
+# Convention: bronze = raw landing (excluded), silver = cleaned/intermediate (excluded),
+# gold = the governed business/mart layer. Works by folder OR prefix — keep whichever
+# your project uses and delete the other.
+reverse:
+  layers:
+    # by folder (models/bronze/**, models/silver/**, models/gold/**)
+    - {name: bronze, role: staging, match: {path_glob: "**/bronze/**"}}
+    - {name: silver, role: intermediate, match: {path_glob: "**/silver/**"}}
+    - {name: gold, role: mart, match: {path_glob: "**/gold/**"}, target_form: 3nf}
+    # by prefix (bronze_/silver_/gold_)
+    - {name: bronze_p, role: staging, match: {prefix: bronze_}}
+    - {name: silver_p, role: intermediate, match: {prefix: silver_}}
+    - {name: gold_p, role: mart, match: {prefix: gold_}, target_form: 3nf}
+  exclude:
+    - "**/sandbox/**"
+    - "*_tmp"

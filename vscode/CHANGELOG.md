@@ -1,18 +1,18 @@
 # Changelog
 
-## 0.3.5
+## 0.3.6
 
-- **Reverse Engineer writes where your model actually is.** Right-clicking a
-  `dbt_project.yml` used to reverse into a `model/` folder *inside* the dbt project
-  (e.g. `transform/warehouse/model`), not your real model. Now reverse defaults to the
-  workspace's Modelith model dir and always shows a pre-filled, editable target picker, so
-  the destination is never a surprise. Re-reversing into an existing model (to rebuild
-  entities you deleted) is offered as an explicit Overwrite.
-- **Honest empty result.** Reversing a warehouse that only has staging models (no marts
-  generated yet) no longer looks like success and no longer leaves an empty model folder
-  behind — you get a clear warning that says to run `mdl generate` first. Requires CLI
-  0.4.6+.
-- The Modelith output channel now logs the source, target, and result of each reverse.
+- **Warehouse Config view.** A new Modelith view shows how your `reverse:` config
+  classifies every dbt model — grouped by role (Dimensions, Facts, Hubs, Excluded…),
+  each row showing its matched layer and why. It answers "how does Modelith see my
+  warehouse?" at a glance.
+- **Suggest, from your warehouse.** *Suggest Reverse Config* reads your folders and
+  prefixes and proposes a starting `reverse:` block — preview it, then apply. No more
+  authoring conventions from a blank page.
+- **Import a standard.** *Import Reverse Config* pulls a shared config — a bundled starter
+  pack (Kimball, medallion, Data Vault), a file, or a team's published URL — and merges it,
+  the git-native way to inherit modeling standards. Review the diff, commit.
+- Requires the `mdl` CLI 0.4.6+ (0.4.7+ recommended for the `reverse config` commands).
 
 ## 0.3.4
 

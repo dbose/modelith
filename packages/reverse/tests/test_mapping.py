@@ -260,3 +260,85 @@ def test_scaffolded_demo_pre_generate_is_honest_model_removed(tmp_path: Path):
     assert DriftKind.model_removed in kinds
     assert DriftKind.column_dropped not in kinds
     assert DriftKind.contract_disabled not in kinds
+
+
+# --- resolve_layer classification (Phase 1) ----------------------------------
+
+from mdl_core.ir import ReverseLayer as _RL  # noqa: E402
+from mdl_core.ir import ReverseMatch as _RM  # noqa: E402
+from mdl_reverse.mapping import resolve_layer  # noqa: E402
+
+
+def test_resolve_layer_empty_config_is_legacy():
+    # no config -> legacy is_staging classification, unchanged
+    assert resolve_layer("stg_orders", [], None, None).role == "staging"
+    assert resolve_layer("dim_customer", [], None, None).role == "business"
+
+
+def test_resolve_layer_order_exempt_exclude_layer_legacy():
+    rc = ReverseConfig(
+        exempt=["LEGACY"],
+        exclude=["*_tmp", "tag:deprecated"],
+        layers=[_RL(name="dims", role="dimension", match=_RM(prefix="dim_"))],
+    )
+    assert resolve_layer("LEGACY", [], None, rc).exempt is True
+    assert resolve_layer("orders_tmp", [], None, rc).role == "exclude"
+    assert resolve_layer("x", ["deprecated"], None, rc).role == "exclude"
+    assert resolve_layer("dim_customer", [], None, rc).role == "dimension"
+    # unmatched falls to legacy
+    assert resolve_layer("stg_x", [], None, rc).role == "staging"
+
+
+def test_resolve_layer_path_glob_and_dv_pattern():
+    rc = ReverseConfig(
+        layers=[
+            _RL(name="finance", role="mart", match=_RM(path_glob="models/marts/finance/**")),
+            _RL(name="vault", role="hub", match=_RM(prefix="hub_")),
+        ]
+    )
+    assert resolve_layer("revenue", [], "models/marts/finance/revenue.sql", rc).role == "mart"
+    v = resolve_layer("hub_party", [], None, rc)
+    assert v.role == "hub" and v.pattern == "hub"
+
+
+def test_reverse_with_config_classifies_by_folder_and_seeds_pattern():
+    """End-to-end: folder/prefix rules include/exclude the right models and a hub role
+    seeds the Data Vault pattern."""
+    nodes = {}
+
+    def mk(name, path, cols):
+        nodes[f"model.wh.{name}"] = {
+            "resource_type": "model", "name": name, "original_file_path": path,
+            "columns": {c: {"name": c, "data_type": "BIGINT"} for c in cols},
+            "config": {"contract": {"enforced": True}}, "tags": [], "meta": {},
+        }
+
+    mk("customer", "models/marts/dims/customer.sql", ["customer_id", "name"])
+    mk("bronze_raw", "models/bronze/bronze_raw.sql", ["id"])
+    mk("orders_tmp", "models/scratch/orders_tmp.sql", ["id"])
+    mk("hub_party", "models/vault/hub_party.sql", ["party_hashkey", "party_bk"])
+    raw = {
+        "metadata": {"dbt_schema_version": "https://schemas.getdbt.com/dbt/manifest/v12.json"},
+        "nodes": nodes,
+    }
+    proj = read_manifest_dict(raw)
+    rc = ReverseConfig(
+        exclude=["models/scratch/**"],
+        layers=[
+            _RL(name="bronze", role="staging", match=_RM(path_glob="models/bronze/**")),
+            _RL(name="dims", role="dimension", match=_RM(path_glob="models/marts/dims/**")),
+            _RL(name="vault", role="hub", match=_RM(prefix="hub_")),
+        ],
+    )
+    res = compute_reverse(proj, rc)
+    ents = {le.name: le.pattern for le in res.model.logical_entities.values()}
+    assert set(ents) == {"customer", "hub_party"}
+    assert ents["hub_party"] == "hub"
+    assert set(res.excluded) == {"bronze_raw", "orders_tmp"}
+
+
+def compute_reverse(proj, rc):
+    from mdl_reverse.ledger import DecisionLedger
+    from mdl_reverse.reverse import reverse as _rev
+
+    return _rev(proj, project_name="wh", ledger=DecisionLedger(), reverse_config=rc)

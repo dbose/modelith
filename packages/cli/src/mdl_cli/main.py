@@ -480,11 +480,29 @@ def reverse(
 
     reverse_naming = _load_reverse_naming(naming, out)
     floor = _resolve_auto_accept(auto_accept, review_all, naming, out)
+    reverse_config = _load_reverse_config(naming, out)
+    # Fold reverse.conventions (+ staging-layer prefixes) into the naming the pipeline
+    # uses, so a project's declared prefixes/suffixes drive the legacy classifiers too.
+    if reverse_config is not None:
+        from mdl_reverse.mapping import naming_from_config
+
+        folded = naming_from_config(reverse_config)
+        # keep any top-level --naming overrides winning by unioning both
+        if reverse_naming is not None:
+            from mdl_reverse.lifting import ReverseNaming
+
+            reverse_naming = ReverseNaming.merged(
+                {**(reverse_config.conventions or {}),
+                 "staging_prefixes": list(folded.staging_prefixes)}
+            )
+        else:
+            reverse_naming = folded
 
     ledger = DecisionLedger.load(out)
     result = run_reverse(
         proj, project_name=name, target=target, ledger=ledger,
         interactive=interactive, naming=reverse_naming, auto_accept=floor,
+        reverse_config=reverse_config,
     )
 
     if interactive:
@@ -608,6 +626,41 @@ def _load_reverse_naming(naming_file: Path | None, out: Path):
             )
 
     return ReverseNaming.merged(overrides) if overrides else None
+
+
+def _load_reverse_config(naming_file, out: Path):
+    """Build the typed ReverseConfig (layers with roles, exclude, exempt, conventions,
+    target_form) from the reverse: block — the target project's mdl-project.yaml, then a
+    --naming file on top. Returns a ReverseConfig or None when nothing is configured.
+    Used for reverse-time CLASSIFICATION (resolve_layer); drift loads its own copy from
+    model.config.reverse."""
+    from mdl_core.ir import ReverseConfig
+    from mdl_core.yaml_io import load_file
+
+    def _reverse_block(doc) -> dict:
+        if not isinstance(doc, dict):
+            return {}
+        if isinstance(doc.get("reverse"), dict):
+            return doc["reverse"]
+        nm = doc.get("naming")
+        if isinstance(nm, dict) and isinstance(nm.get("reverse"), dict):
+            return nm["reverse"]
+        return {}
+
+    block: dict = {}
+    for src in (out / "mdl-project.yaml", naming_file):
+        if src is None or not Path(src).exists():
+            continue
+        try:
+            block.update(_reverse_block(load_file(Path(src))) or {})
+        except Exception:  # noqa: BLE001 - a bad config must never block reverse
+            pass
+    if not block:
+        return None
+    try:
+        return ReverseConfig.model_validate(block)
+    except Exception:  # noqa: BLE001 - tolerate a partially-invalid block; drift/classify degrade
+        return None
 
 
 def _resolve_auto_accept(auto_accept: str | None, review_all: bool, naming_file, out: Path):
@@ -1609,6 +1662,76 @@ def decisions_reject(
     _set_decision(model_dir, signal_key, Verdict.rejected)
 
 
+@decisions_app.command("add")
+def decisions_add(
+    src: str = typer.Argument(
+        None,
+        help="Proposal JSON — one object or a list of "
+        '{kind, subject, evidence, confidence?, signal?}. A file path, or omit to read stdin.',
+    ),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+) -> None:
+    """Record externally-authored proposal(s) into the decision ledger as `proposed`, for
+    the user to Accept/Reject in the Reverse Review panel exactly like a built-in proposal.
+
+    The generic ledger-intake doorway: any external proposer — a script, a notebook, or a
+    paid AI package — feeds proposals here as JSON. Each becomes a Decision; provenance is
+    kept in evidence.source (default "external"). Never auto-accepted: it lands `proposed`,
+    and its confidence bands the initial verdict the same way an engine proposal does.
+    De-duplicated by signal_key, and a proposal already accepted/rejected is not re-added.
+    """
+    import sys as _sys
+
+    from mdl_reverse.ledger import Confidence, Decision, DecisionLedger
+
+    raw = Path(src).read_text(encoding="utf-8") if src and Path(src).exists() else (
+        src if src else _sys.stdin.read()
+    )
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        typer.secho(f"invalid proposal JSON: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from e
+    items = data if isinstance(data, list) else [data]
+
+    ledger = DecisionLedger.load(model_dir)
+    added = 0
+    skipped = 0
+    for item in items:
+        if not isinstance(item, dict) or "kind" not in item or "subject" not in item:
+            typer.secho(
+                "each proposal needs at least {kind, subject}", fg=typer.colors.RED, err=True
+            )
+            raise typer.Exit(1)
+        try:
+            conf = Confidence(str(item.get("confidence", "low")).lower().replace("_", "-"))
+        except ValueError:
+            typer.secho(
+                f"bad confidence {item.get('confidence')!r} (high|medium-high|medium|low)",
+                fg=typer.colors.RED, err=True,
+            )
+            raise typer.Exit(1) from None
+        evidence = dict(item.get("evidence") or {})
+        evidence.setdefault("source", item.get("source", "external"))
+        d = Decision(
+            kind=str(item["kind"]),
+            signal=str(item.get("signal", evidence.get("source", "external"))),
+            confidence=conf,
+            subject=str(item["subject"]),
+            evidence=evidence,
+        )
+        if ledger.should_propose(d):
+            ledger.record(d)
+            added += 1
+        else:
+            skipped += 1
+    ledger.save(model_dir)
+    typer.secho(
+        f"added {added} proposal(s)" + (f", skipped {skipped} already decided" if skipped else ""),
+        fg=typer.colors.GREEN,
+    )
+
+
 def _set_decision(model_dir: Path, signal_key: str, verdict: Verdict) -> None:
     ledger = DecisionLedger.load(model_dir)
     if signal_key not in ledger.decisions:
@@ -1765,6 +1888,246 @@ def _rank_by_similarity(entity: str, candidates: list[str]) -> list[str]:
         return base + (0.5 if el in cl else 0.0)
 
     return sorted(candidates, key=lambda c: (-score(c), c))
+
+
+# --- reverse config authoring (suggest / explain / import / apply) -----------
+#
+# The `reverse:` block of mdl-project.yaml is the single, git-committed source of truth
+# for how a warehouse's dbt models map to entities. These commands let a team DISCOVER a
+# starting config from the warehouse, SEE how it classifies before reversing, and IMPORT
+# a shared standard from another team — all through one comment-preserving writer, so the
+# config is a first-class, shareable, reviewable artifact.
+
+reverse_cfg_app = typer.Typer(help="Author, inspect and share the reverse: config block.")
+app.add_typer(reverse_cfg_app, name="reverse-config")
+
+
+def _write_reverse_block(
+    model_dir: Path, incoming: dict, *, replace: bool = False, source: str | None = None
+) -> dict:
+    """Merge a partial `reverse:` block into mdl-project.yaml, preserving comments. Returns
+    the merged block. Validates the result through ReverseConfig before writing so a
+    malformed merge is rejected, not half-applied. `source` adds a provenance comment."""
+    from mdl_core.ir import ReverseConfig
+    from mdl_core.yaml_io import dump_file, load_file
+    from mdl_reverse.config_io import merge_reverse_block
+
+    proj_path = model_dir / "mdl-project.yaml"
+    if not proj_path.exists():
+        typer.secho(f"no mdl-project.yaml in {model_dir}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+    doc = load_file(proj_path)
+    existing = doc.get("reverse") if isinstance(doc.get("reverse"), dict) else {}
+    merged = merge_reverse_block(existing, incoming, replace=replace)
+    # validate before writing — reject a malformed block wholesale.
+    try:
+        ReverseConfig.model_validate(merged)
+    except Exception as e:  # noqa: BLE001 - surface the validation error, don't half-write
+        typer.secho(f"resulting reverse: block is invalid — not written ({e})",
+                    fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from e
+    doc["reverse"] = merged
+    dump_file(proj_path, doc)
+    if source:
+        typer.secho(f"  (merged from {source})", fg=typer.colors.CYAN)
+    return merged
+
+
+@reverse_cfg_app.command("apply")
+def reverse_config_apply(
+    src: Path = typer.Argument(
+        None, help="A file with a partial reverse: block (YAML/JSON). Omit to read stdin."
+    ),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    replace: bool = typer.Option(
+        False, "--replace", help="Overwrite each provided key wholesale (default: merge additively)"
+    ),
+) -> None:
+    """Merge a partial reverse: block into mdl-project.yaml (comment-preserving). The
+    generic write doorway suggest/import and external tools use. Reads a `reverse:` block
+    or a bare block body from a file or stdin."""
+    import sys as _sys
+
+    from mdl_core.yaml_io import load_str
+
+    text = src.read_text(encoding="utf-8") if src is not None else _sys.stdin.read()
+    data = load_str(text) or {}
+    # accept either a wrapping {reverse: {...}} or the bare block body.
+    block = data.get("reverse") if isinstance(data, dict) and "reverse" in data else data
+    if not isinstance(block, dict):
+        typer.secho(
+            "input is not a reverse: block (expected a mapping)", fg=typer.colors.RED, err=True
+        )
+        raise typer.Exit(1)
+    _write_reverse_block(model_dir, block, replace=replace)
+    typer.secho("applied reverse: config", fg=typer.colors.GREEN)
+
+
+@reverse_cfg_app.command("suggest")
+def reverse_config_suggest(
+    manifest: Path = typer.Option(..., "--manifest", help="Path to target/manifest.json"),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    fmt: str = typer.Option("yaml", "--format", help="yaml|json"),
+    apply: bool = typer.Option(
+        False, "--apply", help="Merge the suggestion into mdl-project.yaml (review the diff)"
+    ),
+) -> None:
+    """Discover a starting reverse: config from the warehouse — folder/prefix/tag analysis
+    proposes layers (role classification) and likely exclusions, deterministically (no AI).
+    Prints it to review; --apply merges it (comment-preserving) so you refine from a real
+    draft, not a blank page."""
+    from mdl_core.yaml_io import dump_str
+    from mdl_reverse.suggest import suggest_config
+
+    try:
+        proj = read_manifest(manifest)
+    except FileNotFoundError as e:
+        typer.secho(str(e), fg=typer.colors.RED, err=True)
+        raise typer.Exit(4) from e
+    report = suggest_config(proj)
+    if not report.block:
+        typer.secho(
+            "no clear folder/prefix conventions found — nothing to suggest", fg=typer.colors.YELLOW
+        )
+        return
+    if fmt == "json":
+        typer.echo(
+            json.dumps({"reverse": report.block, "rationale": report.rationale}, default=str)
+        )
+    else:
+        for line in report.rationale:
+            typer.secho(f"# {line}", fg=typer.colors.CYAN)
+        typer.echo(dump_str({"reverse": report.block}))
+    if apply:
+        _write_reverse_block(model_dir, report.block, source="suggest-config")
+        typer.secho("applied suggested reverse: config", fg=typer.colors.GREEN)
+
+
+@reverse_cfg_app.command("explain")
+def reverse_config_explain(
+    manifest: Path = typer.Option(..., "--manifest", help="Path to target/manifest.json"),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    fmt: str = typer.Option("text", "--format", help="text|json"),
+) -> None:
+    """Show how the CURRENT reverse: config classifies every dbt model — role, matched
+    layer, exclusion/exemption, effective target_form — WITHOUT running a reverse or
+    writing anything. Tweak the config, re-run, see the effect, then commit."""
+    from mdl_reverse.mapping import naming_from_config, resolve_layer
+
+    try:
+        proj = read_manifest(manifest)
+    except FileNotFoundError as e:
+        typer.secho(str(e), fg=typer.colors.RED, err=True)
+        raise typer.Exit(4) from e
+
+    # load the reverse config from mdl-project.yaml (the same source reverse uses).
+    reverse_config = _load_reverse_config(None, model_dir)
+    naming = naming_from_config(reverse_config)
+    default_form = getattr(reverse_config, "target_form", None) or "denormalized"
+
+    rows = []
+    for name in sorted(proj.models):
+        mm = proj.models[name]
+        v = resolve_layer(name, mm.tags, getattr(mm, "path", None), reverse_config, naming)
+        rows.append({
+            "model": name,
+            "role": v.role,
+            "layer": v.layer_name,
+            "exempt": v.exempt,
+            "excluded": v.role in ("staging", "intermediate", "exclude"),
+            "target_form": v.target_form or default_form,
+            "pattern": v.pattern,
+        })
+
+    if fmt == "json":
+        typer.echo(json.dumps(rows, default=str))
+        return
+    # text table
+    kept = [r for r in rows if not r["excluded"]]
+    dropped = [r for r in rows if r["excluded"]]
+    typer.secho(f"entities kept ({len(kept)}):", bold=True)
+    for r in kept:
+        tag = f" [{r['layer']}]" if r["layer"] else ""
+        form = "" if r["target_form"] == "denormalized" else f"  target_form={r['target_form']}"
+        pat = f"  pattern={r['pattern']}" if r["pattern"] else ""
+        ex = "  (exempt)" if r["exempt"] else ""
+        typer.echo(f"  {r['model']:32} {r['role']}{tag}{form}{pat}{ex}")
+    typer.secho(f"excluded ({len(dropped)}):", bold=True)
+    for r in dropped:
+        typer.echo(f"  {r['model']:32} {r['role']}")
+
+
+@reverse_cfg_app.command("import")
+def reverse_config_import(
+    src: str = typer.Argument(
+        ...,
+        help="A reverse: config to import — a local file, an https:// URL, a GitHub/GitLab "
+        "blob URL (auto-converted to raw), or a `github:owner/repo/path@ref` shorthand.",
+    ),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    replace: bool = typer.Option(
+        False, "--replace", help="Overwrite each imported key wholesale (default: merge additively)"
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Print the fetched config without writing (preview before apply)"
+    ),
+    token: str = typer.Option(
+        None,
+        "--token",
+        help="Bearer token for a private repo (or $MODELITH_IMPORT_TOKEN / $GITHUB_TOKEN)",
+    ),
+    allow_insecure: bool = typer.Option(
+        False, "--allow-insecure", help="Permit a plain http:// source (not recommended)"
+    ),
+) -> None:
+    """Import a shared reverse: config (a team standard, a starter pack) from a file, URL,
+    or git host and merge it into mdl-project.yaml, comment-preserving — the git-native way
+    to inherit modeling standards. --dry-run previews without writing. A malformed source
+    is rejected wholesale, never half-applied. Private repos: pass --token."""
+    from mdl_core.yaml_io import dump_str, load_str
+    from mdl_reverse.remote_config import ImportError_, fetch_config_text
+
+    # One dispatch for every source kind (file / https / github: / a plugin scheme like
+    # mdl://) — the resolver registry picks the handler for the source's scheme.
+    try:
+        text = fetch_config_text(src, token=token, allow_insecure=allow_insecure)
+    except ImportError_ as e:
+        typer.secho(str(e), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from e
+
+    data = load_str(text) or {}
+    block = data.get("reverse") if isinstance(data, dict) and "reverse" in data else data
+    if not isinstance(block, dict):
+        typer.secho("source is not a reverse: config (expected a mapping)",
+                    fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+
+    if dry_run:
+        # validate the merged result so the preview reflects exactly what would be written,
+        # then print it without touching the file.
+        from mdl_core.ir import ReverseConfig
+        from mdl_core.yaml_io import load_file
+        from mdl_reverse.config_io import merge_reverse_block
+
+        proj_path = model_dir / "mdl-project.yaml"
+        existing = {}
+        if proj_path.exists():
+            doc = load_file(proj_path)
+            existing = doc.get("reverse") if isinstance(doc.get("reverse"), dict) else {}
+        merged = merge_reverse_block(existing, block, replace=replace)
+        try:
+            ReverseConfig.model_validate(merged)
+        except Exception as e:  # noqa: BLE001
+            typer.secho(f"config is invalid — would not be written ({e})",
+                        fg=typer.colors.RED, err=True)
+            raise typer.Exit(1) from e
+        typer.secho(f"# preview of the merged reverse: block from {src} (nothing written)",
+                    fg=typer.colors.CYAN)
+        typer.echo(dump_str({"reverse": merged}))
+        return
+
+    _write_reverse_block(model_dir, block, replace=replace, source=src)
+    typer.secho(f"imported reverse: config from {src}", fg=typer.colors.GREEN)
 
 
 @emit_app.command("semantic")
@@ -2796,6 +3159,15 @@ def main() -> None:
         from typer._click import exceptions as click_exc
     except Exception:  # noqa: BLE001
         import click.exceptions as click_exc  # type: ignore[no-redef]
+
+    # Ergonomic alias: accept `mdl reverse config <sub>` as a spelling of the
+    # `mdl reverse-config <sub>` group. `reverse` is a leaf command (it reverse-engineers
+    # a warehouse) so it can't ALSO be a Typer group without breaking `mdl reverse
+    # --project …`; instead we rewrite argv here, before Typer parses. Only the exact
+    # `reverse config` pair is rewritten — `mdl reverse --project` (no `config` token) is
+    # untouched and keeps working.
+    if len(sys.argv) >= 3 and sys.argv[1] == "reverse" and sys.argv[2] == "config":
+        sys.argv[1:3] = ["reverse-config"]
 
     from mdl_cli import telemetry
 
