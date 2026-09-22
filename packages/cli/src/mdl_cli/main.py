@@ -1906,6 +1906,60 @@ def reverse_config_suggest(
         typer.secho("applied suggested reverse: config", fg=typer.colors.GREEN)
 
 
+@reverse_cfg_app.command("explain")
+def reverse_config_explain(
+    manifest: Path = typer.Option(..., "--manifest", help="Path to target/manifest.json"),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    fmt: str = typer.Option("text", "--format", help="text|json"),
+) -> None:
+    """Show how the CURRENT reverse: config classifies every dbt model — role, matched
+    layer, exclusion/exemption, effective target_form — WITHOUT running a reverse or
+    writing anything. Tweak the config, re-run, see the effect, then commit."""
+    from mdl_reverse.mapping import naming_from_config, resolve_layer
+
+    try:
+        proj = read_manifest(manifest)
+    except FileNotFoundError as e:
+        typer.secho(str(e), fg=typer.colors.RED, err=True)
+        raise typer.Exit(4) from e
+
+    # load the reverse config from mdl-project.yaml (the same source reverse uses).
+    reverse_config = _load_reverse_config(None, model_dir)
+    naming = naming_from_config(reverse_config)
+    default_form = getattr(reverse_config, "target_form", None) or "denormalized"
+
+    rows = []
+    for name in sorted(proj.models):
+        mm = proj.models[name]
+        v = resolve_layer(name, mm.tags, getattr(mm, "path", None), reverse_config, naming)
+        rows.append({
+            "model": name,
+            "role": v.role,
+            "layer": v.layer_name,
+            "exempt": v.exempt,
+            "excluded": v.role in ("staging", "intermediate", "exclude"),
+            "target_form": v.target_form or default_form,
+            "pattern": v.pattern,
+        })
+
+    if fmt == "json":
+        typer.echo(json.dumps(rows, default=str))
+        return
+    # text table
+    kept = [r for r in rows if not r["excluded"]]
+    dropped = [r for r in rows if r["excluded"]]
+    typer.secho(f"entities kept ({len(kept)}):", bold=True)
+    for r in kept:
+        tag = f" [{r['layer']}]" if r["layer"] else ""
+        form = "" if r["target_form"] == "denormalized" else f"  target_form={r['target_form']}"
+        pat = f"  pattern={r['pattern']}" if r["pattern"] else ""
+        ex = "  (exempt)" if r["exempt"] else ""
+        typer.echo(f"  {r['model']:32} {r['role']}{tag}{form}{pat}{ex}")
+    typer.secho(f"excluded ({len(dropped)}):", bold=True)
+    for r in dropped:
+        typer.echo(f"  {r['model']:32} {r['role']}")
+
+
 @emit_app.command("semantic")
 def emit_semantic(
     fmt: str = typer.Option("metricflow", "--format", help="metricflow|osi"),

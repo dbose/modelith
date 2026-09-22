@@ -138,3 +138,42 @@ def test_suggest_no_convention_is_graceful(tmp_path: Path):
     r = runner.invoke(app, ["reverse-config", "suggest", "--manifest", str(manifest)])
     assert r.exit_code == 0, r.output
     assert "nothing to suggest" in r.output
+
+
+def test_explain_no_config_is_legacy(tmp_path: Path):
+    scaffold_demo(tmp_path)
+    m = tmp_path / "model"
+    manifest = tmp_path / "manifest.json"
+    _write_manifest(manifest, [
+        ("stg_orders", "models/staging/stg_orders.sql"),
+        ("dim_customer", "models/marts/dim_customer.sql"),
+    ])
+    r = runner.invoke(
+        app, ["reverse-config", "explain", "--manifest", str(manifest), "-m", str(m)]
+    )
+    assert r.exit_code == 0, r.output
+    # stg_ excluded, dim_ kept as business (no config)
+    assert "stg_orders" in r.output and "dim_customer" in r.output
+
+
+def test_explain_reflects_config(tmp_path: Path):
+    scaffold_demo(tmp_path)
+    m = tmp_path / "model"
+    manifest = tmp_path / "manifest.json"
+    _write_manifest(manifest, [
+        ("dim_customer", "models/marts/dim_customer.sql"),
+        ("orders_tmp", "models/scratch/orders_tmp.sql"),
+    ])
+    runner.invoke(
+        app, ["reverse-config", "apply", "-m", str(m)],
+        input="layers:\n  - {name: dims, role: dimension, match: {prefix: dim_}}\nexclude: ['**/scratch/**']\n",
+    )
+    r = runner.invoke(
+        app,
+        ["reverse-config", "explain", "--manifest", str(manifest), "-m", str(m), "--format", "json"],
+    )
+    assert r.exit_code == 0, r.output
+    import json
+    rows = {row["model"]: row for row in json.loads(r.stdout)}
+    assert rows["dim_customer"]["role"] == "dimension"
+    assert rows["orders_tmp"]["excluded"] is True
