@@ -215,18 +215,11 @@ def test_import_from_url(tmp_path: Path, monkeypatch):
     scaffold_demo(tmp_path)
     m = tmp_path / "model"
 
-    class _Resp:
-        text = "reverse:\n  exclude: ['*_tmp']\n"
+    from mdl_reverse import remote_config
 
-        def raise_for_status(self):
-            return None
-
-    def _fake_get(url, **kw):
-        return _Resp()
-
-    import httpx
-
-    monkeypatch.setattr(httpx, "get", _fake_get)
+    monkeypatch.setattr(
+        remote_config, "fetch_config_text", lambda *a, **k: "reverse:\n  exclude: ['*_tmp']\n"
+    )
     r = runner.invoke(
         app, ["reverse-config", "import", "https://example.com/team/reverse.yaml", "-m", str(m)]
     )
@@ -254,3 +247,38 @@ def test_reverse_config_argv_alias(monkeypatch):
 
     src = inspect.getsource(cli_main.main)
     assert '["reverse-config"]' in src and 'sys.argv[2] == "config"' in src
+
+
+def test_import_dry_run_does_not_write(tmp_path: Path):
+    scaffold_demo(tmp_path)
+    m = tmp_path / "model"
+    src = tmp_path / "shared.yaml"
+    src.write_text("reverse:\n  exclude: ['*_tmp']\n", encoding="utf-8")
+    before = _proj(m)
+    r = runner.invoke(app, ["reverse-config", "import", str(src), "-m", str(m), "--dry-run"])
+    assert r.exit_code == 0, r.output
+    assert "preview" in r.output.lower() and "*_tmp" in r.output
+    assert _proj(m) == before  # nothing written
+
+
+def test_import_rejects_http(tmp_path: Path):
+    scaffold_demo(tmp_path)
+    m = tmp_path / "model"
+    r = runner.invoke(app, ["reverse-config", "import", "http://x/rc.yaml", "-m", str(m)])
+    assert r.exit_code == 1, r.output
+    assert "http" in r.output.lower()
+
+
+def test_import_github_shorthand(tmp_path: Path, monkeypatch):
+    scaffold_demo(tmp_path)
+    m = tmp_path / "model"
+
+    # mock the fetch so `github:...` resolves without the network
+    from mdl_reverse import remote_config
+
+    monkeypatch.setattr(
+        remote_config, "fetch_config_text", lambda *a, **k: "reverse:\n  exclude: ['*_scratch']\n"
+    )
+    r = runner.invoke(app, ["reverse-config", "import", "github:acme/dbt/rc.yaml", "-m", str(m)])
+    assert r.exit_code == 0, r.output
+    assert "*_scratch" in _proj(m)

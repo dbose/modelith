@@ -8,9 +8,18 @@ inherited modeling standards. Each is a plain YAML file: copy it, or import it d
 mdl reverse-config import reverse-configs/kimball.yaml -m model
 #   ... then review the git diff and commit.
 
-# or from a URL a team publishes:
-mdl reverse-config import https://example.com/our-team/reverse.yaml -m model
+# or from a git-hosted file — paste the URL you see in the browser (blob URLs are
+# auto-converted to raw), or use a shorthand; private repos take a --token:
+mdl reverse-config import https://github.com/acme/dbt/blob/main/reverse-configs/kimball.yaml -m model
+mdl reverse-config import github:acme/dbt/reverse-configs/kimball.yaml@main -m model
+mdl reverse-config import github:acme/private-dbt/reverse.yaml --token "$GITHUB_TOKEN" -m model
+
+# preview before writing (fetches + merges + validates, writes nothing):
+mdl reverse-config import github:acme/dbt/reverse.yaml --dry-run -m model
 ```
+
+Imports are **https-only** (pass `--allow-insecure` for plain http), size-capped, and
+reject an HTML page (a common mistake: a repo *blob* URL that wasn't converted).
 
 Import is **additive by default** (layers append, conventions union, exclusions extend);
 pass `--replace` to overwrite. A malformed config is rejected wholesale, never

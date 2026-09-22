@@ -62,6 +62,31 @@ function classifyTarget(dir: string): TargetState {
   }
 }
 
+/** In-memory content for the "before" side of an import diff. Keyed by a counter so
+ * successive imports don't collide. Backed by a TextDocumentContentProvider registered in
+ * activate() under the `modelith-before` scheme. */
+const beforeContents = new Map<string, string>();
+let beforeSeq = 0;
+
+/** Show a native diff of mdl-project.yaml: its pre-import content (left) vs the current
+ * on-disk content (right), so "review the diff" is literal, not a status-bar hint. */
+async function showProjectDiff(
+  ctx: vscode.ExtensionContext,
+  projPath: string,
+  before: string,
+): Promise<void> {
+  const key = String(beforeSeq++);
+  beforeContents.set(key, before);
+  const left = vscode.Uri.parse(`modelith-before:mdl-project.yaml?${key}`);
+  const right = vscode.Uri.file(projPath);
+  await vscode.commands.executeCommand(
+    "vscode.diff",
+    left,
+    right,
+    "mdl-project.yaml — imported changes",
+  );
+}
+
 /** Open the model's mdl-project.yaml so the user can review/tweak the reverse: block. */
 async function openProjectYaml(dir: string): Promise<void> {
   const p = path.join(dir, "mdl-project.yaml");
@@ -199,6 +224,14 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   const configTree = new ConfigTreeProvider(out);
   ctx.subscriptions.push(vscode.window.registerTreeDataProvider("modelithConfig", configTree));
   void configTree.refresh();
+  // Serves the "before" side of an import diff (the pre-import mdl-project.yaml).
+  ctx.subscriptions.push(
+    vscode.workspace.registerTextDocumentContentProvider("modelith-before", {
+      provideTextDocumentContent(uri) {
+        return beforeContents.get(uri.query) ?? "";
+      },
+    }),
+  );
 
   // After a window reload VS Code restores our webview panels, but the `mdl serve`
   // child died with the old extension host, so the restored iframe points at a
@@ -728,6 +761,30 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     }
     if (!src) return;
     const bin = await findMdl(dir);
+    // Preview first: --dry-run fetches + merges + validates, printing the resulting
+    // reverse: block WITHOUT writing. Show it, then apply on confirm (never a silent
+    // remote write). A real diff of the project file follows on apply.
+    const preview = await runMdl(bin, ["reverse-config", "import", src, "-m", ".", "--dry-run"], dir, out);
+    if (preview.code !== 0) {
+      const msg = (preview.stderr.trim() || preview.stdout.trim()).split("\n")[0];
+      void vscode.window.showErrorMessage(`Modelith: ${msg || "import failed."}`, "Show Output")
+        .then((a) => a && out.show());
+      return;
+    }
+    const doc = await vscode.workspace.openTextDocument({
+      language: "yaml",
+      content: preview.stdout,
+    });
+    await vscode.window.showTextDocument(doc, { preview: true });
+    const APPLY = "Apply to mdl-project.yaml";
+    const choice = await vscode.window.showInformationMessage(
+      `Import this config from ${src}? It merges into mdl-project.yaml — review the diff before committing.`,
+      APPLY,
+    );
+    if (choice !== APPLY) return;
+    // capture the before-image for a real diff
+    const projPath = path.join(dir, "mdl-project.yaml");
+    const before = fs.existsSync(projPath) ? fs.readFileSync(projPath, "utf8") : "";
     const r = await runMdl(bin, ["reverse-config", "import", src, "-m", "."], dir, out);
     if (r.code !== 0) {
       void vscode.window.showErrorMessage("Modelith: import failed.", "Show Output")
@@ -735,7 +792,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
       return;
     }
     await configTree.refresh();
-    void openProjectYaml(dir);
+    await showProjectDiff(ctx, projPath, before); // literal "review the diff"
     void vscode.window.setStatusBarMessage("Modelith: imported config — review the diff ✓", 5000);
   }));
 

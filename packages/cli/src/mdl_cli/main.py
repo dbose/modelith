@@ -2033,29 +2033,38 @@ def reverse_config_explain(
 @reverse_cfg_app.command("import")
 def reverse_config_import(
     src: str = typer.Argument(
-        ..., help="A reverse: config to import — a local file path or an https:// URL"
+        ...,
+        help="A reverse: config to import — a local file, an https:// URL, a GitHub/GitLab "
+        "blob URL (auto-converted to raw), or a `github:owner/repo/path@ref` shorthand.",
     ),
     model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
     replace: bool = typer.Option(
         False, "--replace", help="Overwrite each imported key wholesale (default: merge additively)"
     ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Print the fetched config without writing (preview before apply)"
+    ),
+    token: str = typer.Option(
+        None,
+        "--token",
+        help="Bearer token for a private repo (or $MODELITH_IMPORT_TOKEN / $GITHUB_TOKEN)",
+    ),
+    allow_insecure: bool = typer.Option(
+        False, "--allow-insecure", help="Permit a plain http:// source (not recommended)"
+    ),
 ) -> None:
-    """Import a shared reverse: config (a team standard, a starter pack) from a file or URL
-    and merge it into mdl-project.yaml, comment-preserving — the git-native equivalent of
-    inheriting a team's modeling standards. Review the result as a git diff before you
-    commit. A malformed source is rejected wholesale, never half-applied."""
-    from mdl_core.yaml_io import load_str
+    """Import a shared reverse: config (a team standard, a starter pack) from a file, URL,
+    or git host and merge it into mdl-project.yaml, comment-preserving — the git-native way
+    to inherit modeling standards. --dry-run previews without writing. A malformed source
+    is rejected wholesale, never half-applied. Private repos: pass --token."""
+    from mdl_core.yaml_io import dump_str, load_str
+    from mdl_reverse.remote_config import ImportError_, fetch_config_text, is_url
 
-    # fetch
-    if src.startswith(("http://", "https://")):
-        import httpx
-
+    if is_url(src):
         try:
-            resp = httpx.get(src, timeout=15.0, follow_redirects=True)
-            resp.raise_for_status()
-            text = resp.text
-        except Exception as e:  # noqa: BLE001 - network/HTTP errors -> a clean CLI error
-            typer.secho(f"could not fetch {src}: {e}", fg=typer.colors.RED, err=True)
+            text = fetch_config_text(src, token=token, allow_insecure=allow_insecure)
+        except ImportError_ as e:
+            typer.secho(str(e), fg=typer.colors.RED, err=True)
             raise typer.Exit(1) from e
     else:
         p = Path(src)
@@ -2070,6 +2079,31 @@ def reverse_config_import(
         typer.secho("source is not a reverse: config (expected a mapping)",
                     fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
+
+    if dry_run:
+        # validate the merged result so the preview reflects exactly what would be written,
+        # then print it without touching the file.
+        from mdl_core.ir import ReverseConfig
+        from mdl_core.yaml_io import load_file
+        from mdl_reverse.config_io import merge_reverse_block
+
+        proj_path = model_dir / "mdl-project.yaml"
+        existing = {}
+        if proj_path.exists():
+            doc = load_file(proj_path)
+            existing = doc.get("reverse") if isinstance(doc.get("reverse"), dict) else {}
+        merged = merge_reverse_block(existing, block, replace=replace)
+        try:
+            ReverseConfig.model_validate(merged)
+        except Exception as e:  # noqa: BLE001
+            typer.secho(f"config is invalid — would not be written ({e})",
+                        fg=typer.colors.RED, err=True)
+            raise typer.Exit(1) from e
+        typer.secho(f"# preview of the merged reverse: block from {src} (nothing written)",
+                    fg=typer.colors.CYAN)
+        typer.echo(dump_str({"reverse": merged}))
+        return
+
     _write_reverse_block(model_dir, block, replace=replace, source=src)
     typer.secho(f"imported reverse: config from {src}", fg=typer.colors.GREEN)
 
