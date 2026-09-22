@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.6
+
+- **Warehouse Config view.** A new Modelith view shows how your `reverse:` config
+  classifies every dbt model — grouped by role (Dimensions, Facts, Hubs, Excluded…),
+  each row showing its matched layer and why. It answers "how does Modelith see my
+  warehouse?" at a glance.
+- **Suggest, from your warehouse.** *Suggest Reverse Config* reads your folders and
+  prefixes and proposes a starting `reverse:` block — preview it, then apply. No more
+  authoring conventions from a blank page.
+- **Import a standard.** *Import Reverse Config* pulls a shared config — a bundled starter
+  pack (Kimball, medallion, Data Vault), a file, or a team's published URL — and merges it,
+  the git-native way to inherit modeling standards. Review the diff, commit.
+- Requires the `mdl` CLI 0.4.6+ (0.4.7+ recommended for the `reverse config` commands).
+
 ## 0.3.4
 
 - **Getting Started now walks you to a clean drift check.** The walkthrough gained two

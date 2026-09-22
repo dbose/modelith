@@ -2,7 +2,7 @@
   "name": "modelith-vscode",
   "displayName": "Modelith",
   "description": "Ontology-anchored, git-native data modeling for dbt \u2014 validate, generate, drift, and the Modelith canvas inside VS Code.",
-  "version": "0.3.4",
+  "version": "0.3.6",
   "publisher": "BosonResearch",
   "license": "Apache-2.0",
   "icon": "icon.png",
@@ -87,6 +87,12 @@
     "views": {
       "modelith": [
         {
+          "id": "modelithConfig",
+          "name": "Warehouse Config",
+          "icon": "$(settings-gear)",
+          "contextualTitle": "Modelith Warehouse Config"
+        },
+        {
           "id": "modelithReverse",
           "name": "Reverse Review",
           "icon": "$(git-pull-request-create)",
@@ -100,6 +106,18 @@
         }
       ]
     },
+    "viewsWelcome": [
+      {
+        "view": "modelithConfig",
+        "when": "!modelith.configHasManifest",
+        "contents": "See how Modelith classifies your dbt models, and teach it your warehouse's conventions.\n\nCompile your dbt project first so there's a manifest to read:\n[Run dbt docs generate](command:modelith.driftCheck)\n\nThen [Suggest a config](command:modelith.configSuggest) from your warehouse's own folders and prefixes."
+      },
+      {
+        "view": "modelithConfig",
+        "when": "modelith.configHasManifest",
+        "contents": "No layers matched yet. Discover a starting config from your warehouse's folders and prefixes:\n[Suggest Config](command:modelith.configSuggest)\n\nOr inherit a team standard:\n[Import a Starter Pack](command:modelith.configImport)"
+      }
+    ],
     "commands": [
       {
         "command": "modelith.validate",
@@ -133,6 +151,29 @@
         "command": "modelith.reverseReject",
         "title": "Reject",
         "icon": "$(x)"
+      },
+      {
+        "command": "modelith.configSuggest",
+        "title": "Modelith: Suggest Reverse Config",
+        "icon": "$(lightbulb-autofix)"
+      },
+      {
+        "command": "modelith.configImport",
+        "title": "Modelith: Import Reverse Config",
+        "icon": "$(cloud-download)"
+      },
+      {
+        "command": "modelith.configRefresh",
+        "title": "Modelith: Refresh Warehouse Config",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "modelith.configFocusView",
+        "title": "Modelith: Show Warehouse Config"
+      },
+      {
+        "command": "modelith.configOpenProject",
+        "title": "Modelith: Open mdl-project.yaml"
       },
       {
         "command": "modelith.driftCheck",
@@ -386,6 +427,21 @@
         }
       ],
       "view/title": [
+        {
+          "command": "modelith.configSuggest",
+          "when": "view == modelithConfig",
+          "group": "navigation@1"
+        },
+        {
+          "command": "modelith.configImport",
+          "when": "view == modelithConfig",
+          "group": "navigation@2"
+        },
+        {
+          "command": "modelith.configRefresh",
+          "when": "view == modelithConfig",
+          "group": "navigation@3"
+        },
         {
           "command": "modelith.driftCheck",
           "when": "view == modelithDrift",

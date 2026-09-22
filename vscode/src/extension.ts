@@ -4,6 +4,7 @@ import * as vscode from "vscode";
 import type { LanguageClient } from "vscode-languageclient/node";
 import { CanvasManager } from "./canvasPanel";
 import { registerChatParticipant } from "./chatParticipant";
+import { ConfigTreeProvider } from "./configView";
 import { DriftCodeActionProvider, DriftManager } from "./driftDiagnostics";
 import { DriftTreeProvider } from "./driftView";
 import { executeLspCommand, startLsp } from "./lspClient";
@@ -59,6 +60,60 @@ function classifyTarget(dir: string): TargetState {
     // If we can't read it, treat it as foreign (the cautious branch) rather than empty.
     return "foreign";
   }
+}
+
+/** Open the model's mdl-project.yaml so the user can review/tweak the reverse: block. */
+async function openProjectYaml(dir: string): Promise<void> {
+  const p = path.join(dir, "mdl-project.yaml");
+  if (fs.existsSync(p)) {
+    const doc = await vscode.workspace.openTextDocument(p);
+    await vscode.window.showTextDocument(doc, { preview: false });
+  }
+}
+
+/** The bundled reverse: starter packs, shipped in the vsix under media/reverse-configs/. */
+function starterPacks(ctx: vscode.ExtensionContext): { label: string; detail: string; path: string }[] {
+  const base = path.join(ctx.extensionPath, "media", "reverse-configs");
+  const known = [
+    { file: "kimball.yaml", label: "dbt / Kimball", detail: "stg_/int_ excluded · dim_/fct_ entities" },
+    { file: "medallion.yaml", label: "Medallion", detail: "bronze / silver / gold layers" },
+    { file: "data-vault.yaml", label: "Data Vault", detail: "hub / link / satellite" },
+  ];
+  return known
+    .map((k) => ({ label: k.label, detail: k.detail, path: path.join(base, k.file) }))
+    .filter((k) => fs.existsSync(k.path));
+}
+
+/** A tiny, dependency-free YAML serializer for the suggestion PREVIEW only (block-style,
+ * enough for the reverse: block: nested maps, lists of scalars, and inline {…} for the
+ * leaf match objects). The actual write is done by the CLI's ruamel round-trip. */
+function toYaml(obj: unknown, indent = 0): string {
+  const pad = "  ".repeat(indent);
+  if (Array.isArray(obj)) {
+    return obj
+      .map((v) => {
+        if (v !== null && typeof v === "object") {
+          // render the object's first key on the "- " line, the rest indented under it
+          const body = toYaml(v, indent + 1);
+          return `${pad}-${body.slice(pad.length + 1)}`;
+        }
+        return `${pad}- ${scalar(v)}`;
+      })
+      .join("\n");
+  }
+  if (obj !== null && typeof obj === "object") {
+    return Object.entries(obj as Record<string, unknown>)
+      .map(([k, v]) => {
+        if (v !== null && typeof v === "object") return `${pad}${k}:\n${toYaml(v, indent + 1)}`;
+        return `${pad}${k}: ${scalar(v)}`;
+      })
+      .join("\n");
+  }
+  return `${pad}${scalar(obj)}`;
+}
+function scalar(v: unknown): string {
+  if (typeof v === "string") return /[:#{}[\]]/.test(v) ? `"${v}"` : v;
+  return String(v);
 }
 
 /** Next free `model-reversed-v<N>` sibling name for a target dir, mirroring the CLI's
@@ -138,6 +193,12 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   const reverse = new ReverseReviewProvider(out);
   ctx.subscriptions.push(vscode.window.registerTreeDataProvider("modelithReverse", reverse));
   void reverse.refresh();
+
+  // Warehouse Config: a live view of how the reverse: config classifies every dbt model,
+  // grouped by role, with Suggest/Import in its title bar. The home of the config workflow.
+  const configTree = new ConfigTreeProvider(out);
+  ctx.subscriptions.push(vscode.window.registerTreeDataProvider("modelithConfig", configTree));
+  void configTree.refresh();
 
   // After a window reload VS Code restores our webview panels, but the `mdl serve`
   // child died with the old extension host, so the restored iframe points at a
@@ -566,6 +627,120 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     void vscode.window.setStatusBarMessage(`Modelith: mapped ${entity} → ${target} ✓`, 4000);
     await drift.check(dir); // re-run drift; the false model_removed clears
   }));
+
+  // --- warehouse config workflow (author / discover / iterate / import) --------
+
+  cmd("modelith.configRefresh", () => configTree.refresh());
+
+  cmd("modelith.configFocusView", () =>
+    vscode.commands.executeCommand("modelithConfig.focus"),
+  );
+
+  // Discover: run `reverse config suggest`, preview the proposed reverse: block in an
+  // editor, and apply on confirmation. Preview-then-apply — never a silent write.
+  cmd("modelith.configSuggest", () => withModelDir(async (dir) => {
+    const manifest = await findManifestPath();
+    if (!manifest) {
+      void vscode.window.showWarningMessage(
+        "Modelith: no dbt manifest found — run `dbt docs generate` first, then suggest config.",
+      );
+      return;
+    }
+    const bin = await findMdl(dir);
+    const r = await runMdl(
+      bin,
+      ["reverse-config", "suggest", "--manifest", manifest, "-m", ".", "--format", "json"],
+      dir,
+      out,
+    );
+    let payload: { reverse?: unknown; rationale?: string[] } = {};
+    try {
+      payload = JSON.parse(r.stdout || "{}");
+    } catch {
+      payload = {};
+    }
+    if (!payload.reverse || Object.keys(payload.reverse as object).length === 0) {
+      void vscode.window.showInformationMessage(
+        "Modelith: no clear folder/prefix conventions found — nothing to suggest. Author the reverse: block by hand, or import a starter pack.",
+      );
+      return;
+    }
+    // Preview the suggestion as a readable YAML doc (with the rationale as comments) so
+    // the user reviews exactly what will be added before it's written.
+    const rationale = (payload.rationale ?? []).map((l) => `# ${l}`).join("\n");
+    const yaml = toYaml({ reverse: payload.reverse });
+    const doc = await vscode.workspace.openTextDocument({
+      language: "yaml",
+      content: `# Suggested Modelith reverse: config (review, then Apply)\n${rationale}\n${yaml}`,
+    });
+    await vscode.window.showTextDocument(doc, { preview: true });
+    const APPLY = "Apply to mdl-project.yaml";
+    const choice = await vscode.window.showInformationMessage(
+      "Apply this suggested config? It merges into mdl-project.yaml — review it as a git diff before committing.",
+      APPLY,
+    );
+    if (choice !== APPLY) return;
+    const w = await runMdl(
+      bin,
+      ["reverse-config", "suggest", "--manifest", manifest, "-m", ".", "--apply"],
+      dir,
+      out,
+    );
+    if (w.code !== 0) {
+      void vscode.window.showErrorMessage("Modelith: could not apply the config.", "Show Output")
+        .then((a) => a && out.show());
+      return;
+    }
+    await configTree.refresh();
+    void openProjectYaml(dir);
+    void vscode.window.setStatusBarMessage("Modelith: applied suggested config ✓", 4000);
+  }));
+
+  // Share: import a reverse: config — a bundled starter pack, a file, or a URL.
+  cmd("modelith.configImport", () => withModelDir(async (dir) => {
+    const packs = starterPacks(ctx);
+    const FILE = "$(file) From a file…";
+    const URL = "$(link) From a URL…";
+    const picked = await vscode.window.showQuickPick(
+      [
+        ...packs.map((p) => ({ label: `$(cloud-download) ${p.label}`, detail: p.detail, id: p.path })),
+        { label: FILE, detail: "A local reverse: config YAML", id: "file" },
+        { label: URL, detail: "An https:// URL a team published", id: "url" },
+      ],
+      { placeHolder: "Import a reverse: config to merge into this model" },
+    );
+    if (!picked) return;
+    let src: string | undefined;
+    if (picked.id === "file") {
+      const f = await vscode.window.showOpenDialog({
+        canSelectMany: false, filters: { "reverse config": ["yaml", "yml"] },
+        openLabel: "Import this config",
+      });
+      src = f?.[0]?.fsPath;
+    } else if (picked.id === "url") {
+      src = await vscode.window.showInputBox({
+        title: "Import reverse: config from a URL",
+        prompt: "https:// URL of a shared reverse: config",
+        validateInput: (v) => (/^https?:\/\//.test(v.trim()) ? undefined : "Enter an http(s) URL."),
+      });
+    } else {
+      src = picked.id; // a bundled starter pack path
+    }
+    if (!src) return;
+    const bin = await findMdl(dir);
+    const r = await runMdl(bin, ["reverse-config", "import", src, "-m", "."], dir, out);
+    if (r.code !== 0) {
+      void vscode.window.showErrorMessage("Modelith: import failed.", "Show Output")
+        .then((a) => a && out.show());
+      return;
+    }
+    await configTree.refresh();
+    void openProjectYaml(dir);
+    void vscode.window.setStatusBarMessage("Modelith: imported config — review the diff ✓", 5000);
+  }));
+
+  // Click a model in the tree -> open mdl-project.yaml so the user can tweak the rule.
+  cmd("modelith.configOpenProject", () => withModelDir((dir) => openProjectYaml(dir)));
 
   // --- reverse engineering -----------------------------------------------------
 

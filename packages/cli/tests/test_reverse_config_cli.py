@@ -237,8 +237,6 @@ def test_import_from_url(tmp_path: Path, monkeypatch):
 def test_reverse_config_argv_alias(monkeypatch):
     """`mdl reverse config <sub>` is rewritten to `mdl reverse-config <sub>` in main(),
     while `mdl reverse --project` (no 'config' token) is left untouched."""
-    import sys as _sys
-
     from mdl_cli import main as cli_main
 
     # simulate the argv rewrite the shim performs (main() mutates sys.argv in place)
