@@ -155,3 +155,53 @@ def test_foreign_key_candidates():
     # own key not treated as FK
     assert all(g.column != "order_id" for g in guesses)
     assert all(g.confidence == "medium" for g in guesses)  # propose, never auto-accept
+
+
+# --- configurable FK + Data Vault conventions --------------------------------
+
+
+def test_fk_suffixes_default_and_override():
+    known = {"customer", "region"}
+    # default: customer_id -> customer
+    g = lifting.foreign_key_candidates("orders", ["order_id", "customer_id"], known)
+    assert [x.target_entity for x in g] == ["customer"]
+    # override: a shop that uses `_fk` — customer_fk now resolves too (additive union
+    # keeps _id working as well)
+    naming = lifting.ReverseNaming.merged({"fk_suffixes": ["_fk"]})
+    g2 = lifting.foreign_key_candidates(
+        "orders", ["customer_fk", "region_id"], known, naming
+    )
+    targets = sorted(x.target_entity for x in g2)
+    assert targets == ["customer", "region"]
+
+
+def test_data_vault_default_detection():
+    assert lifting.detect_data_vault("hub_customer", ["customer_hashkey"]).kind == "hub"
+    assert lifting.detect_data_vault("link_order_customer", ["order_hashkey"]).kind == "link"
+    assert lifting.detect_data_vault("sat_customer", ["hashdiff", "load_dts"]).kind == "satellite"
+    assert lifting.detect_data_vault("dim_customer", ["customer_id"]).kind is None
+
+
+def test_data_vault_prefixes_are_configurable():
+    """A vault that prefixes hubs `raw_hub_` and uses a `_hashkey` col is detected once
+    the convention is declared (additive onto the defaults)."""
+    naming = lifting.ReverseNaming.merged(
+        {"dv_hub_prefixes": ["raw_hub_"], "dv_hashkey_suffixes": ["_hkey"]}
+    )
+    assert lifting.detect_data_vault("raw_hub_party", ["party_hkey"], naming).kind == "hub"
+    # defaults still work (union, not replace)
+    assert lifting.detect_data_vault("hub_party", ["party_hashkey"], naming).kind == "hub"
+
+
+def test_new_convention_fields_flow_through_merged():
+    """Every new list-field is YAML-overridable via merged() (additive union)."""
+    naming = lifting.ReverseNaming.merged(
+        {
+            "fk_suffixes": ["_ref"],
+            "dv_link_prefixes": ["rel_"],
+            "dv_sat_columns": ["effective_ts"],
+        }
+    )
+    assert "_ref" in naming.fk_suffixes and "_id" in naming.fk_suffixes
+    assert "rel_" in naming.dv_link_prefixes and "link_" in naming.dv_link_prefixes
+    assert "effective_ts" in naming.dv_sat_columns and "hashdiff" in naming.dv_sat_columns

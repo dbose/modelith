@@ -55,6 +55,18 @@ _ROLLUP_TAGS = frozenset(
     {"mart", "report", "reporting", "aggregate", "agg", "kpi", "metric"}
 )
 
+# Foreign-key column suffixes: `<other>_id` matching another model is a relationship
+# candidate. Configurable so a shop that uses `_fk`/`_ref` conventions is understood.
+_FK_SUFFIXES = ("_id",)
+
+# Data Vault naming conventions, configurable so a project's own hub/link/sat prefixes
+# and hash-key/tracking columns drive detection instead of only the Kimball defaults.
+_DV_HUB_PREFIXES = ("hub_", "h_")
+_DV_LINK_PREFIXES = ("link_", "lnk_", "l_")
+_DV_SAT_PREFIXES = ("sat_", "s_")
+_DV_HASHKEY_SUFFIXES = ("_hashkey", "_hk")
+_DV_SAT_COLUMNS = frozenset({"hashdiff", "load_dts", "load_date"})
+
 
 @dataclass(frozen=True)
 class ReverseNaming:
@@ -72,6 +84,12 @@ class ReverseNaming:
     staging_tags: frozenset[str] = _STAGING_TAGS
     rollup_prefixes: tuple[str, ...] = _ROLLUP_PREFIXES
     rollup_tags: frozenset[str] = _ROLLUP_TAGS
+    fk_suffixes: tuple[str, ...] = _FK_SUFFIXES
+    dv_hub_prefixes: tuple[str, ...] = _DV_HUB_PREFIXES
+    dv_link_prefixes: tuple[str, ...] = _DV_LINK_PREFIXES
+    dv_sat_prefixes: tuple[str, ...] = _DV_SAT_PREFIXES
+    dv_hashkey_suffixes: tuple[str, ...] = _DV_HASHKEY_SUFFIXES
+    dv_sat_columns: frozenset[str] = _DV_SAT_COLUMNS
 
     @classmethod
     def merged(cls, overrides: dict | None) -> ReverseNaming:
@@ -202,15 +220,20 @@ class DataVaultDetection:
     kind: str | None  # "hub" | "link" | "satellite" | None
 
 
-def detect_data_vault(model_name: str, columns: list[str]) -> DataVaultDetection:
+def detect_data_vault(
+    model_name: str,
+    columns: list[str],
+    naming: ReverseNaming = DEFAULT_NAMING,
+) -> DataVaultDetection:
     n = model_name.lower()
-    has_hashkey = any(c.lower().endswith("_hashkey") or c.lower().endswith("_hk") for c in columns)
-    if n.startswith(("hub_", "h_")) and has_hashkey:
+    lowered = [c.lower() for c in columns]
+    has_hashkey = any(cl.endswith(naming.dv_hashkey_suffixes) for cl in lowered)
+    if n.startswith(naming.dv_hub_prefixes) and has_hashkey:
         return DataVaultDetection("hub")
-    if n.startswith(("link_", "lnk_", "l_")) and has_hashkey:
+    if n.startswith(naming.dv_link_prefixes) and has_hashkey:
         return DataVaultDetection("link")
-    if n.startswith(("sat_", "s_")) and any(
-        c.lower() in {"hashdiff", "load_dts", "load_date"} for c in columns
+    if n.startswith(naming.dv_sat_prefixes) and any(
+        cl in naming.dv_sat_columns for cl in lowered
     ):
         return DataVaultDetection("satellite")
     return DataVaultDetection(None)
@@ -263,21 +286,32 @@ class ForeignKeyGuess:
     evidence: dict = field(default_factory=dict)
 
 
+def _fk_stem(col: str, naming: ReverseNaming) -> str | None:
+    """The referenced-entity stem of an FK-shaped column, or None. `customer_id` -> the
+    stem `customer` for the configured `_id`/`_fk`/… suffixes. Longest suffix wins."""
+    cl = col.lower()
+    for sfx in sorted(naming.fk_suffixes, key=len, reverse=True):
+        if cl.endswith(sfx) and len(cl) > len(sfx):
+            return cl[: -len(sfx)]
+    return None
+
+
 def foreign_key_candidates(
-    model_name: str, columns: list[str], known_models: set[str]
+    model_name: str,
+    columns: list[str],
+    known_models: set[str],
+    naming: ReverseNaming = DEFAULT_NAMING,
 ) -> list[ForeignKeyGuess]:
-    """`<other>_id` columns that match another model's name/business key (§6.2
-    name+type heuristic, medium confidence — propose, never auto-accept)."""
+    """`<other>_id` columns (or the project's configured FK suffixes) that match another
+    model's name/business key (§6.2 name+type heuristic, medium confidence — propose,
+    never auto-accept)."""
     guesses: list[ForeignKeyGuess] = []
     self_ent = _singular(model_name)
     model_lookup = {_singular(m): m for m in known_models}
     for c in columns:
-        m = _ID_RE.match(c)
-        if not m:
-            continue
-        ref_ent = m.group("ent").lower()
-        if ref_ent == self_ent:
-            continue  # own business key, not an FK
+        ref_ent = _fk_stem(c, naming)
+        if ref_ent is None or ref_ent == self_ent:
+            continue  # not FK-shaped, or the entity's own business key
         target = model_lookup.get(ref_ent)
         if target:
             guesses.append(

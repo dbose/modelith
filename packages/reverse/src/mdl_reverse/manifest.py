@@ -41,6 +41,13 @@ class ManifestModel:
     tags: list[str] = field(default_factory=list)
     relationship_tests: list[tuple[str, str]] = field(default_factory=list)
     # (column, to_ref) pairs recovered from relationships tests / fk constraints
+    # dbt's on-disk location, for folder-structure classification (e.g. a `models/
+    # marts/finance/...` path -> a finance mart layer). `path` is the project-relative
+    # file path (node.original_file_path); `fqn` is dbt's dotted node path (project,
+    # subfolders…, name). Both default empty so a source without them (DDL, older
+    # manifest) behaves exactly as before.
+    path: str | None = None
+    fqn: list[str] = field(default_factory=list)
 
 
 # Manifest schema versions this reader has been exercised against. The reader is
@@ -172,6 +179,10 @@ def _project(raw: dict[str, Any]) -> ManifestProjection:
             meta=dict(node.get("meta") or {}),
             tags=list(node.get("tags") or []),
             relationship_tests=rel_tests_by_model.get(name, []),
+            # dbt records the model's source location; carry it for folder-based
+            # layer classification. Absent in DDL/older manifests -> stays None/[].
+            path=node.get("original_file_path") or node.get("path") or None,
+            fqn=list(node.get("fqn") or []),
         )
     return ManifestProjection(
         models=models, dbt_schema_version=schema_version, warnings=warnings

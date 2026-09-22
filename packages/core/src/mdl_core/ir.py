@@ -432,25 +432,56 @@ class GlossaryConfig(_Base):
     catalog_name: str = "Collibra"  # display name for banners
 
 
-class ReverseLayer(_Base):
-    """One warehouse layer/naming convention for resolving an entity name to the dbt
-    model that materialises it (drift name resolution). Every warehouse names its models
-    differently — a `price` entity may live as `stg_price`, `price`, or `dim_price` — so
-    drift must know the convention instead of assuming an exact-name match.
+# A dbt model's role in the warehouse, deciding how reverse treats it. staging/
+# intermediate/exclude are dropped (not business entities); mart/dimension/fact are
+# governed entities; hub/link/satellite/bridge are entities whose Data Vault pattern is
+# seeded from the role.
+LayerRole = Literal[
+    "staging", "intermediate", "mart", "dimension", "fact",
+    "hub", "link", "satellite", "bridge", "exclude",
+]
+# The target normal form a layer (or the project) models to — the team's modeling policy.
+# Gates which normalization detectors run (Phase 2). `denormalized` (the default) runs
+# none, so behaviour is unchanged unless a stricter form is declared.
+TargetForm = Literal["denormalized", "3nf", "bcnf", "dimensional", "data_vault"]
 
-    A layer produces ONE candidate model name from an entity name, via either:
-    - ``prefix`` — ``<prefix><entity>`` (e.g. ``stg_`` -> ``stg_price``), optional
-      ``suffix`` too; or
-    - ``template`` — a ``{entity}`` format string (e.g. ``dim_{entity}`` -> ``dim_price``).
-    The first layer whose candidate actually exists in the compiled manifest wins.
+
+class ReverseMatch(_Base):
+    """How a layer matches a dbt model — any of prefix / suffix / tag / folder-path glob.
+    Each may be a single string or a list; a model matches the layer if ANY predicate
+    matches. Used by `resolve_layer` for classification (distinct from ReverseLayer's
+    prefix/suffix/template, which are for drift NAME resolution)."""
+
+    model_config = ConfigDict(extra="allow")
+
+    prefix: str | list[str] | None = None
+    suffix: str | list[str] | None = None
+    tag: str | list[str] | None = None
+    path_glob: str | list[str] | None = None
+
+
+class ReverseLayer(_Base):
+    """One warehouse layer. It plays two roles, kept separate:
+
+    1. **Drift name resolution** (existing): ``prefix``/``suffix``/``template`` produce the
+       dbt model name an entity materialises as (``stg_`` -> ``stg_price``).
+    2. **Reverse classification** (new): ``match`` + ``role`` classify a dbt model into a
+       layer during reverse — staging is dropped, dim/fact become entities, hub/link/sat
+       seed a pattern. ``target_form`` is the modeling policy for this layer (Phase 2).
+
+    ``match``/``role``/``target_form`` are optional so an existing name-resolution-only
+    layer keeps working unchanged.
     """
 
     model_config = ConfigDict(extra="allow")
 
-    name: str  # human label for the layer (staging, dimension, …); not used for matching
+    name: str  # human label for the layer (staging, dimension, …)
     prefix: str | None = None
     suffix: str | None = None
     template: str | None = None  # a {entity} format string; wins over prefix/suffix
+    role: LayerRole | None = None
+    match: ReverseMatch | None = None
+    target_form: TargetForm | None = None
 
 
 class ReverseConfig(_Base):
@@ -478,11 +509,34 @@ class ReverseConfig(_Base):
     model_map: dict[str, str] = Field(default_factory=dict)
     layers: list[ReverseLayer] = Field(default_factory=list)
     auto_accept: str | None = None
+    # Hard exclusions (a superset of the built-in staging detection): path globs, name
+    # prefixes, or `tag:<name>`. A matching model is dropped from the reverse entirely.
+    exclude: list[str] = Field(default_factory=list)
+    # SqlDBM-style "exclude from naming rules": these models are kept verbatim as entities
+    # and the name heuristics (surrogate strip, rollup, FK guess) are skipped for them.
+    exempt: list[str] = Field(default_factory=list)
+    # Additive ReverseNaming overrides (staging_prefixes, rollup_prefixes, fk_suffixes,
+    # dv_* …) keyed by the dataclass field name. Folded via ReverseNaming.merged().
+    conventions: dict[str, list[str]] = Field(default_factory=dict)
+    # The project-default modeling policy (Phase 2). Per-layer target_form overrides it.
+    # `denormalized` runs no normalization detectors -> no behaviour change by default.
+    target_form: TargetForm = "denormalized"
 
     def is_empty(self) -> bool:
-        """True when no mapping is configured — the resolver then behaves exactly as if
-        no reverse config were present (byte-for-byte the historical exact-name match)."""
+        """True when no name-mapping is configured — the drift resolver then behaves
+        exactly as if no reverse config were present (historical exact-name match)."""
         return not self.model_map and not self.layers
+
+    def classification_is_empty(self) -> bool:
+        """True when nothing drives reverse CLASSIFICATION — no role-bearing layer, no
+        exclude/exempt, no convention overrides. Then `resolve_layer` falls back to the
+        legacy ReverseNaming classifiers byte-for-byte."""
+        return (
+            not any(layer.role or layer.match for layer in self.layers)
+            and not self.exclude
+            and not self.exempt
+            and not self.conventions
+        )
 
 
 class ProjectConfig(_Base):

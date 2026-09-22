@@ -21,6 +21,8 @@ staging prefix into the classification `ReverseNaming` drift already uses.
 
 from __future__ import annotations
 
+import fnmatch
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from mdl_reverse.lifting import DEFAULT_NAMING, ReverseNaming
@@ -117,3 +119,141 @@ def staging_naming_from(reverse: ReverseConfig | None) -> ReverseNaming:
     if not prefixes:
         return DEFAULT_NAMING
     return ReverseNaming.merged({"staging_prefixes": prefixes})
+
+
+# --- reverse-time classification (resolve_layer) -----------------------------
+#
+# The single ordered classifier the reverse pipeline consults to decide a dbt model's
+# role (mirrors resolve_model_name for drift). Order: exempt > exclude > configured
+# layers (first match) > the legacy ReverseNaming classifiers. With no classification
+# config, it is byte-for-byte the historical is_staging -> is_reporting_rollup -> entity
+# path, so behaviour is unchanged.
+
+# Roles that mean "not a governed business entity" — dropped from the model.
+EXCLUDED_ROLES = frozenset({"staging", "intermediate", "exclude"})
+# Data Vault roles seed a LogicalEntity.pattern directly.
+_DV_ROLE_PATTERN = {"hub": "hub", "link": "link", "satellite": "satellite", "bridge": "bridge"}
+
+
+@dataclass
+class LayerVerdict:
+    """How reverse should treat one dbt model. `role` drives inclusion/exclusion and
+    pattern; `target_form` is the modeling policy (Phase 2); `exempt` skips heuristics;
+    `pattern` is set when the role is a Data Vault kind."""
+
+    role: str  # LayerRole value, or "business" for the default/entity case
+    layer_name: str | None = None
+    target_form: str | None = None
+    exempt: bool = False
+    pattern: str | None = None
+
+
+def _as_list(v) -> list[str]:
+    if v is None:
+        return []
+    return [v] if isinstance(v, str) else list(v)
+
+
+def _name_matches(name: str, needles: list[str]) -> bool:
+    n = name.lower()
+    # a needle is a prefix ("dim_") — startswith; support a bare exact name too
+    return any(n == p.lower() or n.startswith(p.lower()) for p in needles)
+
+
+def _path_matches(path: str | None, globs: list[str]) -> bool:
+    if not path:
+        return False
+    p = path.lower()
+    return any(fnmatch.fnmatch(p, g.lower()) for g in globs)
+
+
+def _match_layer(match, name: str, tags: list[str], path: str | None) -> bool:
+    """True if any predicate on a ReverseMatch matches the model."""
+    if match is None:
+        return False
+    tagset = {t.lower() for t in (tags or [])}
+    if _name_matches(name, _as_list(getattr(match, "prefix", None))):
+        return True
+    suffixes = [s.lower() for s in _as_list(getattr(match, "suffix", None))]
+    if any(name.lower().endswith(s) for s in suffixes):
+        return True
+    if tagset & {t.lower() for t in _as_list(getattr(match, "tag", None))}:
+        return True
+    if _path_matches(path, _as_list(getattr(match, "path_glob", None))):
+        return True
+    return False
+
+
+def _excluded_by(spec: list[str], name: str, tags: list[str], path: str | None) -> bool:
+    """A reverse.exclude entry matches: `tag:x`, a path glob (contains / or *), or a
+    name prefix/exact."""
+    tagset = {t.lower() for t in (tags or [])}
+    for raw in spec:
+        s = raw.strip()
+        if s.lower().startswith("tag:"):
+            if s[4:].strip().lower() in tagset:
+                return True
+        elif "/" in s or "*" in s or "?" in s or "[" in s:
+            if _path_matches(path, [s]) or fnmatch.fnmatch(name.lower(), s.lower()):
+                return True
+        elif _name_matches(name, [s]):
+            return True
+    return False
+
+
+def resolve_layer(
+    model_name: str,
+    tags: list[str] | None,
+    path: str | None,
+    reverse: ReverseConfig | None,
+    naming: ReverseNaming | None = None,
+) -> LayerVerdict:
+    """Classify one dbt model into a role. Order: exempt > exclude > configured layers
+    (first match) > legacy ReverseNaming classifiers. `naming` is the (convention-folded)
+    ReverseNaming for the legacy fallback; defaults to DEFAULT_NAMING."""
+    from mdl_reverse import lifting
+
+    naming = naming or DEFAULT_NAMING
+    tags = tags or []
+
+    if reverse is not None and not reverse.classification_is_empty():
+        # 1. exempt — kept verbatim, heuristics skipped.
+        if _excluded_by(list(reverse.exempt), model_name, tags, path) or any(
+            e.lower() == model_name.lower() for e in reverse.exempt
+        ):
+            return LayerVerdict(role="business", exempt=True)
+        # 2. hard exclude.
+        if _excluded_by(list(reverse.exclude), model_name, tags, path):
+            return LayerVerdict(role="exclude")
+        # 3. configured layers, first match wins.
+        for layer in reverse.layers:
+            if layer.role and _match_layer(layer.match, model_name, tags, path):
+                return LayerVerdict(
+                    role=layer.role,
+                    layer_name=layer.name,
+                    target_form=layer.target_form,
+                    pattern=_DV_ROLE_PATTERN.get(layer.role),
+                )
+
+    # 4. legacy fallback — byte-for-byte the historical path.
+    if lifting.is_staging(model_name, tags, path, naming=naming):
+        return LayerVerdict(role="staging")
+    return LayerVerdict(role="business")
+
+
+def naming_from_config(reverse: ReverseConfig | None) -> ReverseNaming:
+    """Fold reverse.conventions (+ staging layer prefixes) into a ReverseNaming for the
+    reverse pipeline. Returns DEFAULT_NAMING when nothing is configured."""
+    overrides: dict[str, list[str]] = {}
+    if reverse is not None and reverse.conventions:
+        overrides.update({k: list(v) for k, v in reverse.conventions.items()})
+    base = ReverseNaming.merged(overrides) if overrides else DEFAULT_NAMING
+    # also fold staging-layer prefixes (as staging_naming_from does) so is_staging in the
+    # legacy fallback sees them
+    staging = staging_naming_from(reverse)
+    if staging is DEFAULT_NAMING:
+        return base
+    if base is DEFAULT_NAMING:
+        return staging
+    # merge both: union their staging_prefixes onto the convention-folded base
+    return ReverseNaming.merged({**overrides, "staging_prefixes": list(staging.staging_prefixes)})
