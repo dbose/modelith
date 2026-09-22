@@ -480,11 +480,29 @@ def reverse(
 
     reverse_naming = _load_reverse_naming(naming, out)
     floor = _resolve_auto_accept(auto_accept, review_all, naming, out)
+    reverse_config = _load_reverse_config(naming, out)
+    # Fold reverse.conventions (+ staging-layer prefixes) into the naming the pipeline
+    # uses, so a project's declared prefixes/suffixes drive the legacy classifiers too.
+    if reverse_config is not None:
+        from mdl_reverse.mapping import naming_from_config
+
+        folded = naming_from_config(reverse_config)
+        # keep any top-level --naming overrides winning by unioning both
+        if reverse_naming is not None:
+            from mdl_reverse.lifting import ReverseNaming
+
+            reverse_naming = ReverseNaming.merged(
+                {**(reverse_config.conventions or {}),
+                 "staging_prefixes": list(folded.staging_prefixes)}
+            )
+        else:
+            reverse_naming = folded
 
     ledger = DecisionLedger.load(out)
     result = run_reverse(
         proj, project_name=name, target=target, ledger=ledger,
         interactive=interactive, naming=reverse_naming, auto_accept=floor,
+        reverse_config=reverse_config,
     )
 
     if interactive:
@@ -581,6 +599,41 @@ def _load_reverse_naming(naming_file: Path | None, out: Path):
             )
 
     return ReverseNaming.merged(overrides) if overrides else None
+
+
+def _load_reverse_config(naming_file, out: Path):
+    """Build the typed ReverseConfig (layers with roles, exclude, exempt, conventions,
+    target_form) from the reverse: block — the target project's mdl-project.yaml, then a
+    --naming file on top. Returns a ReverseConfig or None when nothing is configured.
+    Used for reverse-time CLASSIFICATION (resolve_layer); drift loads its own copy from
+    model.config.reverse."""
+    from mdl_core.ir import ReverseConfig
+    from mdl_core.yaml_io import load_file
+
+    def _reverse_block(doc) -> dict:
+        if not isinstance(doc, dict):
+            return {}
+        if isinstance(doc.get("reverse"), dict):
+            return doc["reverse"]
+        nm = doc.get("naming")
+        if isinstance(nm, dict) and isinstance(nm.get("reverse"), dict):
+            return nm["reverse"]
+        return {}
+
+    block: dict = {}
+    for src in (out / "mdl-project.yaml", naming_file):
+        if src is None or not Path(src).exists():
+            continue
+        try:
+            block.update(_reverse_block(load_file(Path(src))) or {})
+        except Exception:  # noqa: BLE001 - a bad config must never block reverse
+            pass
+    if not block:
+        return None
+    try:
+        return ReverseConfig.model_validate(block)
+    except Exception:  # noqa: BLE001 - tolerate a partially-invalid block; drift/classify degrade
+        return None
 
 
 def _resolve_auto_accept(auto_accept: str | None, review_all: bool, naming_file, out: Path):

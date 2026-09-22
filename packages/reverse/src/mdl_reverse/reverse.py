@@ -165,6 +165,7 @@ def reverse(
     auto_accept: Confidence | None = DEFAULT_AUTO_ACCEPT,
     auto_accept_high: bool | None = None,
     naming: lifting.ReverseNaming | None = None,
+    reverse_config=None,
 ) -> ReverseResult:
     """Lift a manifest into IR. `auto_accept` is the confidence FLOOR: any inference at
     or above it is accepted automatically; everything below is left `proposed` for
@@ -195,13 +196,20 @@ def reverse(
     proposals: list[Decision] = []
     excluded: list[str] = []
 
-    # 1) Select business models (exclude staging/intermediate).
+    # 1) Classify every model into a role via the single ordered resolver (exempt >
+    # exclude > configured layers > legacy is_staging). With no classification config this
+    # is byte-for-byte the historical is_staging exclusion.
+    from mdl_reverse.mapping import EXCLUDED_ROLES, resolve_layer
+
     business: dict[str, ManifestModel] = {}
+    verdicts: dict[str, object] = {}
     for name, mm in manifest.models.items():
-        if lifting.is_staging(name, mm.tags, naming=naming):
+        v = resolve_layer(name, mm.tags, getattr(mm, "path", None), reverse_config, naming)
+        if v.role in EXCLUDED_ROLES:
             excluded.append(name)
             continue
         business[name] = mm
+        verdicts[name] = v
 
     known_models = set(business)
 
@@ -209,7 +217,9 @@ def reverse(
     le_by_name: dict[str, LogicalEntity] = {}
     for name in sorted(business):
         mm = business[name]
-        le, ce, entity_proposals = _lift_entity(mm, name, ledger, floor, naming)
+        le, ce, entity_proposals = _lift_entity(
+            mm, name, ledger, floor, naming, verdict=verdicts.get(name)
+        )
         model.add(ce)
         model.add(le)
         le_by_name[name] = le
@@ -232,6 +242,7 @@ def _lift_entity(
     ledger: DecisionLedger,
     floor: Confidence | None,
     naming: lifting.ReverseNaming = lifting.DEFAULT_NAMING,
+    verdict=None,
 ) -> tuple[LogicalEntity, ConceptualEntity, list[Decision]]:
     proposals: list[Decision] = []
     col_names = list(mm.columns)
@@ -239,6 +250,11 @@ def _lift_entity(
     # Recover ULIDs if this manifest came from our own emitter (round-trip fidelity).
     le_ulid = mm.meta.get("mdl_ulid") if isinstance(mm.meta, dict) else None
     le_ulid = le_ulid or new_ulid()
+
+    # A configured layer role that names a Data Vault kind (hub/link/satellite/bridge)
+    # seeds the pattern authoritatively — applied AFTER detection below so SCD2/DV column
+    # stripping still runs, but the declared role wins for the final pattern.
+    role_pattern = getattr(verdict, "pattern", None) if verdict is not None else None
 
     # SCD2 detection -> pattern + strip tracking columns from the logical view.
     scd = lifting.detect_scd2(col_names, naming)
@@ -350,7 +366,8 @@ def _lift_entity(
         name=name,
         realises=ce_ulid,
         attributes=attributes,
-        pattern=pattern,
+        # A declared layer role (hub/link/satellite/bridge) wins over the detected pattern.
+        pattern=role_pattern or pattern,
         unmanaged=True if is_rollup else None,
     )
     return le, ce, proposals
