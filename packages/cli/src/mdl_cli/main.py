@@ -2058,20 +2058,15 @@ def reverse_config_import(
     to inherit modeling standards. --dry-run previews without writing. A malformed source
     is rejected wholesale, never half-applied. Private repos: pass --token."""
     from mdl_core.yaml_io import dump_str, load_str
-    from mdl_reverse.remote_config import ImportError_, fetch_config_text, is_url
+    from mdl_reverse.remote_config import ImportError_, fetch_config_text
 
-    if is_url(src):
-        try:
-            text = fetch_config_text(src, token=token, allow_insecure=allow_insecure)
-        except ImportError_ as e:
-            typer.secho(str(e), fg=typer.colors.RED, err=True)
-            raise typer.Exit(1) from e
-    else:
-        p = Path(src)
-        if not p.exists():
-            typer.secho(f"no such file: {src}", fg=typer.colors.RED, err=True)
-            raise typer.Exit(1)
-        text = p.read_text(encoding="utf-8")
+    # One dispatch for every source kind (file / https / github: / a plugin scheme like
+    # mdl://) — the resolver registry picks the handler for the source's scheme.
+    try:
+        text = fetch_config_text(src, token=token, allow_insecure=allow_insecure)
+    except ImportError_ as e:
+        typer.secho(str(e), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from e
 
     data = load_str(text) or {}
     block = data.get("reverse") if isinstance(data, dict) and "reverse" in data else data

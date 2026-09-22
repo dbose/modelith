@@ -45,6 +45,15 @@ audit = [
 [project.scripts]
 mdl = "mdl_cli.main:main"
 
+# Plugin seam for `mdl reverse-config import`: a package can register a resolver for a new
+# source scheme (e.g. an enterprise `mdl://` Global-Standards registry) by exposing it here.
+# Each entry point loads to a ConfigResolver (see mdl_reverse.remote_config); installing the
+# package makes that scheme importable with no change to the open CLI. Modelith ships none —
+# the built-in file/https/github/gitlab resolvers are registered in-process.
+[project.entry-points."modelith.config_resolvers"]
+# example (in a separate enterprise package's pyproject, NOT here):
+#   mdl = "modelith_enterprise.registry:MdlResolver"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
