@@ -495,6 +495,33 @@ def reverse(
         if added:
             typer.secho(f"added {added} accepted relationship(s)", fg=typer.colors.GREEN)
 
+    # Refuse to write an entity-less ("hollow") model. This happens when every source
+    # model is staging/intermediate (correctly excluded) — e.g. a dbt project whose marts
+    # aren't generated yet, so only stg_* exist. Writing an empty mdl-project.yaml + .mdl/
+    # there is useless and (in the VS Code flow) later reads as "a model already exists".
+    # Fail loud with the remedy instead. --force means "overwrite an existing model", never
+    # "write an empty one", so it does not suppress this.
+    if result.logical_count() == 0:
+        if result.excluded:
+            sample = ", ".join(sorted(result.excluded)[:5])
+            more = "" if len(result.excluded) <= 5 else ", …"
+            typer.secho(
+                f"reversed 0 entities — all {len(result.excluded)} models were excluded as "
+                f"staging/intermediate ({sample}{more}). This warehouse has no mart/entity "
+                "models to reverse. Run `mdl generate`, or point reverse at a manifest that "
+                "includes mart models.",
+                fg=typer.colors.RED,
+                err=True,
+            )
+        else:
+            typer.secho(
+                "reversed 0 entities — the source contained no reversible tables. Check "
+                "that the manifest/DDL actually defines models.",
+                fg=typer.colors.RED,
+                err=True,
+            )
+        raise typer.Exit(1)
+
     write_reversed(result.model, out)
     ledger.save(out)
 
