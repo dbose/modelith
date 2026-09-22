@@ -1866,6 +1866,46 @@ def reverse_config_apply(
     typer.secho("applied reverse: config", fg=typer.colors.GREEN)
 
 
+@reverse_cfg_app.command("suggest")
+def reverse_config_suggest(
+    manifest: Path = typer.Option(..., "--manifest", help="Path to target/manifest.json"),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    fmt: str = typer.Option("yaml", "--format", help="yaml|json"),
+    apply: bool = typer.Option(
+        False, "--apply", help="Merge the suggestion into mdl-project.yaml (review the diff)"
+    ),
+) -> None:
+    """Discover a starting reverse: config from the warehouse — folder/prefix/tag analysis
+    proposes layers (role classification) and likely exclusions, deterministically (no AI).
+    Prints it to review; --apply merges it (comment-preserving) so you refine from a real
+    draft, not a blank page."""
+    from mdl_core.yaml_io import dump_str
+    from mdl_reverse.suggest import suggest_config
+
+    try:
+        proj = read_manifest(manifest)
+    except FileNotFoundError as e:
+        typer.secho(str(e), fg=typer.colors.RED, err=True)
+        raise typer.Exit(4) from e
+    report = suggest_config(proj)
+    if not report.block:
+        typer.secho(
+            "no clear folder/prefix conventions found — nothing to suggest", fg=typer.colors.YELLOW
+        )
+        return
+    if fmt == "json":
+        typer.echo(
+            json.dumps({"reverse": report.block, "rationale": report.rationale}, default=str)
+        )
+    else:
+        for line in report.rationale:
+            typer.secho(f"# {line}", fg=typer.colors.CYAN)
+        typer.echo(dump_str({"reverse": report.block}))
+    if apply:
+        _write_reverse_block(model_dir, report.block, source="suggest-config")
+        typer.secho("applied suggested reverse: config", fg=typer.colors.GREEN)
+
+
 @emit_app.command("semantic")
 def emit_semantic(
     fmt: str = typer.Option("metricflow", "--format", help="metricflow|osi"),

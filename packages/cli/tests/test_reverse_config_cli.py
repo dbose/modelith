@@ -78,3 +78,63 @@ def test_apply_replace_overwrites(tmp_path: Path):
     assert r.exit_code == 0, r.output
     text = _proj(m)
     assert "*_c" in text and "*_a" not in text
+
+
+def _write_manifest(path: Path, models: list) -> None:
+    import json
+    nodes = {}
+    for name, p in models:
+        fqn = ["wh"] + p.replace("models/", "").replace(".sql", "").split("/")
+        nodes[f"model.wh.{name}"] = {
+            "resource_type": "model", "name": name, "original_file_path": p, "fqn": fqn,
+            "columns": {}, "config": {}, "tags": [], "meta": {},
+        }
+    path.write_text(json.dumps({
+        "metadata": {"dbt_schema_version": "https://schemas.getdbt.com/dbt/manifest/v12.json"},
+        "nodes": nodes,
+    }), encoding="utf-8")
+
+
+def test_suggest_yaml_and_apply(tmp_path: Path):
+    scaffold_demo(tmp_path)
+    m = tmp_path / "model"
+    manifest = tmp_path / "manifest.json"
+    _write_manifest(manifest, [
+        ("stg_a", "models/staging/stg_a.sql"),
+        ("stg_b", "models/staging/stg_b.sql"),
+        ("dim_c", "models/marts/dim_c.sql"),
+        ("dim_d", "models/marts/dim_d.sql"),
+    ])
+    r = runner.invoke(app, ["reverse-config", "suggest", "--manifest", str(manifest)])
+    assert r.exit_code == 0, r.output
+    assert "role: dimension" in r.output or "role: staging" in r.output
+
+    r2 = runner.invoke(
+        app, ["reverse-config", "suggest", "--manifest", str(manifest), "-m", str(m), "--apply"]
+    )
+    assert r2.exit_code == 0, r2.output
+    assert "role:" in _proj(m)
+
+
+def test_suggest_json_shape(tmp_path: Path):
+    scaffold_demo(tmp_path)
+    manifest = tmp_path / "manifest.json"
+    _write_manifest(manifest, [
+        ("hub_a", "hub_a.sql"), ("hub_b", "hub_b.sql"),
+    ])
+    r = runner.invoke(
+        app, ["reverse-config", "suggest", "--manifest", str(manifest), "--format", "json"]
+    )
+    assert r.exit_code == 0, r.output
+    import json
+    data = json.loads(r.stdout)
+    assert "reverse" in data and "rationale" in data
+
+
+def test_suggest_no_convention_is_graceful(tmp_path: Path):
+    scaffold_demo(tmp_path)
+    manifest = tmp_path / "manifest.json"
+    _write_manifest(manifest, [("thing", "thing.sql"), ("other", "other.sql")])
+    r = runner.invoke(app, ["reverse-config", "suggest", "--manifest", str(manifest)])
+    assert r.exit_code == 0, r.output
+    assert "nothing to suggest" in r.output
