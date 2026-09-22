@@ -1635,6 +1635,76 @@ def decisions_reject(
     _set_decision(model_dir, signal_key, Verdict.rejected)
 
 
+@decisions_app.command("add")
+def decisions_add(
+    src: str = typer.Argument(
+        None,
+        help="Proposal JSON — one object or a list of "
+        '{kind, subject, evidence, confidence?, signal?}. A file path, or omit to read stdin.',
+    ),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+) -> None:
+    """Record externally-authored proposal(s) into the decision ledger as `proposed`, for
+    the user to Accept/Reject in the Reverse Review panel exactly like a built-in proposal.
+
+    The generic ledger-intake doorway: any external proposer — a script, a notebook, or a
+    paid AI package — feeds proposals here as JSON. Each becomes a Decision; provenance is
+    kept in evidence.source (default "external"). Never auto-accepted: it lands `proposed`,
+    and its confidence bands the initial verdict the same way an engine proposal does.
+    De-duplicated by signal_key, and a proposal already accepted/rejected is not re-added.
+    """
+    import sys as _sys
+
+    from mdl_reverse.ledger import Confidence, Decision, DecisionLedger
+
+    raw = Path(src).read_text(encoding="utf-8") if src and Path(src).exists() else (
+        src if src else _sys.stdin.read()
+    )
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as e:
+        typer.secho(f"invalid proposal JSON: {e}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from e
+    items = data if isinstance(data, list) else [data]
+
+    ledger = DecisionLedger.load(model_dir)
+    added = 0
+    skipped = 0
+    for item in items:
+        if not isinstance(item, dict) or "kind" not in item or "subject" not in item:
+            typer.secho(
+                "each proposal needs at least {kind, subject}", fg=typer.colors.RED, err=True
+            )
+            raise typer.Exit(1)
+        try:
+            conf = Confidence(str(item.get("confidence", "low")).lower().replace("_", "-"))
+        except ValueError:
+            typer.secho(
+                f"bad confidence {item.get('confidence')!r} (high|medium-high|medium|low)",
+                fg=typer.colors.RED, err=True,
+            )
+            raise typer.Exit(1) from None
+        evidence = dict(item.get("evidence") or {})
+        evidence.setdefault("source", item.get("source", "external"))
+        d = Decision(
+            kind=str(item["kind"]),
+            signal=str(item.get("signal", evidence.get("source", "external"))),
+            confidence=conf,
+            subject=str(item["subject"]),
+            evidence=evidence,
+        )
+        if ledger.should_propose(d):
+            ledger.record(d)
+            added += 1
+        else:
+            skipped += 1
+    ledger.save(model_dir)
+    typer.secho(
+        f"added {added} proposal(s)" + (f", skipped {skipped} already decided" if skipped else ""),
+        fg=typer.colors.GREEN,
+    )
+
+
 def _set_decision(model_dir: Path, signal_key: str, verdict: Verdict) -> None:
     ledger = DecisionLedger.load(model_dir)
     if signal_key not in ledger.decisions:
