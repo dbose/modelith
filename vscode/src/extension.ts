@@ -151,6 +151,15 @@ function suggestSiblingName(targetDir: string): string {
   return `${stem}-v${n}`;
 }
 
+/** The best default target for a reverse: the workspace's real Modelith model dir when
+ * one exists (so reverse feeds the model the user actually has — the sibling `model/`,
+ * not a stray folder inside the dbt project), else `model/` beside the source. This is
+ * only the DEFAULT — the user always confirms it in the target picker. */
+async function bestDefaultTarget(sourceDir: string): Promise<string> {
+  const existing = await findModelDir();
+  return existing ?? path.join(sourceDir, "model");
+}
+
 export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   const out = vscode.window.createOutputChannel("Modelith");
   ctx.subscriptions.push(out);
@@ -811,6 +820,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     cwd: string,
     args: string[],
     reverseView: ReverseReviewProvider,
+    sourceLabel?: string,
   ): Promise<void> => {
     const bin = await findMdl(cwd);
     // Where the CLI wrote. Default is <cwd>/<-o value>; the no-clobber guard may divert
@@ -818,17 +828,39 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     // the review panel reads the model we actually just created.
     const outFlag = args[args.indexOf("-o") + 1] ?? "model";
     let writtenDir = path.isAbsolute(outFlag) ? outFlag : path.join(cwd, outFlag);
+    // Trace what's happening so a surprising result (wrong dir, 0 entities) is diagnosable
+    // from the Modelith output channel without guesswork.
+    out.appendLine(`[reverse] source: ${sourceLabel ?? "(cwd)"}  (cwd ${cwd})`);
+    out.appendLine(`[reverse] target: ${writtenDir}  (force=${args.includes("--force")})`);
     let ok = false;
     let summary = "reverse complete";
+    // True when the CLI (or its output) reports nothing was reversed — a staging-only
+    // warehouse. We warn with the remedy and DON'T open an empty review panel.
+    let empty = false;
+    let emptyMsg = "";
     await vscode.window.withProgress(
       { location: vscode.ProgressLocation.Notification, title: "Modelith: reverse-engineering…" },
       async () => {
         const r = await runMdl(bin, args, cwd, out);
         out.appendLine(r.stdout + r.stderr);
+        const zeroEntities = /reversed 0 entities/i.test(r.stdout + r.stderr);
         if (r.code !== 0) {
+          if (zeroEntities) {
+            // Expected, guided failure (CLI ≥0.4.6): nothing was written.
+            empty = true;
+            emptyMsg = (r.stderr.trim() || r.stdout.trim()).split("\n")[0];
+            return;
+          }
           void vscode.window
             .showErrorMessage("Modelith: reverse failed.", "Show Output")
             .then((a) => a && out.show());
+          return;
+        }
+        // Belt-and-suspenders for an older CLI that exits 0 on a hollow reverse: refuse to
+        // celebrate or focus an empty model.
+        if (zeroEntities) {
+          empty = true;
+          emptyMsg = (r.stdout.split("\n").find((l) => /reversed 0 entities/i.test(l)) ?? "").trim();
           return;
         }
         ok = true;
@@ -837,7 +869,19 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
         if (diverted) writtenDir = diverted[1].trim();
       },
     );
+    if (empty) {
+      out.appendLine(`[reverse] ${emptyMsg}`);
+      void vscode.window
+        .showWarningMessage(
+          emptyMsg ||
+            "Modelith: reversed 0 entities — this warehouse has no mart/entity models (run `mdl generate` first).",
+          "Show Output",
+        )
+        .then((a) => a === "Show Output" && out.show());
+      return;
+    }
     if (!ok) return;
+    out.appendLine(`[reverse] ${summary.trim()}`);
     await reverseView.refresh(writtenDir);
     void vscode.commands.executeCommand("modelithReverse.focus");
     const pending = reverseView.pendingCount;
@@ -886,7 +930,9 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     }
 
     const state = classifyTarget(defaultTarget);
-    if (state === "empty") return { target: defaultTarget, force: false }; // happy path
+    // Happy path: an empty/absent target. Still confirm WHERE via the pre-filled picker
+    // (the user always sees and can correct the destination), but no modal is stacked.
+    if (state === "empty") return promptForFolder(defaultTarget);
 
     const rel = vscode.workspace.asRelativePath(defaultTarget);
     const NEW_FOLDER = "Reverse into a new folder";
@@ -1003,11 +1049,27 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
         source.id === "ddl"
           ? ["reverse", "--ddl", src, "-o", ".", "--no-review"]
           : ["reverse", "--project", src, "-o", ".", "--no-review"];
+      let empty = false;
       await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Notification, title: "Modelith: reverse-engineering…" },
         async () => {
           const r = await runMdl(bin, args, dir, out);
           out.appendLine(r.stdout + r.stderr);
+          const zeroEntities = /reversed 0 entities/i.test(r.stdout + r.stderr);
+          if (zeroEntities) {
+            // Staging-only warehouse: nothing to reverse. Warn with the remedy; don't
+            // open an empty review panel.
+            empty = true;
+            const msg = (r.stderr.trim() || r.stdout.trim()).split("\n")[0];
+            void vscode.window
+              .showWarningMessage(
+                msg ||
+                  "Modelith: reversed 0 entities — no mart/entity models to reverse (run `mdl generate` first).",
+                "Show Output",
+              )
+              .then((a) => a === "Show Output" && out.show());
+            return;
+          }
           if (r.code !== 0) {
             void vscode.window
               .showErrorMessage("Modelith: reverse failed.", "Show Output")
@@ -1018,6 +1080,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
           void vscode.window.showInformationMessage(`Modelith: ${summary.trim()}`);
         },
       );
+      if (empty) return;
       await reverse.refresh();
       void vscode.commands.executeCommand("modelithReverse.focus");
     }),
@@ -1083,11 +1146,13 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
         return;
       }
       // dbt reverse CAN drift (a manifest exists), so the drift arm is available.
-      const res = await resolveReverseTarget(path.join(projectDir, "model"), manifest);
+      // Default the target at the workspace's real model dir, not a folder inside the
+      // dbt project — then let the user confirm/redirect in the picker.
+      const res = await resolveReverseTarget(await bestDefaultTarget(projectDir), manifest);
       if (!res) return; // cancelled, or handed off to drift
       const args = ["reverse", "--project", manifest, "-o", res.target];
       if (res.force) args.push("--force");
-      await runReverseInto(projectDir, args, reverse);
+      await runReverseInto(projectDir, args, reverse, manifest);
       return;
     }
 
@@ -1097,11 +1162,11 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
       const cwd = isDir ? fsPath : path.dirname(fsPath);
       const ddlArg = fsPath;
       // DDL reverse has no manifest -> no drift comparison possible (arm hidden).
-      const res = await resolveReverseTarget(path.join(cwd, "model"), undefined);
+      const res = await resolveReverseTarget(await bestDefaultTarget(cwd), undefined);
       if (!res) return;
       const args = ["reverse", "--ddl", ddlArg, "-o", res.target];
       if (res.force) args.push("--force");
-      await runReverseInto(cwd, args, reverse);
+      await runReverseInto(cwd, args, reverse, ddlArg);
       return;
     }
 
