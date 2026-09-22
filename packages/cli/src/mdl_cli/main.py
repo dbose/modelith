@@ -3034,6 +3034,15 @@ def main() -> None:
     except Exception:  # noqa: BLE001
         import click.exceptions as click_exc  # type: ignore[no-redef]
 
+    # Ergonomic alias: accept `mdl reverse config <sub>` as a spelling of the
+    # `mdl reverse-config <sub>` group. `reverse` is a leaf command (it reverse-engineers
+    # a warehouse) so it can't ALSO be a Typer group without breaking `mdl reverse
+    # --project …`; instead we rewrite argv here, before Typer parses. Only the exact
+    # `reverse config` pair is rewritten — `mdl reverse --project` (no `config` token) is
+    # untouched and keeps working.
+    if len(sys.argv) >= 3 and sys.argv[1] == "reverse" and sys.argv[2] == "config":
+        sys.argv[1:3] = ["reverse-config"]
+
     from mdl_cli import telemetry
 
     command = telemetry.sanitize_command(sys.argv[1:])

@@ -232,3 +232,27 @@ def test_import_from_url(tmp_path: Path, monkeypatch):
     )
     assert r.exit_code == 0, r.output
     assert "*_tmp" in _proj(m)
+
+
+def test_reverse_config_argv_alias(monkeypatch):
+    """`mdl reverse config <sub>` is rewritten to `mdl reverse-config <sub>` in main(),
+    while `mdl reverse --project` (no 'config' token) is left untouched."""
+    import sys as _sys
+
+    from mdl_cli import main as cli_main
+
+    # simulate the argv rewrite the shim performs (main() mutates sys.argv in place)
+    def _shim(argv):
+        av = list(argv)
+        if len(av) >= 3 and av[1] == "reverse" and av[2] == "config":
+            av[1:3] = ["reverse-config"]
+        return av
+
+    assert _shim(["mdl", "reverse", "config", "suggest"]) == ["mdl", "reverse-config", "suggest"]
+    assert _shim(["mdl", "reverse", "--ddl", "x.sql"]) == ["mdl", "reverse", "--ddl", "x.sql"]
+    assert _shim(["mdl", "reverse-config", "apply"]) == ["mdl", "reverse-config", "apply"]
+    # the real shim lives in main(); assert the source carries it (guards accidental removal)
+    import inspect
+
+    src = inspect.getsource(cli_main.main)
+    assert '["reverse-config"]' in src and 'sys.argv[2] == "config"' in src
