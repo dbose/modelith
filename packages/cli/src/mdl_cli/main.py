@@ -1960,6 +1960,50 @@ def reverse_config_explain(
         typer.echo(f"  {r['model']:32} {r['role']}")
 
 
+@reverse_cfg_app.command("import")
+def reverse_config_import(
+    src: str = typer.Argument(
+        ..., help="A reverse: config to import — a local file path or an https:// URL"
+    ),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    replace: bool = typer.Option(
+        False, "--replace", help="Overwrite each imported key wholesale (default: merge additively)"
+    ),
+) -> None:
+    """Import a shared reverse: config (a team standard, a starter pack) from a file or URL
+    and merge it into mdl-project.yaml, comment-preserving — the git-native equivalent of
+    inheriting a team's modeling standards. Review the result as a git diff before you
+    commit. A malformed source is rejected wholesale, never half-applied."""
+    from mdl_core.yaml_io import load_str
+
+    # fetch
+    if src.startswith(("http://", "https://")):
+        import httpx
+
+        try:
+            resp = httpx.get(src, timeout=15.0, follow_redirects=True)
+            resp.raise_for_status()
+            text = resp.text
+        except Exception as e:  # noqa: BLE001 - network/HTTP errors -> a clean CLI error
+            typer.secho(f"could not fetch {src}: {e}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(1) from e
+    else:
+        p = Path(src)
+        if not p.exists():
+            typer.secho(f"no such file: {src}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(1)
+        text = p.read_text(encoding="utf-8")
+
+    data = load_str(text) or {}
+    block = data.get("reverse") if isinstance(data, dict) and "reverse" in data else data
+    if not isinstance(block, dict):
+        typer.secho("source is not a reverse: config (expected a mapping)",
+                    fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+    _write_reverse_block(model_dir, block, replace=replace, source=src)
+    typer.secho(f"imported reverse: config from {src}", fg=typer.colors.GREEN)
+
+
 @emit_app.command("semantic")
 def emit_semantic(
     fmt: str = typer.Option("metricflow", "--format", help="metricflow|osi"),

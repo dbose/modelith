@@ -1,0 +1,18 @@
+# Modelith reverse: config — dbt / Kimball dimensional starter pack.
+#
+# Import into your model with:
+#   mdl reverse-config import reverse-configs/kimball.yaml -m model
+# then review the diff and commit. Adjust the prefixes to your shop.
+#
+# Convention: staging models (stg_/int_) are excluded; dimensions (dim_) and facts
+# (fct_/fact_) are the governed entity layer. Marts model to a denormalized/dimensional
+# target by design.
+reverse:
+  layers:
+    - {name: staging, role: staging, match: {prefix: [stg_, staging_]}}
+    - {name: intermediate, role: intermediate, match: {prefix: [int_, intermediate_]}}
+    - {name: dimension, role: dimension, match: {prefix: dim_}, target_form: dimensional}
+    - {name: fact, role: fact, match: {prefix: [fct_, fact_]}, target_form: dimensional}
+  exclude:
+    - "*_tmp"
+    - "*_scratch"

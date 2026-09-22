@@ -1,0 +1,20 @@
+# Modelith reverse: config — Data Vault (hub / link / satellite) starter pack.
+#
+#   mdl reverse-config import reverse-configs/data-vault.yaml -m model
+#
+# Convention: hubs/links/satellites are the raw-vault entities (roles seed the Data Vault
+# pattern on each entity). Staging is excluded. Add your project's own hub_/link_/sat_
+# prefix variants under conventions if they differ from the defaults.
+reverse:
+  layers:
+    - {name: staging, role: staging, match: {prefix: [stg_, raw_]}}
+    - {name: hub, role: hub, match: {prefix: hub_}, target_form: data_vault}
+    - {name: link, role: link, match: {prefix: [link_, lnk_]}, target_form: data_vault}
+    - {name: satellite, role: satellite, match: {prefix: sat_}, target_form: data_vault}
+  conventions:
+    # extend the built-in DV detection with any non-standard prefixes/columns your vault uses
+    dv_hub_prefixes: [h_]
+    dv_link_prefixes: [l_]
+    dv_sat_prefixes: [s_]
+  exclude:
+    - "*_tmp"

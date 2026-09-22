@@ -177,3 +177,58 @@ def test_explain_reflects_config(tmp_path: Path):
     rows = {row["model"]: row for row in json.loads(r.stdout)}
     assert rows["dim_customer"]["role"] == "dimension"
     assert rows["orders_tmp"]["excluded"] is True
+
+
+def test_import_local_file_merges(tmp_path: Path):
+    scaffold_demo(tmp_path)
+    m = tmp_path / "model"
+    src = tmp_path / "shared.yaml"
+    src.write_text(
+        "reverse:\n  layers:\n    - {name: dims, role: dimension, match: {prefix: dim_}}\n",
+        encoding="utf-8",
+    )
+    r = runner.invoke(app, ["reverse-config", "import", str(src), "-m", str(m)])
+    assert r.exit_code == 0, r.output
+    assert "role: dimension" in _proj(m)
+
+
+def test_import_missing_file_errors(tmp_path: Path):
+    scaffold_demo(tmp_path)
+    m = tmp_path / "model"
+    r = runner.invoke(app, ["reverse-config", "import", str(tmp_path / "nope.yaml"), "-m", str(m)])
+    assert r.exit_code == 1, r.output
+    assert "no such file" in r.output.lower()
+
+
+def test_import_malformed_rejected(tmp_path: Path):
+    scaffold_demo(tmp_path)
+    m = tmp_path / "model"
+    src = tmp_path / "bad.yaml"
+    src.write_text("reverse:\n  layers:\n    - {name: x, role: bogus_role}\n", encoding="utf-8")
+    before = _proj(m)
+    r = runner.invoke(app, ["reverse-config", "import", str(src), "-m", str(m)])
+    assert r.exit_code == 1, r.output
+    assert _proj(m) == before  # nothing written
+
+
+def test_import_from_url(tmp_path: Path, monkeypatch):
+    scaffold_demo(tmp_path)
+    m = tmp_path / "model"
+
+    class _Resp:
+        text = "reverse:\n  exclude: ['*_tmp']\n"
+
+        def raise_for_status(self):
+            return None
+
+    def _fake_get(url, **kw):
+        return _Resp()
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "get", _fake_get)
+    r = runner.invoke(
+        app, ["reverse-config", "import", "https://example.com/team/reverse.yaml", "-m", str(m)]
+    )
+    assert r.exit_code == 0, r.output
+    assert "*_tmp" in _proj(m)
