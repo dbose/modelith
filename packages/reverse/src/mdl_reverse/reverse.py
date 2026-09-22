@@ -219,7 +219,7 @@ def reverse(
     for name in sorted(business):
         mm = business[name]
         rel_proposals = _infer_relationships(
-            mm, name, le_by_name, known_models, ledger, model, floor
+            mm, name, le_by_name, known_models, ledger, model, floor, naming
         )
         proposals.extend(rel_proposals)
 
@@ -242,7 +242,7 @@ def _lift_entity(
 
     # SCD2 detection -> pattern + strip tracking columns from the logical view.
     scd = lifting.detect_scd2(col_names, naming)
-    dv = lifting.detect_data_vault(name, col_names)
+    dv = lifting.detect_data_vault(name, col_names, naming)
     pattern = None
     if scd.is_scd2:
         pattern = "scd2"
@@ -385,6 +385,7 @@ def _infer_relationships(
     ledger: DecisionLedger,
     model: Model,
     floor: Confidence | None,
+    naming: lifting.ReverseNaming = lifting.DEFAULT_NAMING,
 ) -> list[Decision]:
     proposals: list[Decision] = []
     le = le_by_name[name]
@@ -411,7 +412,7 @@ def _infer_relationships(
     # Medium-confidence: name+type heuristic (*_id matching a model). Proposed unless
     # the auto-accept floor reaches medium (then accepted + materialised, like a test).
     declared = {(c, t) for c, t in mm.relationship_tests}
-    for guess in lifting.foreign_key_candidates(name, list(mm.columns), known_models):
+    for guess in lifting.foreign_key_candidates(name, list(mm.columns), known_models, naming):
         if (guess.column, guess.target_entity) in declared:
             continue  # already covered by a test
         target_le = le_by_name.get(guess.target_entity)
