@@ -122,6 +122,10 @@ export function registerChatParticipant(ctx: vscode.ExtensionContext): void {
         await driftCommand(dir, request, stream, token);
         return;
       }
+      if (request.command === "config") {
+        await configCommand(dir, request, stream, token);
+        return;
+      }
 
       const prompt = request.prompt.trim();
       const rows = await readModel<EntityRow[]>(dir, ["model", "entities"]);
@@ -324,8 +328,9 @@ async function renderSummary(dir: string, stream: vscode.ChatResponseStream): Pr
     stream.markdown(`_Not in any subject area:_ ${ctx.unassigned_entities.join(", ")}\n\n`);
   }
   stream.markdown(
-    "Ask about a specific entity by name, or use `@modelith /explain <entity>` and " +
-      "`@modelith /list`. For editing, switch Copilot Chat to **Agent mode** — the " +
+    "Ask about a specific entity by name, or use `@modelith /explain <entity>`, " +
+      "`@modelith /list`, `@modelith /drift`, `@modelith /config`. For editing, switch " +
+      "Copilot Chat to **Agent mode** — the " +
       "Modelith tools (create/update entities, ontology search) run there.",
   );
 }
@@ -419,6 +424,100 @@ async function driftCommand(
     stream.markdown(
       `\n\n_${report.breaking_count} breaking change(s) need a human decision — not auto-reconciled._`,
     );
+  }
+}
+
+interface ClassifiedRow {
+  model: string;
+  role: string;
+  layer: string | null;
+  exempt: boolean;
+  excluded: boolean;
+  target_form: string;
+  pattern: string | null;
+}
+
+/** `@modelith /config` — explain how the reverse: config classifies the warehouse.
+ *
+ * Runs `mdl reverse config explain --format json` (the same shape the Warehouse Config
+ * view and MCP tool consume), grounds the user's Copilot on it (the classification is
+ * authoritative — never re-derived), and offers Suggest/Import buttons. Falls back to a
+ * deterministic role summary when no model is available or there's no manifest. */
+async function configCommand(
+  dir: string,
+  request: vscode.ChatRequest,
+  stream: vscode.ChatResponseStream,
+  token: vscode.CancellationToken,
+): Promise<void> {
+  const manifest = await findManifestPath();
+  if (!manifest) {
+    stream.markdown(
+      "No dbt manifest found. Run `dbt compile` / `dbt parse` (or set " +
+        "`modelith.manifestPath`), then ask again.",
+    );
+    return;
+  }
+  const bin = await findMdl(dir);
+  const r = await runMdl(
+    bin,
+    ["reverse-config", "explain", "--manifest", manifest, "-m", ".", "--format", "json"],
+    dir,
+  );
+  let rows: ClassifiedRow[];
+  try {
+    rows = JSON.parse(r.stdout) as ClassifiedRow[];
+  } catch {
+    stream.markdown(`⚠️ Could not read the classification. ${r.stderr.trim()}`);
+    return;
+  }
+  if (rows.length === 0) {
+    stream.markdown("No dbt models found in the manifest.");
+    return;
+  }
+
+  const facts = JSON.stringify(rows, null, 2);
+  const system =
+    "You are Modelith, explaining how a warehouse's dbt models are classified for reverse-" +
+    "engineering, from the project's reverse: config. Use ONLY the JSON facts. Each row's " +
+    "`role` and `excluded` are authoritative — never re-derive them. Summarise which models " +
+    "are governed entities (grouped by role: dimensions, facts, hubs, …) and which are " +
+    "excluded (staging/scratch) and why. Call out anything that looks misclassified (e.g. a " +
+    "mart excluded as staging) so the user can fix a rule. Suggest running Suggest Config if " +
+    "no layers matched. Be concise, use the model's own names, and use Markdown.";
+
+  if (request.model) {
+    try {
+      const messages = [
+        vscode.LanguageModelChatMessage.User(`${system}\n\nCLASSIFICATION FACTS:\n${facts}`),
+        vscode.LanguageModelChatMessage.User(
+          request.prompt || "How does Modelith classify my warehouse?",
+        ),
+      ];
+      const res = await request.model.sendRequest(messages, {}, token);
+      for await (const chunk of res.text) stream.markdown(chunk);
+    } catch {
+      renderConfigFallback(rows, stream);
+    }
+  } else {
+    renderConfigFallback(rows, stream);
+  }
+
+  // Actionable trailer: jump to the config workflow.
+  stream.button({ command: "modelith.configSuggest", title: "Suggest Config" });
+  stream.button({ command: "modelith.configImport", title: "Import a Standard" });
+}
+
+/** Deterministic classification summary when no language model is available. */
+function renderConfigFallback(rows: ClassifiedRow[], stream: vscode.ChatResponseStream): void {
+  const byRole = new Map<string, string[]>();
+  for (const r of rows) {
+    const list = byRole.get(r.role) ?? [];
+    list.push(r.model);
+    byRole.set(r.role, list);
+  }
+  stream.markdown("**Warehouse classification**\n\n");
+  for (const [role, models] of byRole) {
+    stream.markdown(`- **${role}** (${models.length}): ${models.slice(0, 8).join(", ")}\n`);
   }
 }
 

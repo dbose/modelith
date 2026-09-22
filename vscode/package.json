@@ -71,6 +71,10 @@
           {
             "name": "drift",
             "description": "Explain drift vs the dbt manifest and recommend fixes. Optionally name a model."
+          },
+          {
+            "name": "config",
+            "description": "Explain how the reverse: config classifies your dbt models (roles, layers, exclusions)."
           }
         ]
       }

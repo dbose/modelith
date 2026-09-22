@@ -1,10 +1,11 @@
 """The Modelith MCP server (stdio).
 
-Seven tools, mirroring the AI spec. Reads (`list_entities`, `get_entity`,
-`search_ontology`, `get_model_context`, `validate`) come from the shared query
-layer; writes (`create_entity`, `update_entity`) go through
-`mdl_core.commands.apply_command` so they are validated and fingerprint-guarded
-exactly like a canvas or CLI edit.
+Reads (`list_entities`, `get_entity`, `search_ontology`, `get_model_context`,
+`validate`, `explain_drift`, `explain_reverse_config`, `suggest_reverse_config`) come
+from the shared query/reverse layers; writes (`create_entity`, `update_entity`) go
+through `mdl_core.commands.apply_command`, and `apply_reverse_config` merges into the
+reverse: block validated-before-write — so every write is validated and guarded exactly
+like a canvas or CLI edit.
 
 Direct local write is intentional (spec §1): this runs against the engineer's own
 checkout, a different trust boundary than the SME app's propose-as-PR flow.
@@ -146,6 +147,66 @@ def build_server(repo_dir: Path) -> FastMCP:
 
         return _json(explain_report(report, _file_for))
 
+    def _manifest_path(manifest: str | None) -> Path:
+        p = Path(manifest) if manifest else repo_dir / "target" / "manifest.json"
+        return p if p.is_absolute() else repo_dir / p
+
+    @mcp.tool()
+    def explain_reverse_config(manifest: str | None = None) -> str:
+        """Show how the project's reverse: config classifies every dbt model — its role
+        (dimension/fact/hub/staging/…), the matched layer, whether it's excluded or
+        exempt, its effective target_form, and any seeded pattern. Grounding: call this to
+        see how Modelith currently reads the warehouse before proposing config changes.
+
+        `manifest` defaults to <repo>/target/manifest.json. Returns an error object if no
+        manifest is found."""
+        from mdl_reverse.manifest import read_manifest
+        from mdl_reverse.mapping import naming_from_config, resolve_layer
+
+        man = _manifest_path(manifest)
+        try:
+            proj = read_manifest(man)
+        except FileNotFoundError:
+            return _json({"error": f"no dbt manifest at {man} — run `dbt compile` first"})
+        repo = ModelRepo.load(repo_dir)
+        reverse = getattr(repo.model.config, "reverse", None)
+        naming = naming_from_config(reverse)
+        default_form = getattr(reverse, "target_form", None) or "denormalized"
+        rows = []
+        for name in sorted(proj.models):
+            mm = proj.models[name]
+            v = resolve_layer(name, mm.tags, getattr(mm, "path", None), reverse, naming)
+            rows.append({
+                "model": name,
+                "role": v.role,
+                "layer": v.layer_name,
+                "exempt": v.exempt,
+                "excluded": v.role in ("staging", "intermediate", "exclude"),
+                "target_form": v.target_form or default_form,
+                "pattern": v.pattern,
+            })
+        return _json(rows)
+
+    @mcp.tool()
+    def suggest_reverse_config(manifest: str | None = None) -> str:
+        """Propose a starting reverse: config from the warehouse's own structure — folder
+        layout, name prefixes and tags mapped to layer roles, plus likely exclusions. This
+        is DETERMINISTIC (frequency/pattern analysis, no inference), so it's a safe
+        grounding baseline to build on, not a guess. Returns {reverse, rationale}; it does
+        NOT write anything — apply it via the config-authoring flow after review.
+
+        `manifest` defaults to <repo>/target/manifest.json."""
+        from mdl_reverse.manifest import read_manifest
+        from mdl_reverse.suggest import suggest_config
+
+        man = _manifest_path(manifest)
+        try:
+            proj = read_manifest(man)
+        except FileNotFoundError:
+            return _json({"error": f"no dbt manifest at {man} — run `dbt compile` first"})
+        report = suggest_config(proj)
+        return _json({"reverse": report.block, "rationale": report.rationale})
+
     # --- writes (validated + fingerprint-guarded via apply_command) -------------
 
     @mcp.tool()
@@ -181,6 +242,35 @@ def build_server(repo_dir: Path) -> FastMCP:
         if le is None:
             return _json({"error": f"no entity named {name!r}"})
         return _apply_updates(repo_dir, le.id, le.realises, changes)
+
+    @mcp.tool()
+    def apply_reverse_config(block: dict[str, Any], replace: bool = False) -> str:
+        """Merge a partial reverse: config `block` (layers/exclude/exempt/conventions/
+        model_map/target_form) into mdl-project.yaml. Guarded: the merged result is
+        validated through the typed config and rejected wholesale if invalid — never a
+        half-write. Additive by default (lists union, dicts merge); `replace` overwrites
+        each provided key. Prefer suggest_reverse_config first to ground the block, and
+        let the human review the git diff before committing. Returns the merged block or
+        an error object."""
+        from mdl_core.ir import ReverseConfig
+        from mdl_core.yaml_io import dump_file, load_file
+        from mdl_reverse.config_io import merge_reverse_block
+
+        if not isinstance(block, dict) or not block:
+            return _json({"error": "block must be a non-empty reverse: config mapping"})
+        proj_path = repo_dir / "mdl-project.yaml"
+        if not proj_path.exists():
+            return _json({"error": f"no mdl-project.yaml in {repo_dir}"})
+        doc = load_file(proj_path)
+        existing = doc.get("reverse") if isinstance(doc.get("reverse"), dict) else {}
+        merged = merge_reverse_block(existing, block, replace=replace)
+        try:
+            ReverseConfig.model_validate(merged)
+        except Exception as e:  # noqa: BLE001 - reject a bad merge, surface the reason
+            return _json({"error": f"resulting reverse: block is invalid — not written ({e})"})
+        doc["reverse"] = merged
+        dump_file(proj_path, doc)
+        return _json({"ok": True, "reverse": merged})
 
     return mcp
 
