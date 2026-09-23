@@ -33,6 +33,81 @@ def read_schema_dict(data: dict) -> ManifestProjection:
     return _project(data)
 
 
+def read_sources_yml(path: str | Path) -> ManifestProjection:
+    """Read a dbt `sources.yml` (as emitted by dbt-codegen's `generate_source`) into a
+    ManifestProjection — the live-database front door.
+
+    `generate_source` introspects a live warehouse via the dbt adapter and prints a
+    `sources:` block: one entry per schema, each with `tables:`, each table carrying
+    `columns:` with `data_type` (when run with `include_data_types: true`). That is a
+    different shape from an emitted model's `models:` block (which `read_schema_yml`
+    walks), so this is its own reader — but it normalises to the SAME ManifestProjection
+    every other front door produces, so the reverse engine, classification, confidence
+    ledger and writer are all reused unchanged.
+
+    What the live source does and does NOT carry, and how the engine treats it:
+    - columns + types -> `ManifestColumn.data_type` (folded to a base domain in the engine).
+    - nullability -> `meta["nullable"]` when the adapter reports it (honoured at
+      reverse.py:330); absent otherwise, so it keeps the historical `True` default.
+    - NO primary/foreign keys: warehouses rarely enforce them and information_schema FK
+      metadata is inconsistent across adapters, so `generate_source` omits them. Keys and
+      relationships therefore come from the engine's name-based inference (business-key
+      candidates, the `*_id` FK heuristic -> medium-confidence proposals a human triages),
+      not from this reader. `meta["pk"]` is left absent and `relationship_tests` empty.
+    """
+    text = Path(path).read_text(encoding="utf-8")
+    data = load_str(text) or {}
+    return read_sources_dict(data)
+
+
+def read_sources_dict(data: dict) -> ManifestProjection:
+    """Project an already-parsed `sources.yml` dict. Split from the file reader so tests
+    (and the live-connect path, which captures generate_source on stdout) can pass a dict
+    directly."""
+    models: dict[str, ManifestModel] = {}
+    warnings: list[str] = []
+    for source in data.get("sources", []) or []:
+        database = source.get("database")
+        for table in source.get("tables", []) or []:
+            name = table.get("name")
+            if not name:
+                continue
+            if name in models:
+                # Two schemas exposing the same table name would collide on the model key;
+                # keep the first and warn rather than silently overwrite.
+                warnings.append(
+                    f"duplicate table name {name!r} across sources; keeping the first"
+                )
+                continue
+            cols: dict[str, ManifestColumn] = {}
+            for col in table.get("columns", []) or []:
+                cname = col.get("name")
+                if not cname:
+                    continue
+                cmeta: dict = {}
+                # generate_source can carry nullability when the adapter reports it; honour
+                # it so the engine infers NOT NULL instead of defaulting to nullable.
+                if "nullable" in col:
+                    cmeta["nullable"] = bool(col.get("nullable"))
+                cols[cname] = ManifestColumn(
+                    name=cname,
+                    data_type=(col.get("data_type") or col.get("type") or None),
+                    description=col.get("description") or None,
+                    meta=cmeta,
+                )
+            meta: dict = {}
+            if database:
+                meta["source_database"] = database
+            models[name] = ManifestModel(
+                name=name,
+                unique_id=f"model.live.{name}",
+                columns=cols,
+                description=table.get("description") or None,
+                meta=meta,
+            )
+    return ManifestProjection(models=models, warnings=warnings)
+
+
 def _project(data: dict) -> ManifestProjection:
     models: dict[str, ManifestModel] = {}
     for entry in data.get("models", []) or []:

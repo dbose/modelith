@@ -18,11 +18,17 @@ from mdl_reverse.reverse import (
     classification_summary,
     reverse,
 )
-from mdl_reverse.schema_reader import read_schema_yml
+from mdl_reverse.schema_reader import (
+    read_schema_yml,
+    read_sources_dict,
+    read_sources_yml,
+)
 
 __all__ = [
     "read_manifest",
     "read_schema_yml",
+    "read_sources_yml",
+    "read_sources_dict",
     "ManifestModel",
     "ManifestColumn",
     "compute_drift",
