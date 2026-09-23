@@ -26,8 +26,11 @@ from mdl_server.identity import (
     resolve_identity,
     write_denied_reason,
 )
-from mdl_server.ontology_api import ontology_router
 from mdl_server.projection import project
+
+# NOTE: mdl_server.ontology_api is imported lazily where the router is registered — it
+# pulls the RDF backend (the `ontology` extra), which the core install may not have. A
+# top-level import here would make the whole server fail to start without the extra.
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -296,8 +299,20 @@ def create_app(
         )
         return JSONResponse({"ok": True, "count": len(records), "records": records})
 
-    # Ontology + glossary read APIs — always available (read-only + edit modes).
-    app.include_router(ontology_router(model_dir, lambda: _load().model, read_only=read_only))
+    # Ontology API — only when the `ontology` extra (RDF backend) is installed. Without
+    # it, the server still starts and every other route works; /api/ontology is omitted.
+    try:
+        from mdl_server.ontology_api import ontology_router
+
+        app.include_router(ontology_router(model_dir, lambda: _load().model, read_only=read_only))
+    except ImportError:
+        import logging
+
+        logging.getLogger("mdl_server").info(
+            "ontology API disabled: RDF backend not installed "
+            "(install modelith-dbt[ontology] to enable /api/ontology)"
+        )
+    # Glossary + subject-area read APIs — always available (read-only + edit modes).
     app.include_router(glossary_router(lambda: _load().model))
     app.include_router(subject_area_router(lambda: _load().model))
 

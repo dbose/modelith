@@ -19,15 +19,6 @@ from mdl_emit_graph import emit_cypher
 from mdl_emit_pydantic import emit_pydantic_models
 from mdl_emit_semantic import emit_metricflow, emit_osi, import_osi, validate_joinability
 from mdl_governance import Profile, build_graph, emit_openlineage, run_conformance
-from mdl_ontology import (
-    build_registry,
-    check_layers,
-    coverage_report,
-    export_r2rml,
-    export_rdf,
-    export_shacl,
-    serialize,
-)
 
 from mdl_cli.scaffold import scaffold
 from mdl_core.diagnostics import Severity
@@ -70,6 +61,32 @@ def _load(model_dir: Path) -> ModelRepo:
     except FileNotFoundError as e:
         typer.secho(str(e), fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from e
+
+
+def _ontology():
+    """Import the ontology stack, or exit with an install hint.
+
+    The RDF stack (rdflib today, pyoxigraph after the backend swap) ships only with
+    the ``ontology`` extra, so the core install stays free of it — some enterprise
+    package mirrors quarantine the ``rdflib`` coordinate, which would otherwise block
+    every ``mdl`` command. Ontology/export-RDF commands call this first; everything
+    else (validate, reverse, generate, emit dbt/pydantic/contract/graph) never imports
+    it. Mirrors the audit/OpenTelemetry optional-dependency pattern
+    (``mdl_server.audit._try_build_otel_logger``).
+    """
+    try:
+        import mdl_ontology
+
+        return mdl_ontology
+    except ImportError as e:
+        typer.secho(
+            "This command needs the ontology stack (RDF/OWL/SHACL/R2RML). "
+            "Install it with:  uv tool install 'modelith-dbt[ontology]'  "
+            "(or: pip install 'modelith-dbt[ontology]').",
+            fg=typer.colors.RED,
+            err=True,
+        )
+        raise typer.Exit(4) from e
 
 
 def _project_name_from_path(path: Path) -> str:
@@ -289,18 +306,17 @@ def generate(
         typer.secho(f"  {verb} {label} to {dest}", fg=typer.colors.GREEN)
 
     if emit_r2rml:
-        from mdl_ontology import r2rml_coverage
-
-        reg = build_registry(model_dir, repo.model.config.ontology_stack)
+        mo = _ontology()
+        reg = mo.build_registry(model_dir, repo.model.config.ontology_stack)
         reg.load()
         # generate is a bulk "produce everything" flow, so it mints fallback IRIs for
         # unmapped objects rather than failing — but warns so the gap is visible. Use
         # `mdl export r2rml` (fail-loud) when coverage must be enforced.
-        cov = r2rml_coverage(repo.model, reg)
+        cov = mo.r2rml_coverage(repo.model, reg)
         if not cov.ok:
             typer.secho(f"  r2rml: {cov.summary()}", fg=typer.colors.YELLOW)
-        text = serialize(
-            export_r2rml(repo.model, target=tgt, registry=reg, allow_unmapped=True),
+        text = mo.serialize(
+            mo.export_r2rml(repo.model, target=tgt, registry=reg, allow_unmapped=True),
             "turtle",
         )
         dest = model_dir / "mapping.r2rml.ttl"
@@ -916,8 +932,9 @@ def ontology_search(
     limit: int = typer.Option(10, "--limit"),
 ) -> None:
     """Search loaded industry vocabularies for matching classes (spec §3.2)."""
+    mo = _ontology()
     repo = _load(model_dir)
-    reg = build_registry(model_dir, repo.model.config.ontology_stack)
+    reg = mo.build_registry(model_dir, repo.model.config.ontology_stack)
     loaded = reg.load()
     if not loaded:
         typer.secho(
@@ -936,16 +953,17 @@ def ontology_check(
     coverage: bool = typer.Option(True, "--coverage/--no-coverage"),
 ) -> None:
     """Layer/alignment rules + industry-coverage report (spec §3.1)."""
+    mo = _ontology()
     repo = _load(model_dir)
-    reg = build_registry(model_dir, repo.model.config.ontology_stack)
+    reg = mo.build_registry(model_dir, repo.model.config.ontology_stack)
     reg.load()
-    diags = check_layers(repo.model, registry=reg)
+    diags = mo.check_layers(repo.model, registry=reg)
     for d in diags.items:
         color = typer.colors.RED if d.severity == Severity.error else typer.colors.YELLOW
         typer.secho(f"{d.code} [{d.severity.value}] {d.message}", fg=color)
 
     if coverage:
-        rpt = coverage_report(repo.model)
+        rpt = mo.coverage_report(repo.model)
         typer.echo("")
         typer.secho(
             f"industry alignment coverage: {rpt.coverage_pct}% "
@@ -1000,7 +1018,8 @@ def ontology_vendor(
     ontology_stack with `path: ontologies/industry/<name>`."""
     import urllib.request
 
-    from mdl_ontology.lock import Lock
+    mo = _ontology()
+    Lock = mo.Lock
 
     dest = model_dir / "ontologies" / "industry" / source
     dest.mkdir(parents=True, exist_ok=True)
@@ -1032,13 +1051,13 @@ def ontology_add(
 
     Copies the file to ontologies/<layer>/<name>.<ext> and appends a `local` source
     to mdl-project.yaml, so `mdl serve`/`mdl ontology search` browse it immediately."""
-    from mdl_ontology import save_ontology_upload
+    mo = _ontology()
 
     if not file.exists():
         typer.secho(f"no such file: {file}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
     try:
-        result = save_ontology_upload(
+        result = mo.save_ontology_upload(
             model_dir,
             filename=file.name,
             content=file.read_bytes(),
@@ -1083,7 +1102,8 @@ def ontology_lock(
 
     Pass --prefix/--prefix-iri so the layer's prefixed alignments (e.g.
     fibo-fnd-pty-pty:PartyInRole) resolve offline against the fetched cache."""
-    from mdl_ontology import LOCK_MODES, Lock, compute_lock
+    mo = _ontology()
+    LOCK_MODES, Lock, compute_lock = mo.LOCK_MODES, mo.Lock, mo.compute_lock
 
     if mode not in LOCK_MODES:
         typer.secho(
@@ -1133,7 +1153,8 @@ def ontology_fetch(
 ) -> None:
     """Fetch + hash-verify every locked ontology layer into .mdl/ontology-cache/
     (spec §3). Fail-closed on a hash mismatch, like `dbt deps` / `npm ci`."""
-    from mdl_ontology import FetchError, Lock, fetch_all
+    mo = _ontology()
+    FetchError, Lock, fetch_all = mo.FetchError, mo.Lock, mo.fetch_all
 
     lock = Lock.load(model_dir)
     if not lock.ontology_layers:
@@ -1176,14 +1197,14 @@ def ontology_align(
     records ranked candidates in .mdl/decisions.yaml. A human accepts them through the
     SME app / PR, which is what writes the alignment (and its audit trail) into the
     model YAML. Nothing here changes the model."""
-    from mdl_ontology import align_model, confidence_band
+    mo = _ontology()
 
     from mdl_reverse.ledger import Confidence, Decision, DecisionLedger
 
     repo = _load(model_dir)
-    reg = build_registry(model_dir, repo.model.config.ontology_stack)
+    reg = mo.build_registry(model_dir, repo.model.config.ontology_stack)
     reg.load()
-    proposals = align_model(
+    proposals = mo.align_model(
         repo.model,
         reg,
         threshold=threshold,
@@ -1204,7 +1225,7 @@ def ontology_align(
         d = Decision(
             kind="ontology_alignment",
             signal="lexical_match",
-            confidence=Confidence(confidence_band(best.confidence)),
+            confidence=Confidence(mo.confidence_band(best.confidence)),
             subject=f"{p.object_name} -> {best.prefixed or best.uri} ({best.source})",
             evidence={
                 "object_id": p.object_id,
@@ -2211,11 +2232,12 @@ def export_rdf_cmd(
     out: Path = typer.Option(None, "--out", "-o"),
 ) -> None:
     """Export RDF/OWL with SKOS alignments (spec §3.3)."""
+    mo = _ontology()
     repo = _load(model_dir)
-    reg = build_registry(model_dir, repo.model.config.ontology_stack)
+    reg = mo.build_registry(model_dir, repo.model.config.ontology_stack)
     reg.load()
-    g = export_rdf(repo.model, layer=layer, registry=reg)
-    _emit_text(serialize(g, fmt), out, "rdf")
+    g = mo.export_rdf(repo.model, layer=layer, registry=reg)
+    _emit_text(mo.serialize(g, fmt), out, "rdf")
 
 
 @export_app.command("shacl")
@@ -2225,9 +2247,10 @@ def export_shacl_cmd(
     out: Path = typer.Option(None, "--out", "-o"),
 ) -> None:
     """Export SHACL shapes generated from the logical model (spec §3.3)."""
+    mo = _ontology()
     repo = _load(model_dir)
-    g = export_shacl(repo.model)
-    _emit_text(serialize(g, fmt), out, "shacl")
+    g = mo.export_shacl(repo.model)
+    _emit_text(mo.serialize(g, fmt), out, "shacl")
 
 
 @export_app.command("r2rml")
@@ -2252,22 +2275,22 @@ def export_r2rml_cmd(
     ontology mapping. By default this fails loudly listing what's unmapped; pass
     --allow-unmapped to mint fallback IRIs on the project base instead.
     """
-    from mdl_ontology import UnmappedError
+    mo = _ontology()
 
     repo = _load(model_dir)
     tgt = target or repo.model.config.dbt_target
-    reg = build_registry(model_dir, repo.model.config.ontology_stack)
+    reg = mo.build_registry(model_dir, repo.model.config.ontology_stack)
     reg.load()
     try:
-        g = export_r2rml(
+        g = mo.export_r2rml(
             repo.model, target=tgt, registry=reg, allow_unmapped=allow_unmapped
         )
-    except UnmappedError as e:
+    except mo.UnmappedError as e:
         typer.secho(e.report.summary(), fg=typer.colors.RED, err=True)
         for line in e.report.report_lines():
             typer.secho(line, fg=typer.colors.YELLOW, err=True)
         raise typer.Exit(1) from e
-    _emit_text(serialize(g, fmt), out, "r2rml")
+    _emit_text(mo.serialize(g, fmt), out, "r2rml")
 
 
 @export_app.command("contract")
