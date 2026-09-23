@@ -550,10 +550,13 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
       // text-dump-to-output behaviour.
       const report = await drift.check(dir);
       if (!report) return;
+      // Always reveal the Drift view: a deliberate "Check Drift" (menu, or the reverse
+      // "Check drift instead" modal) must land the user somewhere visible, even when the
+      // model is clean — the view renders its own "no drift ✓" resting row. Focusing only
+      // on findings made a clean check look like nothing happened.
+      void vscode.commands.executeCommand("modelithDrift.focus");
       if (report.items.length === 0) {
         void vscode.window.setStatusBarMessage("Modelith: no drift ✓", 4000);
-      } else {
-        void vscode.commands.executeCommand("modelithDrift.focus");
       }
     }),
   );

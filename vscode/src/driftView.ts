@@ -6,7 +6,7 @@ import { type DriftItem, type DriftManager, SEVERITY_ORDER } from "./driftDiagno
  * clickable to open the owning model file. Reads the cached report from the shared
  * DriftManager (no extra drift run) and refreshes when it changes. */
 
-type Node = GroupNode | ItemNode;
+type Node = GroupNode | ItemNode | StatusNode;
 
 interface GroupNode {
   kind: "group";
@@ -17,6 +17,15 @@ interface GroupNode {
 interface ItemNode {
   kind: "item";
   item: DriftItem;
+}
+
+/** A single non-clickable row shown when there are no findings: a clean "no drift"
+ * resting state after a check, or a prompt before one has run. Keeps the focused view
+ * from ever being blank — a deliberate "Check Drift" always shows a result. */
+interface StatusNode {
+  kind: "status";
+  label: string;
+  icon: vscode.ThemeIcon;
 }
 
 const SEVERITY_LABEL: Record<DriftItem["severity"], string> = {
@@ -45,6 +54,12 @@ export class DriftTreeProvider implements vscode.TreeDataProvider<Node> {
   }
 
   getTreeItem(node: Node): vscode.TreeItem {
+    if (node.kind === "status") {
+      const ti = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
+      ti.iconPath = node.icon;
+      ti.contextValue = "driftStatus";
+      return ti;
+    }
     if (node.kind === "group") {
       const ti = new vscode.TreeItem(
         `${SEVERITY_LABEL[node.severity]} (${node.items.length})`,
@@ -77,8 +92,29 @@ export class DriftTreeProvider implements vscode.TreeDataProvider<Node> {
 
   async getChildren(node?: Node): Promise<Node[]> {
     const report = this.manager.report;
-    if (!report) return [];
     if (!node) {
+      // No check has run this session -> a prompt row (not a blank pane) so the view
+      // explains itself the first time it's revealed.
+      if (!report) {
+        return [
+          {
+            kind: "status" as const,
+            label: "No drift check yet — run Check Drift",
+            icon: new vscode.ThemeIcon("search"),
+          },
+        ];
+      }
+      // Checked and clean -> an explicit resting row, so choosing "Check drift instead"
+      // from the reverse modal shows a clear ✓ instead of an empty view.
+      if (report.items.length === 0) {
+        return [
+          {
+            kind: "status" as const,
+            label: "No drift — model matches the manifest",
+            icon: new vscode.ThemeIcon("check", new vscode.ThemeColor("charts.green")),
+          },
+        ];
+      }
       // top level: one group per severity that has items, in severity order
       return SEVERITY_ORDER.filter((sev) => report.items.some((i) => i.severity === sev)).map(
         (severity) => ({
