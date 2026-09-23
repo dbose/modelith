@@ -87,9 +87,16 @@ uv tool install modelith-dbt    # isolated tool install, puts `mdl` on your PATH
 mdl --help
 ```
 
-Modelith runs in the same environment as dbt-core (Python 3.11+). One install gives
-you the whole toolchain: the CLI, Studio (`mdl studio`), the language server,
-reverse engineering, drift detection, and the ontology and governance stack.
+Modelith runs in the same environment as dbt-core (Python 3.11+). One install gives you the
+whole toolchain: the CLI, Studio (`mdl studio`), the language server, reverse engineering,
+drift detection, dbt generation, every export target, and the ontology and governance stack.
+
+The CLI no longer requires the RDF stack at import time — core commands (validate, reverse,
+drift, generate, and every non-RDF emit) run even if the ontology dependency is absent, and
+ontology / `export rdf|shacl|r2rml` commands stop with a one-line install hint instead of
+failing to start. This is the first step toward making the ontology stack a fully optional
+`modelith-dbt[ontology]` extra, so the core tool installs cleanly where a package mirror
+quarantines its RDF dependency — a real constraint in locked-down enterprises.
 
 ### VS Code, Cursor, Windsurf
 
@@ -162,10 +169,12 @@ in and dims the rest.
 
 ## In VS Code
 
-Install the extension from `vscode/modelith-vscode-0.1.0.vsix`:
+Install the extension from the marketplace (Open VSX — see
+[VS Code, Cursor, Windsurf](#vs-code-cursor-windsurf) above), or, to run a local build,
+from the packaged `.vsix`:
 
 ```bash
-code --install-extension vscode/modelith-vscode-0.1.0.vsix
+code --install-extension vscode/modelith-vscode-0.3.7.vsix
 ```
 
 The extension does not bundle its own copy of the canvas. It launches `mdl serve`
@@ -194,9 +203,15 @@ What the extension adds on top of the canvas:
 - **Drift, surfaced.** *Modelith: Check Drift* compares the model to the compiled dbt
   manifest and turns the report into first-class VS Code: each finding is a diagnostic on
   the model file it affects (breaking → error, additive → warning), grouped in a **Drift
-  view** by severity, with a status-bar count. A quick-fix reconciles additive/cosmetic
-  changes; breaking drift is only ever explained, never auto-applied — the same safety
-  boundary the CLI's `--reconcile` enforces.
+  view** by severity, with a status-bar count. A clean check shows an explicit
+  "No drift — model matches the manifest" resting state, not an empty panel. A quick-fix
+  reconciles additive/cosmetic changes; breaking drift is only ever explained, never
+  auto-applied — the same safety boundary the CLI's `--reconcile` enforces.
+- **Warehouse Config view.** A live, role-grouped picture of how your `reverse:` config
+  classifies every model, with **Suggest Config** and **Import a Standard** in its title
+  bar (preview-then-apply, with a real diff). Authoring, discovering, and sharing the
+  reverse config, in the editor. See
+  [Author, discover, and share a warehouse config](#3-author-discover-and-share-a-warehouse-config).
 - **Language server.** `mdl lsp` drives drift and contract diagnostics on the generated
   dbt files, hover cards (glossary term, ontology IRI, owner), and code actions (adopt a
   column, lift a model, unmanage, declare a relationship).
@@ -240,8 +255,9 @@ relationships — and reasons from the entity's meaning:
 ![The @modelith chat participant proposing a composite key (portfolio_code, instrument_id, as_of_date) for the position entity, noting all three are currently nullable so should be non-null for a primary key, and that the model doesn't confirm uniqueness so the business rule needs validating — with a pointer to Agent mode for the edit](docs/assets/chat-participant-keys.png)
 
 There are slash commands for the common asks — `@modelith /list` for the entity list,
-`@modelith /explain <entity>` for one entity in full, and `@modelith /drift` to explain
-drift vs the dbt warehouse — but free text works just as well.
+`@modelith /explain <entity>` for one entity in full, `@modelith /drift` to explain drift
+vs the dbt warehouse, and `@modelith /config` to explain how the reverse config classifies
+a model — but free text works just as well.
 
 **Explaining drift.** `@modelith /drift` reads the same drift report the Problems panel
 does and, grounded on it, explains what changed and why it matters. Severity is
@@ -461,6 +477,45 @@ an SCD2 pair. The overridable lists (all additive):
 
 You can also drop the same `reverse:` block into your project's `mdl-project.yaml` under
 `naming:` — re-reverses then pick it up without the flag.
+
+### 3. Author, discover, and share a warehouse config
+
+A real warehouse rarely matches any single convention, and a team's conventions are worth
+keeping. The `reverse:` block in `mdl-project.yaml` is a first-class, git-versioned,
+**shareable** artifact — how Modelith classifies your models by folder, prefix, tag, role,
+and target form — and there is a workflow to author it without starting from a blank page,
+see its effect before you reverse, and import another team's standard.
+
+```bash
+mdl reverse-config suggest --manifest transform/target/manifest.json   # propose a reverse: block
+mdl reverse-config suggest --manifest … --apply                        # …and merge it into mdl-project.yaml
+mdl reverse-config explain --manifest transform/target/manifest.json   # show how it classifies every model
+mdl reverse-config import  <file|url>                                  # merge a team standard / starter pack
+```
+
+- **suggest** reads the manifest's own folders, prefixes, and tags and emits a proposed
+  `reverse:` block — deterministic frequency analysis, no AI, works offline — so you
+  iterate from a real starting point instead of authoring from scratch. `--apply` merges it
+  into `mdl-project.yaml`.
+- **explain** prints how the *current* config classifies each model (role, matched layer,
+  excluded/exempt, target form) *before* you run a reverse, so you tune the config and see
+  the effect without committing to an output.
+- **apply** is the shared write doorway (comment-preserving) that `suggest --apply`, `import`,
+  and external tools use — it merges a `reverse:` block from a file or stdin. **import**
+  pulls from a **local file or an https/git URL** — a published team standard or one of the
+  bundled starter packs — validated before it is written, so a malformed source is rejected,
+  not half-applied. Both land as a reviewable git diff.
+
+Starter packs ship under [`reverse-configs/`](reverse-configs/) (dbt-Kimball
+`dim_`/`fct_`, medallion bronze/silver/gold, Data-Vault hub/link/satellite) — copy one, or
+point `import` at it, as the seed for your own. The import handler is pluggable: a scheme
+like an enterprise `mdl://` Global-Standards registry plugs in as a separate package
+without changing the open CLI.
+
+In VS Code this is the **Warehouse Config** view: a live, role-grouped picture of how your
+config classifies every model, with **Suggest Config** and **Import a Standard** in its
+title bar (preview-then-apply, showing a real diff), and `@modelith /config` answers "how
+would reverse classify `stg_instrument`?" in chat.
 
 ## Ontology and knowledge graph, step by step
 
@@ -1114,6 +1169,7 @@ mdl validate [--format json]                      schema, refs, ontology, naming
 mdl lint [--fix]                                  naming-standards lint
 mdl generate [--target] [--emit-contract] [...]   emit the dbt project (+ optional targets)
 mdl reverse --project <manifest|schema.yml> [--naming <f>]  lift a dbt project into a model
+mdl reverse-config suggest|explain|apply|import   author/discover/share the reverse: config
 mdl drift --manifest <m> [--check|--reconcile]    compare model to compiled warehouse
 mdl drift --manifest <m> --explain [--format json]  annotate each drift with its reconcile action
 mdl diff [--base <ref>] [--format json|markdown]  semantic model diff (exit 2 on breaking)
@@ -1169,7 +1225,7 @@ The layering rule is enforced: `core` depends on nothing else in the repo, and
 
 ```bash
 uv sync
-uv run pytest                 # 215 tests
+uv run pytest                 # 771 tests
 uv run ruff check packages/
 ```
 
