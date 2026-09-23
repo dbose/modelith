@@ -150,12 +150,15 @@ export function runMdl(
   args: string[],
   cwd: string,
   out?: vscode.OutputChannel,
+  timeoutMs = 120000,
 ): Promise<RunResult> {
   // Echo the exact CLI invocation before running, so every model UI action is
   // transparent in the Modelith output (matching the `[canvas] mdl serve …` line).
   out?.appendLine(`[run] ${bin.label} ${args.join(" ")} (cwd ${cwd})`);
   return new Promise((res) => {
-    const p = cp.spawn(bin.cmd, [...bin.args, ...args], { cwd, timeout: 120000 });
+    // Default 120s; a live-DB reverse (`--connect` runs dbt debug + introspection over a
+    // possibly-cold warehouse) passes a longer timeout.
+    const p = cp.spawn(bin.cmd, [...bin.args, ...args], { cwd, timeout: timeoutMs });
     let stdout = "";
     let stderr = "";
     p.stdout.on("data", (d) => (stdout += d));
