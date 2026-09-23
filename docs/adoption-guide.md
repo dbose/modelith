@@ -44,6 +44,19 @@ pipx install modelith-dbt
 mdl --help        # sanity check
 ```
 
+The ontology / knowledge-graph features (§4.4–4.6 below: `mdl ontology *`, `mdl export
+rdf|shacl|r2rml`) ship as an optional extra so the core tool installs cleanly even where a
+package firewall quarantines an RDF dependency. Add it when you want them — its backend is
+pyoxigraph (a single Rust wheel, no Python transitive deps), not rdflib:
+
+```bash
+uv tool install 'modelith-dbt[ontology]'   # or: pipx install 'modelith-dbt[ontology]'
+```
+
+Without the extra, everything else works and the ontology commands print a one-line hint to
+add it. Enterprise mirror: point uv/pip at your internal index the usual way (`UV_INDEX_URL`
+/ `PIP_INDEX_URL` or `pip.conf`); Modelith needs no special configuration for that.
+
 **Devcontainer teams** (the enterprise norm): a ready-made template lives at
 `profiles/devcontainer/devcontainer.json`. Copy it to `.devcontainer/` in your
 repo. Its `postCreateCommand` installs `uv` + `mdl` inside the container, so the

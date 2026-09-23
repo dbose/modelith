@@ -23,7 +23,7 @@ No cloud warehouse needed. The IBoR demo ships a model and a dbt project over a 
 DuckDB, so it builds on a laptop.
 
 ```bash
-uv tool install modelith-dbt
+uv tool install 'modelith-dbt[ontology]'   # [ontology] adds the FIBO/RDF step below
 git clone https://github.com/dbose/modelith
 cd modelith/demo/ibor
 
@@ -31,6 +31,8 @@ mdl validate -m model                 # the seven-entity model is valid
 cd transform/warehouse && dbt build   # generated dbt builds green against DuckDB
 cd ../.. && mdl studio -m model       # the model in a browser + the (bundled) FIBO ontology
 ```
+
+(Plain `uv tool install modelith-dbt` is enough for everything except the ontology step.)
 
 Then break a generated column's contract, run `dbt parse`, and
 `mdl drift --check -m model --manifest transform/warehouse/target/manifest.json` reports
@@ -87,16 +89,24 @@ uv tool install modelith-dbt    # isolated tool install, puts `mdl` on your PATH
 mdl --help
 ```
 
-Modelith runs in the same environment as dbt-core (Python 3.11+). One install gives you the
-whole toolchain: the CLI, Studio (`mdl studio`), the language server, reverse engineering,
-drift detection, dbt generation, every export target, and the ontology and governance stack.
+Modelith runs in the same environment as dbt-core (Python 3.11+). The core install gives you
+the whole modeling toolchain: the CLI, Studio (`mdl studio`), the language server, reverse
+engineering, drift detection, dbt generation, and every non-RDF export target.
 
-The CLI no longer requires the RDF stack at import time — core commands (validate, reverse,
-drift, generate, and every non-RDF emit) run even if the ontology dependency is absent, and
-ontology / `export rdf|shacl|r2rml` commands stop with a one-line install hint instead of
-failing to start. This is the first step toward making the ontology stack a fully optional
-`modelith-dbt[ontology]` extra, so the core tool installs cleanly where a package mirror
-quarantines its RDF dependency — a real constraint in locked-down enterprises.
+The **ontology / knowledge-graph stack** (RDF/OWL/SHACL/R2RML export, vocabulary alignment,
+remote SPARQL) is an optional extra, kept separate so the core tool installs cleanly where a
+package mirror quarantines an RDF dependency — a real constraint in locked-down enterprises.
+Its backend is [pyoxigraph](https://pypi.org/project/pyoxigraph/) (a single Rust wheel with no
+Python transitive dependencies), not rdflib:
+
+```bash
+uv tool install 'modelith-dbt[ontology]'   # core + the ontology/knowledge-graph stack
+# or: pip install 'modelith-dbt[ontology]'
+```
+
+Without the extra, core commands (validate, reverse, drift, generate, and every non-RDF emit)
+run normally, and ontology / `export rdf|shacl|r2rml` commands stop with a one-line hint
+telling you to add it — never a crash on a missing dependency.
 
 ### VS Code, Cursor, Windsurf
 
@@ -314,12 +324,14 @@ deterministically from the one definition:
 | Pydantic | `mdl emit pydantic` | Pydantic v2 models for Python services and agents, with nullability and enum enforcement |
 | Neo4j | `mdl export graph` | A Cypher schema: node-key, unique, and existence constraints, plus relationship types |
 | Semantic layer | `mdl emit semantic` | MetricFlow semantic models and metrics, or OSI |
-| Ontology | `mdl export rdf` / `shacl` | RDF/OWL with SKOS alignments, and SHACL shapes |
-| Knowledge graph | `mdl export r2rml` | A W3C R2RML mapping: the deterministic term-map from warehouse rows to typed, ontology-aligned graph nodes; fails loud on any unmapped entity unless `--allow-unmapped` |
+| Ontology † | `mdl export rdf` / `shacl` | RDF/OWL with SKOS alignments, and SHACL shapes |
+| Knowledge graph † | `mdl export r2rml` | A W3C R2RML mapping: the deterministic term-map from warehouse rows to typed, ontology-aligned graph nodes; fails loud on any unmapped entity unless `--allow-unmapped` |
 | SQL DDL | `mdl export sql --dialect …` | `CREATE TABLE` with primary keys, foreign-key `REFERENCES`, `UNIQUE`, and `NOT NULL`, in a chosen dialect (postgres/snowflake/duckdb/…) — the universal interchange target |
 | Mermaid | `mdl export mermaid` | A Mermaid `erDiagram` with PK/FK/UK markers and crow's-foot cardinality, rendering natively in GitHub, GitLab, and most markdown |
 | DBML | `mdl export dbml` | Database Markup Language that opens directly in dbdiagram.io, dbdocs, and ChartDB |
 | CSV | `mdl export csv` | A flat attributes sheet (entity, attribute, type, PK/FK, nullable) for spreadsheets and BI tools |
+
+† Needs the ontology extra: `pip install 'modelith-dbt[ontology]'` (pyoxigraph-backed RDF stack).
 
 `mdl generate --emit-contract` (also `--emit-pydantic`, `--emit-graph`, `--emit-r2rml`)
 turns Modelith into a contract factory: on every regeneration it drops a fresh, valid
@@ -518,6 +530,11 @@ title bar (preview-then-apply, showing a real diff), and `@modelith /config` ans
 would reverse classify `stg_instrument`?" in chat.
 
 ## Ontology and knowledge graph, step by step
+
+> Requires the ontology extra: `uv tool install 'modelith-dbt[ontology]'` (or `pip install
+> 'modelith-dbt[ontology]'`). It adds the pyoxigraph-backed RDF stack — every `mdl ontology
+> *` and `mdl export rdf|shacl|r2rml` command. Core modeling, reverse, drift, and generate
+> need no extra.
 
 Modelith treats an ontology the way a build treats a dependency: you declare a source,
 pin it, and reference terms — nothing is copied into your repo by hand. A term can come
@@ -1204,6 +1221,7 @@ packages/
   emit-dbt/       dbt-core emitter, platform adapters, SCD2 macros
   reverse/        manifest + catalog reader, drift, reverse engineering, decision ledger, erwin import
   ontology/       vocabulary registry, four-layer validation, RDF/OWL + SHACL export
+                  (RDF backend behind the mdl_ontology._rdf adapter; pyoxigraph, optional extra)
   emit-semantic/  MetricFlow + OSI, joinability validation
   governance/     governance graph, Jinja mapping DSL, adapter SPI, conformance kit, OpenLineage
   catalog/        cross-repo model catalog: entry, backend SPI, git manifest backend
@@ -1225,7 +1243,7 @@ The layering rule is enforced: `core` depends on nothing else in the repo, and
 
 ```bash
 uv sync
-uv run pytest                 # 771 tests
+uv run pytest                 # 789 tests
 uv run ruff check packages/
 ```
 

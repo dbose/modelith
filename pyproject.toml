@@ -3,7 +3,7 @@
 # project, so the install name is `modelith-dbt` (install: uv tool install
 # modelith-dbt). The command stays `mdl`; the import modules stay mdl_*.
 name = "modelith-dbt"
-version = "0.4.9"
+version = "0.5.0"
 description = "Ontology-anchored, git-native data modeling tool for dbt-core teams"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -14,18 +14,23 @@ license = { text = "Apache-2.0" }
 # third-party dependencies; the inter-member `modelith-*` deps are gone because
 # everything now lives here. The [tool.uv.workspace] block below keeps the
 # split-package layout for local development.
+# Version floors that carry a CVE fix are called out inline; the rest are ordinary
+# minimums. Transitive-dependency CVE floors live in [tool.uv] constraint-dependencies
+# below (they are held, not made first-class deps). All floors are already satisfied by
+# the committed uv.lock — they codify a safe minimum so the resolver can never drift down
+# into a known-vulnerable version, which is what an enterprise SCA/firewall scan checks.
 dependencies = [
-    "pydantic>=2.6",
-    "ruamel.yaml>=0.18",
+    "pydantic>=2.6",              # >2.4.0, clears CVE-2024-3772 (ReDoS)
+    "ruamel.yaml>=0.18",          # >0.16.8, clears CVE-2019-20478
     "typer>=0.12",
     "dbt-artifacts-parser>=0.5",
-    "jinja2>=3.1",
-    "fastapi>=0.110",
+    "jinja2>=3.1.6",             # CVE-2025-27516 (sandbox breakout); also 2024 SSTI fixes
+    "fastapi>=0.115",           # pulls starlette>=0.40 for CVE-2024-47874 (multipart DoS)
     "uvicorn>=0.29",
-    "python-multipart>=0.0.18",
+    "python-multipart>=0.0.18",  # CVE-2024-53981 (boundary DoS)
     "pygls>=2.0",
     "sqlglot>=25",
-    "mcp>=1.2,<2",
+    "mcp>=1.28.1,<2",           # CVE-2026-59950 (WebSocket Host/Origin); >1.23 DNS-rebind
     "httpx>=0.27",  # ontology remote resolvers + the telemetry emitter
 ]
 
@@ -108,6 +113,29 @@ dev-mode-dirs = [
 
 [tool.hatch.build.targets.wheel.hooks.custom]
 path = "hatch_build.py"
+
+# CVE-clean floors for TRANSITIVE dependencies. These are not direct deps of Modelith —
+# they arrive through fastapi/httpx/mcp/etc. — so rather than pin them as first-class deps
+# (brittle as the tree evolves) they are held above their fix version here. `uv lock`
+# respects these; each is already satisfied by the committed lock, so this is a guard
+# against downward drift, not an upgrade. Each line cites the CVE fixed at that floor.
+[tool.uv]
+constraint-dependencies = [
+    "requests>=2.32.4",       # CVE-2024-47081 (.netrc credential leak)
+    "urllib3>=2.5.0",         # CVE-2025-50181 / CVE-2025-50182 (redirect handling)
+    "certifi>=2024.7.4",      # CVE-2024-39689 (removed GLOBALTRUST CA bundle)
+    "cryptography>=50.0.0",   # CVE-2026-69247 (PKCS#7 Bleichenbacher)
+    "h11>=0.16.0",            # CVE-2025-43859 (chunked-encoding request smuggling)
+    "idna>=3.7",              # CVE-2024-3651 (quadratic-complexity DoS)
+    "anyio>=4.14.2",          # CVE-2026-63374 (TLS spoof via IDNA 2003)
+    "click>=8.3.3",           # CVE-2026-7246 (command injection in click.edit())
+    "pygments>=2.15.0",       # CVE-2022-40896 (ReDoS in SmithyLexer)
+    "pydantic-settings>=2.14.2",  # CVE-2026-58203 (symlink attack in secrets source)
+    "python-dotenv>=1.2.2",   # CVE-2026-28684 (symlink path traversal in set_key)
+    "zipp>=3.19.1",           # CVE-2024-5569 (infinite-loop DoS)
+    "protobuf>=6.33.5",       # CVE-2025-4565 / CVE-2026-0994 (recursion DoS)
+    "pyjwt>=2.10.1",          # CVE-2022-29217 / CVE-2024-53861 (alg confusion, iss match)
+]
 
 [tool.uv.workspace]
 members = ["packages/*", "packages/adapters/*"]
