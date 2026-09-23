@@ -10,6 +10,7 @@ import { DriftTreeProvider } from "./driftView";
 import { executeLspCommand, startLsp } from "./lspClient";
 import { type Decision, ReverseReviewProvider } from "./reverseView";
 import { registerMcpProvider } from "./mcpProvider";
+import { type LiveWizardContext, runReverseLiveWizard } from "./reverseLiveWizard";
 import {
   findDbtProjectDir,
   findManifestPath,
@@ -844,7 +845,10 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     await vscode.window.withProgress(
       { location: vscode.ProgressLocation.Notification, title: "Modelith: reverse-engineering…" },
       async () => {
-        const r = await runMdl(bin, args, cwd, out);
+        // A live reverse (`--connect`) runs dbt debug + introspection over a possibly-cold
+        // warehouse; give it 5 minutes instead of the default 2.
+        const timeoutMs = args.includes("--connect") ? 300000 : 120000;
+        const r = await runMdl(bin, args, cwd, out, timeoutMs);
         out.appendLine(r.stdout + r.stderr);
         const zeroEntities = /reversed 0 entities/i.test(r.stdout + r.stderr);
         if (r.code !== 0) {
@@ -1020,21 +1024,36 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     return { target: abs, force: false };
   };
 
+  // The live-database wizard borrows the reverse closures (they own the output channel,
+  // the review-panel refresh, and the target picker). runReverseInto is curried with the
+  // shared reverse view so the wizard's signature stays small.
+  const liveWizardCtx: LiveWizardContext = {
+    out,
+    findMdl,
+    runMdl,
+    bestDefaultTarget,
+    resolveReverseTarget,
+    runReverseInto: (cwd, args, sourceLabel) => runReverseInto(cwd, args, reverse, sourceLabel),
+  };
+  cmd("modelith.reverseLive", () => runReverseLiveWizard(liveWizardCtx));
+
   cmd("modelith.reverse", () =>
     withModelDir(async (dir) => {
       const source = await vscode.window.showQuickPick(
         [
           { label: "$(package) dbt project", detail: "manifest.json or an emitted schema.yml", id: "dbt" },
           { label: "$(file-code) SQL DDL file", detail: "a CREATE TABLE … script", id: "ddl" },
-          { label: "$(database) Live database connection", detail: "coming soon (Phase 2)", id: "live" },
+          {
+            label: "$(database) Live database connection",
+            detail: "introspect a live warehouse via dbt + profiles.yml",
+            id: "live",
+          },
         ],
         { placeHolder: "Reverse-engineer from which source?" },
       );
       if (!source) return;
       if (source.id === "live") {
-        void vscode.window.showInformationMessage(
-          "Live-database reverse (via a dbt profile) is coming in a later release. For now, reverse from a dbt project or a SQL DDL file.",
-        );
+        await runReverseLiveWizard(liveWizardCtx);
         return;
       }
       const picked = await vscode.window.showOpenDialog({
@@ -1110,22 +1129,9 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     const name = path.basename(fsPath);
     const isDir = fs.existsSync(fsPath) && fs.statSync(fsPath).isDirectory();
 
-    // profiles.yml -> live datastore (planned). Guided stub: reserve the branch.
+    // profiles.yml -> live-datastore reverse, seeded with THIS file's folder.
     if (name === "profiles.yml") {
-      const INSTALL_DOCS = "How it will work";
-      const choice = await vscode.window.showInformationMessage(
-        "Reverse-engineer from a live datastore is coming next. It will connect through " +
-          "your dbt adapter and this profiles.yml, introspect the warehouse, and reverse it " +
-          "into a Modelith model — the same review flow as a dbt project. For now, reverse " +
-          "from build artifacts (right-click dbt_project.yml) or a DDL folder.",
-        INSTALL_DOCS,
-      );
-      if (choice === INSTALL_DOCS) {
-        void vscode.window.showInformationMessage(
-          "When it ships: install the dbt adapter for your warehouse (e.g. `dbt-snowflake`), " +
-            "ensure this profiles.yml has a working target, then run Reverse Engineer again.",
-        );
-      }
+      await runReverseLiveWizard({ ...liveWizardCtx, presetProfilesDir: path.dirname(fsPath) });
       return;
     }
 
