@@ -69,6 +69,12 @@ function classifyTarget(dir: string): TargetState {
 const beforeContents = new Map<string, string>();
 let beforeSeq = 0;
 
+/** In-memory content for the two sides of a "compare reversed models" diff — each is a
+ * `mdl model render` canonical text (ULID-free, name-keyed), so VS Code's native diff shows
+ * the semantic delta with no ULID noise. Backed by the `modelith-render` scheme. */
+const renderContents = new Map<string, string>();
+let renderSeq = 0;
+
 /** Show a native diff of mdl-project.yaml: its pre-import content (left) vs the current
  * on-disk content (right), so "review the diff" is literal, not a status-bar hint. */
 async function showProjectDiff(
@@ -239,6 +245,11 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     vscode.workspace.registerTextDocumentContentProvider("modelith-before", {
       provideTextDocumentContent(uri) {
         return beforeContents.get(uri.query) ?? "";
+      },
+    }),
+    vscode.workspace.registerTextDocumentContentProvider("modelith-render", {
+      provideTextDocumentContent(uri) {
+        return renderContents.get(uri.query) ?? "";
       },
     }),
   );
@@ -842,6 +853,9 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     // warehouse. We warn with the remedy and DON'T open an empty review panel.
     let empty = false;
     let emptyMsg = "";
+    // Set when the no-clobber guard diverted to a sibling (model existed) — the trigger to
+    // offer a semantic compare of the new reverse against the existing model.
+    let divertedTo = "";
     await vscode.window.withProgress(
       { location: vscode.ProgressLocation.Notification, title: "Modelith: reverse-engineering…" },
       async () => {
@@ -873,7 +887,10 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
         ok = true;
         summary = r.stdout.split("\n").find((l) => l.includes("reversed")) ?? summary;
         const diverted = (r.stdout + r.stderr).match(/reversing into (.+?) instead/);
-        if (diverted) writtenDir = diverted[1].trim();
+        if (diverted) {
+          writtenDir = diverted[1].trim();
+          divertedTo = writtenDir;
+        }
       },
     );
     if (empty) {
@@ -902,6 +919,18 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
         .then((a) => a === REVIEW && vscode.commands.executeCommand("modelithReverse.focus"));
     } else {
       void vscode.window.showInformationMessage(`Modelith: ${summary.trim()}`);
+    }
+    // The reverse diverted to a sibling because a model already existed — offer to see
+    // what the new reverse changed vs the existing model (name-keyed semantic diff, so
+    // the two versions' different ULIDs don't drown the real delta).
+    if (divertedTo) {
+      const COMPARE = "Compare with existing model";
+      void vscode.window
+        .showInformationMessage(
+          `Modelith: reversed into ${path.basename(divertedTo)} (a model already existed).`,
+          COMPARE,
+        )
+        .then((a) => a === COMPARE && vscode.commands.executeCommand("modelith.compareReversed"));
     }
   };
 
@@ -1036,6 +1065,79 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     runReverseInto: (cwd, args, sourceLabel) => runReverseInto(cwd, args, reverse, sourceLabel),
   };
   cmd("modelith.reverseLive", () => runReverseLiveWizard(liveWizardCtx));
+
+  // Compare two reversed models with VS Code's native diff, fed Modelith-rendered
+  // canonical text (`mdl model render`) so the diff is name-keyed and ULID-free — two
+  // independent reverses have different ULIDs, so a raw YAML diff would flag everything.
+  const renderModel = async (dir: string): Promise<string | undefined> => {
+    const bin = await findMdl(dir);
+    const r = await runMdl(bin, ["model", "render", "-m", "."], dir, out);
+    if (r.code !== 0) {
+      void vscode.window
+        .showErrorMessage(`Modelith: could not render ${path.basename(dir)}.`, "Show Output")
+        .then((a) => a && out.show());
+      return undefined;
+    }
+    return r.stdout;
+  };
+  const showModelCompare = async (leftDir: string, rightDir: string): Promise<void> => {
+    const [leftText, rightText] = await Promise.all([renderModel(leftDir), renderModel(rightDir)]);
+    if (leftText === undefined || rightText === undefined) return;
+    const lk = String(renderSeq++);
+    const rk = String(renderSeq++);
+    renderContents.set(lk, leftText);
+    renderContents.set(rk, rightText);
+    const left = vscode.Uri.parse(`modelith-render:${path.basename(leftDir)}.model?${lk}`);
+    const right = vscode.Uri.parse(`modelith-render:${path.basename(rightDir)}.model?${rk}`);
+    await vscode.commands.executeCommand(
+      "vscode.diff",
+      left,
+      right,
+      `${path.basename(leftDir)} ↔ ${path.basename(rightDir)} — semantic model diff`,
+    );
+  };
+  // Find `model-reversed-v*` siblings of a model dir (the no-clobber guard's output).
+  const reversedSiblings = (modelDir: string): string[] => {
+    const parent = path.dirname(modelDir);
+    const base = path.basename(modelDir);
+    try {
+      return fs
+        .readdirSync(parent)
+        .filter((n) => n.startsWith(`${base}-reversed-v`))
+        .map((n) => path.join(parent, n))
+        .filter((p) => fs.existsSync(path.join(p, "mdl-project.yaml")));
+    } catch {
+      return [];
+    }
+  };
+  cmd("modelith.compareReversed", async () => {
+    const dir = await findModelDir();
+    if (!dir) {
+      void vscode.window.showInformationMessage("Modelith: no model to compare.");
+      return;
+    }
+    const siblings = reversedSiblings(dir);
+    let other: string | undefined;
+    if (siblings.length === 1) {
+      other = siblings[0];
+    } else if (siblings.length > 1) {
+      const pick = await vscode.window.showQuickPick(
+        siblings.map((p) => ({ label: path.basename(p), dir: p })),
+        { placeHolder: "Compare your model against which reversed version?" },
+      );
+      other = pick?.dir;
+    } else {
+      // no sibling — let the user pick any other model folder
+      const picked = await vscode.window.showOpenDialog({
+        canSelectFolders: true,
+        canSelectFiles: false,
+        openLabel: "Compare against this model",
+      });
+      other = picked?.[0]?.fsPath;
+    }
+    if (!other) return;
+    await showModelCompare(dir, other);
+  });
 
   cmd("modelith.reverse", () =>
     withModelDir(async (dir) => {

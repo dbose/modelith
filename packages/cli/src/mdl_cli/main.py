@@ -1613,16 +1613,35 @@ def diff_cmd(
     model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
     base: str = typer.Option("HEAD", "--base", help="git ref to compare against"),
     head: str = typer.Option(None, "--head", help="git ref (default: the working tree)"),
+    against: Path = typer.Option(
+        None,
+        "--against",
+        help="Compare against ANOTHER model directory (name-keyed, for two independent "
+        "reverses like model/ vs model-reversed-v1/ that have different ULIDs). Overrides "
+        "--base/--head.",
+    ),
     fmt: str = typer.Option("text", "--format", help="text|json|markdown"),
 ) -> None:
-    """Semantic diff of the model against a git ref.
+    """Semantic diff of the model against a git ref (or, with --against, another model dir).
 
-    Objects are keyed by ULID, so a rename is one cosmetic change rather than an
-    entity removed plus another added."""
-    from mdl_server.git_models import RefLoadError, model_at_ref, model_at_working_tree
-
-    from mdl_core.diff import diff_models
+    Objects are keyed by ULID against a git ref, so a rename is one cosmetic change rather
+    than an entity removed plus another added. With --against, objects are keyed by NAME
+    instead — two independently reverse-engineered models have different ULIDs, so name
+    keying shows the real delta rather than a total rewrite."""
+    from mdl_core.diff import diff_models, diff_models_by_name
     from mdl_core.diff_render import render_json, render_markdown, render_text
+
+    if against is not None:
+        base_model = _load(model_dir).model
+        head_model = _load(against).model
+        d = diff_models_by_name(
+            base_model, head_model,
+            base_label=str(model_dir), head_label=str(against),
+        )
+        _emit_diff(d, fmt, render_json, render_markdown, render_text)
+        return
+
+    from mdl_server.git_models import RefLoadError, model_at_ref, model_at_working_tree
 
     try:
         base_model = model_at_ref(model_dir, base)
@@ -1636,6 +1655,10 @@ def diff_cmd(
     d = diff_models(
         base_model, head_model, base_label=base, head_label=head or "working copy"
     )
+    _emit_diff(d, fmt, render_json, render_markdown, render_text)
+
+
+def _emit_diff(d, fmt, render_json, render_markdown, render_text) -> None:
     if fmt == "json":
         typer.echo(json.dumps(render_json(d), indent=2))
     elif fmt == "markdown":
@@ -2670,6 +2693,21 @@ def model_context(model_dir: Path = typer.Option(Path("."), "--model-dir", "-m")
     from mdl_core.query import get_model_context
 
     typer.echo(json.dumps(get_model_context(_load(model_dir).model), default=str))
+
+
+@model_app.command("render")
+def model_render(model_dir: Path = typer.Option(Path("."), "--model-dir", "-m")) -> None:
+    """Print the model as canonical, ULID-free, name-keyed text.
+
+    Two independently reverse-engineered models describe the same warehouse with
+    DIFFERENT ULIDs, so a raw YAML diff reports everything as changed. This canonical
+    render is deterministic and identity-free, so diffing two renders (VS Code's diff,
+    or `diff`/`git diff --no-index`) shows the real semantic delta — an added column, a
+    new foreign key — with no ULID noise. Backs `mdl diff --against` and the VS Code
+    "Compare Reversed Models" command."""
+    from mdl_core.render_canonical import render_canonical
+
+    typer.echo(render_canonical(_load(model_dir).model), nl=False)
 
 
 @model_app.command("entities")

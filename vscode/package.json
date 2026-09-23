@@ -2,7 +2,7 @@
   "name": "modelith-vscode",
   "displayName": "Modelith",
   "description": "Ontology-anchored, git-native data modeling for dbt — validate, generate, drift, and the Modelith canvas inside VS Code.",
-  "version": "0.3.8",
+  "version": "0.3.9",
   "publisher": "BosonResearch",
   "license": "Apache-2.0",
   "icon": "icon.png",
@@ -140,6 +140,11 @@
         "command": "modelith.reverseLive",
         "title": "Modelith: Reverse from a Live Database",
         "icon": "$(database)"
+      },
+      {
+        "command": "modelith.compareReversed",
+        "title": "Modelith: Compare Reversed Models",
+        "icon": "$(git-compare)"
       },
       {
         "command": "modelith.reverseEngineer",
@@ -472,9 +477,14 @@
           "group": "navigation@2"
         },
         {
-          "command": "modelith.reverseRefresh",
+          "command": "modelith.compareReversed",
           "when": "view == modelithReverse",
           "group": "navigation@3"
+        },
+        {
+          "command": "modelith.reverseRefresh",
+          "when": "view == modelithReverse",
+          "group": "navigation@4"
         }
       ],
       "view/item/context": [

@@ -547,6 +547,106 @@ def _diff_attributes(base: LogicalEntity, head: LogicalEntity) -> list[ObjectCha
     return out
 
 
+def diff_models_by_name(
+    base: Model,
+    head: Model,
+    *,
+    base_label: str = "base",
+    head_label: str = "head",
+) -> ModelDiff:
+    """Compare two models keyed by NAME rather than ULID.
+
+    The ULID-keyed `diff_models` is right when the two models share lineage (two git refs
+    of the same repo). But two INDEPENDENTLY reverse-engineered models (e.g. `model/` and
+    `model-reversed-v1/` from two `mdl reverse` runs) describe the same warehouse with
+    DIFFERENT ULIDs, so ULID keying reports every object as removed+added. This matches
+    objects by name instead: it rewrites the head model's ULIDs to the base model's ULID
+    for each same-named object (logical entity + its attributes by (entity, attr) name,
+    relationships and key groups by name), then delegates to the unchanged `diff_models`
+    — so all the classification, severity and rendering are reused. Head-only names keep
+    their own ULIDs and show as added; base-only names show as removed."""
+    import copy
+
+    head = copy.deepcopy(head)
+
+    remap: dict[str, str] = {}  # head ULID -> base ULID, for every same-named object
+
+    # Every top-level table is keyed by object NAME. Build base name->id per table, then
+    # map each head object with a matching name onto the base id.
+    for table in _TABLES:
+        base_by_name = {
+            _name_of(o): o.id for o in getattr(base, table, {}).values() if _name_of(o)
+        }
+        for o in getattr(head, table, {}).values():
+            n = _name_of(o)
+            if n and n in base_by_name:
+                remap[o.id] = base_by_name[n]
+
+    # Attributes are nested in logical entities, keyed by (entity name, attr name).
+    base_attr: dict[tuple[str, str], str] = {}
+    for e in base.logical_entities.values():
+        for a in e.attributes:
+            base_attr[(e.name, a.name)] = a.id
+    for he in head.logical_entities.values():
+        for a in he.attributes:
+            key = (he.name, a.name)
+            if key in base_attr:
+                remap[a.id] = base_attr[key]
+
+    _apply_remap(head, remap)
+    return diff_models(base, head, base_label=base_label, head_label=head_label)
+
+
+def _apply_remap(model: Model, remap: dict[str, str]) -> None:
+    """Rewrite every ULID in `model` that appears in `remap` (in place): object ids across
+    all name-keyed tables, attribute ids, and the cross-references (logical->conceptual
+    `realises`, relationship ends, key-group entity + members) that must stay consistent so
+    diff_models still resolves them. Then re-key each table dict by the new id."""
+    def r(u):
+        return remap.get(u, u) if u else u
+
+    # simple-id tables (no internal cross-refs beyond the id itself)
+    for table in ("subject_areas", "conceptual_entities", "terms", "domains",
+                  "code_sets", "categories", "physical_tables"):
+        coll = getattr(model, table, None)
+        if not coll:
+            continue
+        rekeyed = {}
+        for obj in coll.values():
+            if hasattr(obj, "id"):
+                obj.id = r(obj.id)
+            rekeyed[obj.id] = obj
+        setattr(model, table, rekeyed)
+
+    new_le = {}
+    for le in model.logical_entities.values():
+        le.id = r(le.id)
+        for a in le.attributes:
+            a.id = r(a.id)
+        if le.realises:
+            le.realises = r(le.realises)
+        new_le[le.id] = le
+    model.logical_entities = new_le
+
+    new_rel = {}
+    for rel in model.relationships.values():
+        rel.id = r(rel.id)
+        rel.from_.entity = r(rel.from_.entity)
+        rel.from_.attributes = [r(a) for a in rel.from_.attributes]
+        rel.to.entity = r(rel.to.entity)
+        rel.to.attributes = [r(a) for a in rel.to.attributes]
+        new_rel[rel.id] = rel
+    model.relationships = new_rel
+
+    new_kg = {}
+    for kg in model.key_groups.values():
+        kg.id = r(kg.id)
+        kg.entity = r(kg.entity)
+        kg.members = [r(m) for m in kg.members]
+        new_kg[kg.id] = kg
+    model.key_groups = new_kg
+
+
 def diff_models(
     base: Model | None,
     head: Model | None,
