@@ -40,10 +40,11 @@
 {% macro default__mdl_get_constraints(schema, database) %}
   {% if not execute %}{{ return({}) }}{% endif %}
 
-  {%- set nullable_sql -%}
-    select table_name, column_name, is_nullable
+  {%- set columns_sql -%}
+    select table_name, column_name, data_type, is_nullable, ordinal_position
     from information_schema.columns
     where table_schema = '{{ schema }}'
+    order by table_name, ordinal_position
   {%- endset -%}
 
   {%- set pk_sql -%}
@@ -79,7 +80,7 @@
     order by kcu.table_name, tc.constraint_name, kcu.ordinal_position
   {%- endset -%}
 
-  {{ return(_mdl_assemble_constraints(nullable_sql, pk_sql, fk_sql)) }}
+  {{ return(_mdl_assemble_constraints(columns_sql, pk_sql, fk_sql)) }}
 {% endmacro %}
 
 
@@ -92,17 +93,18 @@
 
   {%- set out = {} -%}
 
-  {%- set null_q -%}
-    select table_name, column_name, is_nullable
+  {%- set col_q -%}
+    select table_name, column_name, data_type, is_nullable, ordinal_position
     from information_schema.columns
     where table_schema = '{{ schema }}'
+    order by table_name, ordinal_position
   {%- endset -%}
-  {%- set nulls = run_query(null_q) -%}
-  {%- if nulls -%}
-    {%- for r in nulls.rows -%}
+  {%- set cols_r = run_query(col_q) -%}
+  {%- if cols_r -%}
+    {%- for r in cols_r.rows -%}
       {%- set t = r[0] -%}
       {%- if t not in out -%}{% do out.update({t: {'primary_key': [], 'unique': [], 'foreign_keys': [], 'columns': {}}}) %}{%- endif -%}
-      {%- do out[t]['columns'].update({r[1]: {'nullable': (r[2] == 'YES')}}) -%}
+      {%- do out[t]['columns'].update({r[1]: {'type': r[2], 'nullable': (r[3] == 'YES')}}) -%}
     {%- endfor -%}
   {%- endif -%}
 
@@ -151,18 +153,19 @@
   {%- set scope = 'IN SCHEMA ' ~ db ~ '.' ~ schema -%}
   {%- set out = {} -%}
 
-  {#- nullability from information_schema.columns -#}
-  {%- set null_q -%}
-    select table_name, column_name, is_nullable
+  {#- columns + types + nullability from information_schema.columns (the spine) -#}
+  {%- set col_q -%}
+    select table_name, column_name, data_type, is_nullable, ordinal_position
     from {{ db }}.information_schema.columns
     where table_schema = '{{ schema }}'
+    order by table_name, ordinal_position
   {%- endset -%}
-  {%- set nulls = run_query(null_q) -%}
-  {%- if nulls -%}
-    {%- for r in nulls.rows -%}
+  {%- set cols_r = run_query(col_q) -%}
+  {%- if cols_r -%}
+    {%- for r in cols_r.rows -%}
       {%- set t = r[0] -%}
       {%- if t not in out -%}{% do out.update({t: {'primary_key': [], 'unique': [], 'foreign_keys': [], 'columns': {}}}) %}{%- endif -%}
-      {%- do out[t]['columns'].update({r[1]: {'nullable': (r[2] == 'YES')}}) -%}
+      {%- do out[t]['columns'].update({r[1]: {'type': r[2], 'nullable': (r[3] == 'YES')}}) -%}
     {%- endfor -%}
   {%- endif -%}
 
@@ -214,15 +217,17 @@
 {#- ------------------------------------------------------------------------- -#}
 {#- Shared assembler for the standard-information_schema branches.            -#}
 {#- ------------------------------------------------------------------------- -#}
-{% macro _mdl_assemble_constraints(nullable_sql, pk_sql, fk_sql) %}
+{% macro _mdl_assemble_constraints(columns_sql, pk_sql, fk_sql) %}
   {%- set out = {} -%}
 
-  {%- set nulls = run_query(nullable_sql) -%}
-  {%- if nulls -%}
-    {%- for r in nulls.rows -%}
+  {#- columns_sql: table_name, column_name, data_type, is_nullable (+ordinal). This is the
+      spine — column names + types + nullability — so the live path needs no dbt-codegen. -#}
+  {%- set cols = run_query(columns_sql) -%}
+  {%- if cols -%}
+    {%- for r in cols.rows -%}
       {%- set t = r[0] -%}
       {%- if t not in out -%}{% do out.update({t: {'primary_key': [], 'unique': [], 'foreign_keys': [], 'columns': {}}}) %}{%- endif -%}
-      {%- do out[t]['columns'].update({r[1]: {'nullable': (r[2] == 'YES')}}) -%}
+      {%- do out[t]['columns'].update({r[1]: {'type': r[2], 'nullable': (r[3] == 'YES')}}) -%}
     {%- endfor -%}
   {%- endif -%}
 

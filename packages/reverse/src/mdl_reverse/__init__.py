@@ -21,6 +21,7 @@ from mdl_reverse.reverse import (
 from mdl_reverse.schema_reader import (
     apply_constraints,
     constraint_macro_sql,
+    constraints_to_projection,
     parse_constraints_output,
     read_schema_yml,
     read_sources_dict,
@@ -33,6 +34,7 @@ __all__ = [
     "read_sources_yml",
     "read_sources_dict",
     "apply_constraints",
+    "constraints_to_projection",
     "constraint_macro_sql",
     "parse_constraints_output",
     "ManifestModel",

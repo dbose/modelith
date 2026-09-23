@@ -142,9 +142,64 @@ def read_sources_dict(data: dict) -> ManifestProjection:
     return ManifestProjection(models=models, warnings=warnings)
 
 
+def constraints_to_projection(constraints: dict) -> ManifestProjection:
+    """Build a ManifestProjection straight from the `mdl_get_constraints` macro output —
+    the LIVE-database front door. The macro returns columns + types + nullability (the
+    spine) AND declared PK / FK / unique (the keys) in one payload, so the live path needs
+    no dbt-codegen: this one reader produces the whole projection.
+
+    Per table it sets, on each `ManifestColumn`: `data_type` from the column's `type`,
+    `meta["nullable"]` from its `nullable`, and `meta["pk"]=True` for PK members; and per
+    model it appends each FK (whose referenced table is also present) as a
+    `relationship_tests` `(column, ref_table)` tuple — the DDL path's HIGH-confidence
+    contract. So a declared FK is an auto-accepted relationship, a declared PK the
+    authoritative business key, exactly as erwin would. An empty payload -> empty
+    projection (the caller falls back / warns).
+
+    JSON shape (per table): {"columns": {"c": {"type": "...", "nullable": bool}},
+    "primary_key": ["c"], "unique": [["c"]], "foreign_keys": [{"columns": ["c"],
+    "ref_table": "t", "ref_columns": ["c"]}]}.
+    """
+    models: dict[str, ManifestModel] = {}
+    known = set(constraints)
+    for table_name, tc in constraints.items():
+        if not isinstance(tc, dict):
+            continue
+        cols: dict[str, ManifestColumn] = {}
+        for cname, cinfo in (tc.get("columns") or {}).items():
+            meta: dict = {}
+            if isinstance(cinfo, dict) and "nullable" in cinfo:
+                meta["nullable"] = bool(cinfo["nullable"])
+            cols[cname] = ManifestColumn(
+                name=cname,
+                data_type=(cinfo.get("type") if isinstance(cinfo, dict) else None) or None,
+                meta=meta,
+            )
+        for pk_col in tc.get("primary_key") or []:
+            if pk_col in cols:
+                cols[pk_col].meta["pk"] = True
+                cols[pk_col].meta.setdefault("nullable", False)
+        rel_tests: list[tuple[str, str]] = []
+        for fk in tc.get("foreign_keys") or []:
+            if not isinstance(fk, dict) or fk.get("ref_table") not in known:
+                continue
+            for col_name in fk.get("columns") or []:
+                if col_name in cols and (col_name, fk["ref_table"]) not in rel_tests:
+                    rel_tests.append((col_name, fk["ref_table"]))
+        models[table_name] = ManifestModel(
+            name=table_name,
+            unique_id=f"model.live.{table_name}",
+            columns=cols,
+            relationship_tests=rel_tests,
+        )
+    return ManifestProjection(models=models)
+
+
 def apply_constraints(projection: ManifestProjection, constraints: dict) -> ManifestProjection:
     """Overlay real warehouse constraints (from the `mdl_get_constraints` dbt macro) onto a
-    projection built from the column/type spine (`read_sources_yml` / a catalog).
+    projection built from the column/type spine (a catalog, or a legacy generate_source
+    sources.yml). Retained for the catalog-fallback path (a built dbt project); the live
+    default uses `constraints_to_projection` since the macro now carries the spine too.
 
     This is what makes the live-database reverse erwin-grade: `generate_source` and
     `catalog.json` carry columns + types but no keys, so on their own the reverse can only

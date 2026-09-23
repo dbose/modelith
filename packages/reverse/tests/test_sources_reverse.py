@@ -20,6 +20,7 @@ from mdl_reverse.reverse import reverse
 from mdl_reverse.schema_reader import (
     apply_constraints,
     constraint_macro_sql,
+    constraints_to_projection,
     parse_constraints_output,
     read_sources_dict,
     read_sources_yml,
@@ -298,3 +299,62 @@ def test_parse_constraints_output_absent_sentinel_is_empty():
 
 def test_parse_constraints_output_malformed_json_is_empty():
     assert parse_constraints_output("MDL_CONSTRAINTS_JSON {not valid json\n") == {}
+
+
+# --- constraints_to_projection (the live front door, one call) ---------------
+
+# The macro now returns columns+types+keys in one payload, so this builds the WHOLE
+# projection — no generate_source spine needed.
+_FULL_CONSTRAINTS = {
+    "customer": {
+        "columns": {
+            "customer_id": {"type": "BIGINT", "nullable": False},
+            "customer_sk": {"type": "VARCHAR", "nullable": False},
+            "region_id": {"type": "BIGINT", "nullable": True},
+            "legal_name": {"type": "VARCHAR", "nullable": False},
+        },
+        "primary_key": ["customer_id"],
+        "foreign_keys": [
+            {"columns": ["region_id"], "ref_table": "region", "ref_columns": ["region_id"]}
+        ],
+    },
+    "region": {
+        "columns": {
+            "region_id": {"type": "BIGINT", "nullable": False},
+            "region_name": {"type": "VARCHAR", "nullable": True},
+        },
+        "primary_key": ["region_id"],
+    },
+}
+
+
+def test_constraints_to_projection_builds_full_spine():
+    proj = constraints_to_projection(_FULL_CONSTRAINTS)
+    assert set(proj.models) == {"customer", "region"}
+    cust = proj.models["customer"]
+    assert cust.columns["customer_id"].data_type == "BIGINT"
+    assert cust.columns["customer_id"].meta["pk"] is True
+    assert cust.columns["customer_id"].meta["nullable"] is False
+    assert cust.columns["region_id"].meta["nullable"] is True
+    assert ("region_id", "region") in cust.relationship_tests
+
+
+def test_constraints_to_projection_reverses_to_erwin_grade_model():
+    proj = constraints_to_projection(_FULL_CONSTRAINTS)
+    result = reverse(
+        proj, project_name="warehouse", target=TARGET,
+        ledger=DecisionLedger(), interactive=False, naming=None,
+    )
+    # surrogate stripped, PK -> business key, declared FK -> materialised relationship
+    customer = next(e for e in result.model.logical_entities.values() if e.name == "customer")
+    attrs = {a.name for a in customer.attributes}
+    assert "customer_sk" not in attrs
+    assert {a.name for a in customer.attributes if a.role == "business_key"} == {"customer_id"}
+    ent = {e.id: e.name for e in result.model.logical_entities.values()}
+    edges = {(ent.get(a), ent.get(b)) for r in result.model.relationships.values()
+             for a, b in [(r.from_.entity, r.to.entity)]}
+    assert ("customer", "region") in edges
+
+
+def test_constraints_to_projection_empty_is_empty():
+    assert constraints_to_projection({}).models == {}
