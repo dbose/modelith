@@ -280,6 +280,13 @@ def test_constraint_macro_ships_and_dispatches():
         assert branch in sql, f"missing macro branch {branch}"
     # it prints the sentinel the parser keys off
     assert "MDL_CONSTRAINTS_JSON" in sql
+    # the DuckDB branch recovers FK targets from constraint_text (portable across DuckDB
+    # versions) rather than SELECTing the referenced_table column (absent on older DuckDB
+    # shipped with older dbt-duckdb). Guard against a regression back to the fragile column.
+    assert "_mdl_parse_fk_ref" in sql
+    assert "constraint_text\n    from duckdb_constraints()" in sql
+    # referenced_table must not be SELECTed (mentions in explanatory comments are fine)
+    assert "referenced_table\n" not in sql  # i.e. not a column in a select list
 
 
 def test_parse_constraints_output_finds_the_json_line():

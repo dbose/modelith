@@ -108,8 +108,13 @@
     {%- endfor -%}
   {%- endif -%}
 
+  {#- Only `constraint_text` + `constraint_column_names` are portable across DuckDB
+      versions: the `referenced_table` / `referenced_column_names` columns were added
+      later (absent on the DuckDB shipped with older dbt-duckdb, e.g. 1.7.2). So we read
+      the FK's referenced table/columns out of `constraint_text`
+      ("FOREIGN KEY (a) REFERENCES t(b)") via _mdl_parse_fk_ref, which works everywhere. -#}
   {%- set con_q -%}
-    select table_name, constraint_type, constraint_column_names, referenced_table, referenced_column_names
+    select table_name, constraint_type, constraint_column_names, constraint_text
     from duckdb_constraints()
     where schema_name = '{{ schema }}'
   {%- endset -%}
@@ -119,16 +124,17 @@
       {%- set t = r[0] -%}
       {%- if t not in out -%}{% do out.update({t: {'primary_key': [], 'unique': [], 'foreign_keys': [], 'columns': {}}}) %}{%- endif -%}
       {%- set ctype = r[1] -%}
-      {#- the dbt-duckdb adapter returns DuckDB LIST columns as JSON strings, not lists —
-          normalise both the child columns and the FK-referenced columns. -#}
+      {#- dbt-duckdb returns DuckDB LIST columns as JSON strings — normalise to a list. -#}
       {%- set cols = _mdl_as_list(r[2]) -%}
-      {%- set ref_cols = _mdl_as_list(r[4]) -%}
       {%- if ctype == 'PRIMARY KEY' -%}
         {%- do out[t].update({'primary_key': cols}) -%}
       {%- elif ctype == 'UNIQUE' -%}
         {%- do out[t]['unique'].append(cols) -%}
       {%- elif ctype == 'FOREIGN KEY' -%}
-        {%- do out[t]['foreign_keys'].append({'columns': cols, 'ref_table': r[3], 'ref_columns': ref_cols}) -%}
+        {%- set ref = _mdl_parse_fk_ref(r[3]) -%}
+        {%- if ref.table -%}
+          {%- do out[t]['foreign_keys'].append({'columns': cols, 'ref_table': ref.table, 'ref_columns': ref.columns}) -%}
+        {%- endif -%}
       {%- elif ctype == 'NOT NULL' -%}
         {%- for c in cols -%}
           {%- if c not in out[t]['columns'] -%}{% do out[t]['columns'].update({c: {}}) %}{%- endif -%}
@@ -280,6 +286,45 @@
   {%- else -%}
     {{ return([value]) }}
   {%- endif -%}
+{% endmacro %}
+
+
+{#- Parse the referenced table + columns out of a DuckDB FK `constraint_text`, e.g.
+    "FOREIGN KEY (region_id) REFERENCES region(region_id)" -> {table: 'region',
+    columns: ['region_id']}. Portable across DuckDB versions (constraint_text is always
+    present, unlike the later `referenced_table` column). Returns {table: none} if it
+    can't parse, so the caller skips the edge rather than emitting a bad one. -#}
+{% macro _mdl_parse_fk_ref(constraint_text) %}
+  {%- set txt = constraint_text | string -%}
+  {%- set marker = 'REFERENCES ' -%}
+  {%- set idx = txt.find(marker) -%}
+  {%- if idx == -1 -%}{{ return({'table': none, 'columns': []}) }}{%- endif -%}
+  {%- set rest = txt[idx + marker | length:] | trim -%}
+  {%- set paren = rest.find('(') -%}
+  {%- if paren == -1 -%}
+    {#- REFERENCES t (no column list) — table is the rest up to whitespace/end. -#}
+    {%- set table = rest.split(' ')[0].split('\t')[0] | trim -%}
+    {{ return({'table': _mdl_unquote(table), 'columns': []}) }}
+  {%- endif -%}
+  {%- set table = rest[:paren] | trim -%}
+  {%- set close = rest.find(')', paren) -%}
+  {%- set cols_str = rest[paren + 1:close] if close != -1 else '' -%}
+  {%- set columns = [] -%}
+  {%- for c in cols_str.split(',') -%}
+    {%- set cc = _mdl_unquote(c | trim) -%}
+    {%- if cc -%}{% do columns.append(cc) %}{%- endif -%}
+  {%- endfor -%}
+  {{ return({'table': _mdl_unquote(table), 'columns': columns}) }}
+{% endmacro %}
+
+
+{#- Strip surrounding double-quotes DuckDB uses for identifiers in constraint_text. -#}
+{% macro _mdl_unquote(ident) %}
+  {%- set s = ident | string | trim -%}
+  {%- if s.startswith('"') and s.endswith('"') and s | length >= 2 -%}
+    {{ return(s[1:-1]) }}
+  {%- endif -%}
+  {{ return(s) }}
 {% endmacro %}
 
 
