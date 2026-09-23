@@ -13,11 +13,45 @@ generate->reverse->generate diff is semantically empty (property 2, §12).
 
 from __future__ import annotations
 
+from importlib import resources
 from pathlib import Path
 
 from mdl_core.yaml_io import load_str
 from mdl_reverse.manifest import ManifestColumn, ManifestModel, ManifestProjection
 from mdl_reverse.regions_strip import strip_regions
+
+# The sentinel `_mdl_emit` prints before the JSON payload, so connect.py can find the
+# constraint blob among dbt's run-operation output (kept in sync with the macro).
+CONSTRAINTS_SENTINEL = "MDL_CONSTRAINTS_JSON "
+
+
+def constraint_macro_sql() -> str:
+    """The `mdl_get_constraints` dbt macro source (shipped as a package resource).
+
+    `mdl reverse --connect` writes this into the user's dbt project `macros/` dir before
+    `dbt run-operation mdl_get_constraints`, so declared PK/FK/unique/nullable come back
+    from the warehouse's own constraint catalog. Read via importlib.resources so it
+    resolves in both an editable checkout and the shipped wheel."""
+    return (resources.files("mdl_reverse") / "resources" / "mdl_get_constraints.sql").read_text(
+        encoding="utf-8"
+    )
+
+
+def parse_constraints_output(stdout: str) -> dict:
+    """Extract the constraint JSON the macro printed (the `MDL_CONSTRAINTS_JSON <json>`
+    line) from a `dbt run-operation` stdout blob. Returns {} when the sentinel is absent
+    (macro didn't run, or the warehouse had no readable catalog) — the graceful path."""
+    import json
+
+    for line in stdout.splitlines():
+        idx = line.find(CONSTRAINTS_SENTINEL)
+        if idx != -1:
+            payload = line[idx + len(CONSTRAINTS_SENTINEL):].strip()
+            try:
+                return json.loads(payload) or {}
+            except (ValueError, json.JSONDecodeError):
+                return {}
+    return {}
 
 
 def read_schema_yml(path: str | Path) -> ManifestProjection:
@@ -106,6 +140,70 @@ def read_sources_dict(data: dict) -> ManifestProjection:
                 meta=meta,
             )
     return ManifestProjection(models=models, warnings=warnings)
+
+
+def apply_constraints(projection: ManifestProjection, constraints: dict) -> ManifestProjection:
+    """Overlay real warehouse constraints (from the `mdl_get_constraints` dbt macro) onto a
+    projection built from the column/type spine (`read_sources_yml` / a catalog).
+
+    This is what makes the live-database reverse erwin-grade: `generate_source` and
+    `catalog.json` carry columns + types but no keys, so on their own the reverse can only
+    *infer* keys and relationships (medium-confidence proposals). The dispatched constraint
+    macro reads the warehouse's own constraint catalog (information_schema /
+    pg_constraint / SHOW ... KEYS depending on the adapter) and returns declared PK / FK /
+    unique / nullability. Overlaying it here lands:
+      - PK columns as `meta["pk"] = True` -> the engine takes them as the business key
+        authoritatively (reverse.py:297-303), a composite PK included.
+      - nullability as `meta["nullable"]` -> honoured at reverse.py:330 (always present when
+        the macro ran; information_schema `is_nullable` is universal across warehouses).
+      - each FK as a `relationship_tests` `(column, ref_table)` tuple -> the HIGH-confidence
+        relationship channel (reverse.py:410-427), the SAME contract the DDL path fills.
+    So a declared FK becomes an auto-accepted relationship, not a proposal.
+
+    The overlay is additive and fail-soft: an empty/absent `constraints` dict is a no-op
+    (the projection keeps its inferred behaviour), a constraint on an unknown table or
+    column is skipped, and only FKs whose referenced table is also in the projection are
+    kept (a dangling FK can't become a graph edge). Constraint JSON shape, per table:
+        {"<table>": {
+            "primary_key": ["col", ...],
+            "unique": [["col", ...], ...],
+            "foreign_keys": [{"columns": ["col"], "ref_table": "t", "ref_columns": ["c"]}],
+            "columns": {"col": {"nullable": bool}}}}
+    Mutates and returns the same projection (the projection is freshly built per reverse).
+    """
+    if not constraints:
+        return projection
+    known = set(projection.models)
+    for table_name, tc in constraints.items():
+        model = projection.models.get(table_name)
+        if model is None or not isinstance(tc, dict):
+            continue
+        # nullability + pk are per-column meta overlays
+        for cname, cinfo in (tc.get("columns") or {}).items():
+            col = model.columns.get(cname)
+            if col is not None and isinstance(cinfo, dict) and "nullable" in cinfo:
+                col.meta["nullable"] = bool(cinfo["nullable"])
+        for pk_col in tc.get("primary_key") or []:
+            col = model.columns.get(pk_col)
+            if col is not None:
+                col.meta["pk"] = True
+                # a PK column is by definition not nullable, even if the columns block
+                # didn't say so.
+                col.meta.setdefault("nullable", False)
+        # foreign keys -> HIGH-confidence relationship tests, one per constrained column,
+        # only when the referenced table is present (a dangling FK can't be an edge).
+        for fk in tc.get("foreign_keys") or []:
+            if not isinstance(fk, dict):
+                continue
+            ref_table = fk.get("ref_table")
+            if ref_table not in known:
+                continue
+            for col_name in fk.get("columns") or []:
+                if col_name in model.columns:
+                    edge = (col_name, ref_table)
+                    if edge not in model.relationship_tests:
+                        model.relationship_tests.append(edge)
+    return projection
 
 
 def _project(data: dict) -> ManifestProjection:
