@@ -55,6 +55,37 @@ app.add_typer(gov_app, name="gov")
 app.add_typer(catalog_app, name="catalog")
 
 
+def _mdl_version() -> str:
+    """The installed modelith-dbt version, from package metadata (works for a wheel and an
+    editable install). Falls back to 'unknown' rather than raising if metadata is absent."""
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        return version("modelith-dbt")
+    except PackageNotFoundError:  # pragma: no cover - only if run from a non-installed tree
+        return "unknown"
+
+
+def _version_callback(value: bool) -> None:
+    if value:
+        typer.echo(f"mdl {_mdl_version()}")
+        raise typer.Exit()
+
+
+@app.callback()
+def _root(
+    version: bool = typer.Option(
+        False,
+        "--version",
+        "-V",
+        help="Show the installed mdl version and exit.",
+        is_eager=True,
+        callback=_version_callback,
+    ),
+) -> None:
+    """Modelith: ontology-anchored, git-native data modeling for dbt."""
+
+
 def _load(model_dir: Path) -> ModelRepo:
     try:
         return ModelRepo.load(model_dir)
