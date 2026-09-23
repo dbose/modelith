@@ -9,8 +9,7 @@ from __future__ import annotations
 
 import re
 
-from rdflib import Graph, Namespace, URIRef
-from rdflib.namespace import OWL, SH, SKOS, XSD
+from mdl_ontology._rdf import IRI, OWL, SH, SKOS, XSD, Graph, Namespace
 
 # Modelith's own namespace for minted terms (stable, ULID-based).
 MDL = Namespace("https://modelith.dev/ontology/")
@@ -41,10 +40,10 @@ _SKOS_PRED = {
 }
 
 
-def term_uri(ulid: str, base: str | None = None) -> URIRef:
+def term_uri(ulid: str, base: str | None = None):
     """The stable IRI for a Modelith object, keyed by its ULID, on the given base
     (defaults to the modelith.dev namespace)."""
-    return URIRef((base or str(MDL)) + ulid)
+    return IRI((base or str(MDL)) + ulid)
 
 
 def base_iri_for(model) -> str:
@@ -76,5 +75,6 @@ def bind(g: Graph, registry=None, *, r2rml: bool = False) -> None:
 
 
 def serialize(g: Graph, fmt: str = "turtle") -> str:
-    fmt_map = {"turtle": "turtle", "ttl": "turtle", "xml": "xml", "jsonld": "json-ld", "nt": "nt"}
-    return g.serialize(format=fmt_map.get(fmt.lower(), "turtle"))
+    # The adapter's Graph.serialize maps rdflib-style format strings itself
+    # (turtle/ttl/xml/jsonld/json-ld/nt/…); pass the requested format straight through.
+    return g.serialize(fmt)

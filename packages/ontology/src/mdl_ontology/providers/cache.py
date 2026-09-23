@@ -16,9 +16,9 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from rdflib import Graph, Literal, URIRef
-from rdflib.namespace import RDFS, SKOS
-
+from mdl_ontology._rdf import IRI as URIRef
+from mdl_ontology._rdf import RDFS, SKOS, Graph
+from mdl_ontology._rdf import Lit as Literal
 from mdl_ontology.lock import CACHE_REL
 
 _RESOLVED_SUB = "resolved"

@@ -20,8 +20,7 @@ import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
-from rdflib import Graph
-
+from mdl_ontology import _rdf
 from mdl_ontology.lock import CACHE_REL, Lock, OntologyLayerLock
 
 _EXT = {
@@ -78,15 +77,10 @@ def _download_artifact(source: str, timeout: float) -> bytes:
 
 def _export_endpoint(source: str, fmt: str, timeout: float) -> bytes:
     """CONSTRUCT the full graph from a SPARQL endpoint and serialize it — the
-    point-in-time snapshot the lock hashes."""
-    from rdflib.plugins.stores.sparqlstore import SPARQLStore
-
-    store = SPARQLStore(query_endpoint=source)
-    g = Graph(store=store)
-    snap = Graph()
-    for triple in g.triples((None, None, None)):
-        snap.add(triple)
-    return snap.serialize(format=_ser_format(fmt)).encode("utf-8")
+    point-in-time snapshot the lock hashes. The remote-SPARQL transport lives in the
+    RDF adapter (httpx CONSTRUCT), so no store/backend detail leaks in here."""
+    g = _rdf.sparql_construct(source, timeout=timeout)
+    return g.serialize(_ser_format(fmt)).encode("utf-8")
 
 
 def _ser_format(fmt: str) -> str:

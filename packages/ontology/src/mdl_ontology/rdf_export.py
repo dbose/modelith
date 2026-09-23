@@ -13,14 +13,14 @@ rather than a picture.
 
 from __future__ import annotations
 
-from rdflib import Graph, Literal, URIRef
-from rdflib.namespace import OWL, RDF, RDFS, SH, SKOS, XSD
-
 from mdl_core.ir import Model
 from mdl_ontology._common import _SKOS_PRED, _XSD_FOR_BASE, MDL
 from mdl_ontology._common import bind as _bind
 from mdl_ontology._common import serialize as serialize
 from mdl_ontology._common import term_uri as _term_uri
+from mdl_ontology._rdf import IRI as URIRef
+from mdl_ontology._rdf import OWL, RDF, RDFS, SH, SKOS, XSD, Graph
+from mdl_ontology._rdf import Lit as Literal
 
 
 def export_rdf(model: Model, *, layer: str = "conceptual", registry=None) -> Graph:

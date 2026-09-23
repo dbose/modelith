@@ -26,10 +26,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from rdflib import BNode, Graph, Literal, URIRef
-
 from mdl_core.ir import Attribute, LogicalEntity, Model, PhysicalTable
 from mdl_ontology._common import _XSD_FOR_BASE, RR, base_iri_for, bind, term_uri
+from mdl_ontology._rdf import IRI as URIRef
+from mdl_ontology._rdf import BlankNode as BNode
+from mdl_ontology._rdf import Graph
+from mdl_ontology._rdf import Lit as Literal
 
 
 def _resolve_iri(value: str | None, registry) -> str | None:

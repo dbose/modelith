@@ -5,9 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 from mdl_ontology import build_registry, export_rdf, export_shacl, serialize
+from mdl_ontology._rdf import SH, SKOS, Graph
 from mdl_ontology.registry import VocabularySource
-from rdflib import Graph
-from rdflib.namespace import SH, SKOS
 
 from mdl_core.ids import new_ulid
 from mdl_core.ir import (
