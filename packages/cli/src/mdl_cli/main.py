@@ -365,6 +365,98 @@ def _read_ddl_source(ddl: Path) -> str:
     return ddl.read_text(encoding="utf-8")
 
 
+def _init_profile(adapter: str, dest: Path) -> None:
+    """`mdl reverse --init-profile <adapter>`: scaffold a profiles.yml template and print
+    the env vars to set + the dbt adapter to install. Never writes a credential."""
+    from mdl_reverse.connect import ADAPTER_PACKAGES, ConnectError, scaffold_profile
+
+    try:
+        res = scaffold_profile(adapter, dest)
+    except ConnectError as e:
+        typer.secho(str(e), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from e
+    typer.secho(f"wrote {res.path}", fg=typer.colors.GREEN)
+    if res.env_vars:
+        typer.secho(
+            "  fill in the connection fields, then set these env vars:", fg=typer.colors.CYAN
+        )
+        for v in res.env_vars:
+            typer.echo(f"    export {v}=…")
+    pkg = ADAPTER_PACKAGES.get(adapter.lower(), f"dbt-{adapter.lower()}")
+    typer.secho(
+        f"  install the adapter in your dbt env:  pip install {pkg}", fg=typer.colors.CYAN
+    )
+    typer.secho(
+        f"  then:  mdl reverse --connect --schema <schema> --profiles-dir {res.path.parent}",
+        fg=typer.colors.CYAN,
+    )
+
+
+def _live_projection(
+    *,
+    profiles_dir: Path | None,
+    schema: str | None,
+    database: str | None,
+    select: str | None,
+    target: str | None,
+    with_constraints: bool,
+):
+    """Introspect a live datastore into a ManifestProjection (spec R2). Runs `dbt debug`
+    to validate the connection, then the mdl_get_constraints macro (columns+types+keys)
+    through a throwaway dbt project against the user's profiles.yml."""
+    from mdl_reverse.connect import ConnectError, dbt_debug, introspect_constraints
+    from mdl_reverse.schema_reader import constraints_to_projection
+
+    if not schema:
+        typer.secho(
+            "--connect needs --schema <schema> to introspect", fg=typer.colors.RED, err=True
+        )
+        raise typer.Exit(1)
+    pdir = Path(profiles_dir) if profiles_dir else Path.cwd()
+
+    typer.secho("  testing the connection (dbt debug)…", fg=typer.colors.CYAN)
+    dbg = dbt_debug(pdir, target=target)
+    if not dbg.ok:
+        typer.secho("connection test failed:", fg=typer.colors.RED, err=True)
+        typer.secho(dbg.message, err=True)
+        raise typer.Exit(4)
+    typer.secho("  connection ok", fg=typer.colors.GREEN)
+
+    if not with_constraints:
+        typer.secho(
+            "  --no-constraints: columns/types only, keys will be inferred",
+            fg=typer.colors.YELLOW,
+        )
+    typer.secho(f"  introspecting schema {schema!r}…", fg=typer.colors.CYAN)
+    try:
+        constraints = introspect_constraints(
+            pdir, schema=schema, database=database, select=select, target=target
+        )
+    except ConnectError as e:
+        typer.secho(str(e), fg=typer.colors.RED, err=True)
+        raise typer.Exit(4) from e
+    if not with_constraints:
+        # keep columns/types + nullability, drop declared keys so they're inferred instead
+        for tc in constraints.values():
+            if isinstance(tc, dict):
+                tc["primary_key"] = []
+                tc["foreign_keys"] = []
+    if not constraints:
+        typer.secho(
+            f"no tables found in schema {schema!r} (check --schema/--database and privileges)",
+            fg=typer.colors.YELLOW,
+        )
+    proj = constraints_to_projection(constraints)
+    n_fk = sum(
+        len(t.get("foreign_keys") or []) for t in constraints.values() if isinstance(t, dict)
+    )
+    typer.secho(
+        f"  introspected {len(proj.models)} table(s), {n_fk} declared foreign key(s)",
+        fg=typer.colors.GREEN,
+    )
+    return proj
+
+
 def _nonclobbering_out(out: Path) -> Path:
     """If `out` already contains a Modelith model (mdl-project.yaml), return a fresh
     suffixed sibling (model-reversed-v1, -v2, …) so a reverse never overwrites an
@@ -399,6 +491,44 @@ def reverse(
     ),
     dialect: str = typer.Option(
         None, "--dialect", help="SQL dialect for --ddl (postgres|snowflake|mysql|duckdb|…)"
+    ),
+    connect: bool = typer.Option(
+        False,
+        "--connect",
+        help="Reverse from a LIVE datastore via dbt. Introspects the warehouse's own "
+        "catalog (columns, types, and declared PK/FK/unique) through your dbt adapter and "
+        "profiles.yml — no dbt models needed, so a warehouse-only team can reverse a live "
+        "schema. Pass --schema (and --database for BigQuery/Snowflake). Runs `dbt debug` "
+        "first; declared keys become high-confidence relationships, the rest is inferred.",
+    ),
+    init_profile: str = typer.Option(
+        None,
+        "--init-profile",
+        help="Scaffold a profiles.yml template for an adapter "
+        "(duckdb|postgres|snowflake|bigquery|redshift|databricks) and exit. Secrets are "
+        "env_var() placeholders you set yourself; Modelith never stores a credential.",
+    ),
+    profiles_dir: Path = typer.Option(
+        None, "--profiles-dir", help="Directory holding profiles.yml (default: dbt's own search)."
+    ),
+    schema: str = typer.Option(
+        None, "--schema", help="Schema to introspect (with --connect). Required for a live reverse."
+    ),
+    database: str = typer.Option(
+        None,
+        "--database",
+        help="Database/catalog to introspect (with --connect; BigQuery/Snowflake).",
+    ),
+    select: str = typer.Option(
+        None,
+        "--select",
+        help="Comma list of tables to reverse (with --connect); scopes a big warehouse.",
+    ),
+    no_constraints: bool = typer.Option(
+        False,
+        "--no-constraints",
+        help="With --connect, skip constraint introspection (columns/types only, keys "
+        "inferred). An escape hatch for a connection without catalog privileges.",
     ),
     out: Path = typer.Option(Path("model"), "--out", "-o", help="Where to write the model"),
     target: str = typer.Option("duckdb_dev", "--target", "-t"),
@@ -463,10 +593,18 @@ def reverse(
         reverse:
           auto_accept: none        # high | medium-high | medium | low | none
     """
-    # Exactly one source: a dbt project (manifest.json / schema.yml) or a SQL DDL script.
-    if bool(project) == bool(ddl):
+    # --init-profile is a one-shot scaffold that exits before any reverse.
+    if init_profile:
+        _init_profile(init_profile, profiles_dir or out)
+        return
+
+    # Exactly one source: a dbt project (manifest/schema.yml), a SQL DDL script, or a live
+    # datastore (--connect).
+    sources = [bool(project), bool(ddl), bool(connect)]
+    if sum(sources) != 1:
         typer.secho(
-            "pass exactly one of --project (a dbt manifest/schema.yml) or --ddl (a SQL script)",
+            "pass exactly one source: --project (a dbt manifest/schema.yml), --ddl (a SQL "
+            "script), or --connect (a live datastore via profiles.yml)",
             fg=typer.colors.RED,
             err=True,
         )
@@ -479,7 +617,16 @@ def reverse(
     if not force:
         out = _nonclobbering_out(out)
 
-    if ddl:
+    if connect:
+        proj = _live_projection(
+            profiles_dir=profiles_dir,
+            schema=schema,
+            database=database,
+            select=select,
+            target=target if target != "duckdb_dev" else None,
+            with_constraints=not no_constraints,
+        )
+    elif ddl:
         from mdl_reverse.ddl_projection import ddl_projection
 
         proj = ddl_projection(_read_ddl_source(ddl), dialect=dialect)
