@@ -3320,15 +3320,29 @@ def main() -> None:
     cannot see) and re-raise it faithfully. Telemetry is entirely fail-soft; it
     never alters the documented exit codes (0/1/2/3/4).
     """
-    # Typer vendors its own Click (typer._click), so typer.Exit / UsageError are
-    # NOT the same classes as plain `click.exceptions.*`. Catch the exceptions from
-    # the module Typer actually raises, or an unknown command / usage error would
-    # fall through and lose its exit code (2). Fall back to plain click if a future
-    # Typer relayouts its private module — the wrapper must never fail to import.
+    # Catch Typer's control-flow exceptions by the classes Typer ACTUALLY raises. This is
+    # version-sensitive: older Typer vendors its own Click, so a parse error like
+    # `NoSuchOption` derives from `typer._click.exceptions.UsageError` — a DIFFERENT class
+    # from `click.exceptions.UsageError`, so catching the click one would miss it and the
+    # error would fall through to the generic handler as a traceback (exit 1) instead of a
+    # clean usage message (exit 2). Newer Typer dropped the private module and uses plain
+    # Click. Resolve each class from typer._click first, then click — so the wrapper is
+    # correct on both, and a private-module rename can't crash the import (no bare-except
+    # hides a real exit code).
+    import click.exceptions as _click_base
+
     try:
-        from typer._click import exceptions as click_exc
-    except Exception:  # noqa: BLE001
-        import click.exceptions as click_exc  # type: ignore[no-redef]
+        from typer._click import exceptions as _typer_exc  # type: ignore
+    except Exception:  # noqa: BLE001 - private module absent on newer Typer
+        _typer_exc = _click_base
+
+    def _exc(name: str):
+        return getattr(_typer_exc, name, None) or getattr(_click_base, name)
+
+    class click_exc:  # namespace shim: click_exc.Exit / .Abort / .UsageError
+        Exit = _exc("Exit")
+        Abort = _exc("Abort")
+        UsageError = _exc("UsageError")
 
     # Ergonomic alias: accept `mdl reverse config <sub>` as a spelling of the
     # `mdl reverse-config <sub>` group. `reverse` is a leaf command (it reverse-engineers
