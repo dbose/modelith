@@ -10,9 +10,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from rdflib import Graph
-
 from mdl_core.yaml_io import dump_file, load_file
+from mdl_ontology._rdf import Graph, txt
 
 _EXT_FORMAT = {
     ".ttl": ("turtle", "turtle"),
@@ -51,14 +50,14 @@ def save_ontology_upload(
     ext = Path(filename).suffix.lower()
     if ext not in _EXT_FORMAT:
         raise ValueError(f"unsupported ontology extension {ext!r}")
-    rdflib_fmt, mdl_fmt = _EXT_FORMAT[ext]
+    parse_fmt, mdl_fmt = _EXT_FORMAT[ext]
 
     # Validate it parses before committing it to the repo.
     try:
         g = Graph()
-        g.parse(data=content, format=rdflib_fmt)
+        g.parse(data=content, format=parse_fmt)
     except Exception as e:  # noqa: BLE001 - surface a clean error to the caller
-        raise ValueError(f"could not parse ontology as {rdflib_fmt}: {e}") from e
+        raise ValueError(f"could not parse ontology as {parse_fmt}: {e}") from e
 
     src_name = _slug(name or Path(filename).stem)
     rel_path = f"ontologies/{layer}/{src_name}{ext}"
@@ -90,7 +89,7 @@ def _guess_namespace(g: Graph) -> str | None:
 
     counts: Counter[str] = Counter()
     for s in g.subjects():
-        iri = str(s)
+        iri = txt(s)
         for sep in ("#", "/"):
             if sep in iri:
                 counts[iri.rsplit(sep, 1)[0] + sep] += 1

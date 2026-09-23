@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from mdl_ontology import export_r2rml, serialize
 from mdl_ontology._common import RR
-from rdflib import Graph, Literal, URIRef
+from mdl_ontology._rdf import IRI as URIRef
+from mdl_ontology._rdf import XSD, Graph, txt
+from mdl_ontology._rdf import Lit as Literal
 
 from mdl_core.ir import (
     Attribute,
@@ -94,7 +96,7 @@ def test_triplesmap_per_managed_entity():
 def test_subject_template_from_pk_on_project_base():
     # base derives from the project name ("sales") -> urn:sales:
     g = _graph()
-    templates = {str(o) for o in g.objects(predicate=RR.template)}
+    templates = {txt(o) for o in g.objects(predicate=RR.template)}
     assert "urn:sales:cust/{customer_id}" in templates
     # order's PK column is the physical name from the PhysicalTable
     assert "urn:sales:ord/{order_key}" in templates
@@ -102,20 +104,19 @@ def test_subject_template_from_pk_on_project_base():
 
 def test_class_iri_present():
     g = _graph()
-    classes = {str(o) for o in g.objects(predicate=RR["class"])}
+    classes = {txt(o) for o in g.objects(predicate=RR["class"])}
     assert "urn:sales:cust" in classes
     assert "urn:sales:ord" in classes
 
 
 def test_attribute_predicate_object_maps_have_column_and_datatype():
     g = _graph()
-    cols = {str(o) for o in g.objects(predicate=RR.column)}
+    cols = {txt(o) for o in g.objects(predicate=RR.column)}
     # physical column names for order, plain names for customer
     assert "order_key" in cols
     assert "customer_key" in cols
     assert "name" in cols
     datatypes = set(g.objects(predicate=RR.datatype))
-    from rdflib.namespace import XSD
 
     assert XSD.long in datatypes  # bigint
     assert XSD.string in datatypes
@@ -124,12 +125,12 @@ def test_attribute_predicate_object_maps_have_column_and_datatype():
 def test_relationship_becomes_parent_triplesmap_join():
     g = _graph()
     # there is a joinCondition mapping order.customer_key -> customer.customer_id
-    children = {str(o) for o in g.objects(predicate=RR.child)}
-    parents = {str(o) for o in g.objects(predicate=RR.parent)}
+    children = {txt(o) for o in g.objects(predicate=RR.child)}
+    parents = {txt(o) for o in g.objects(predicate=RR.parent)}
     assert "customer_key" in children  # FK physical column on the child (order)
     assert "customer_id" in parents  # PK column on the parent (customer)
     # the parentTriplesMap points at the customer mapping node
-    parent_tms = {str(o) for o in g.objects(predicate=RR.parentTriplesMap)}
+    parent_tms = {txt(o) for o in g.objects(predicate=RR.parentTriplesMap)}
     assert "urn:sales:mapping/cust" in parent_tms
 
 
@@ -198,7 +199,7 @@ def test_explicit_class_iri_overrides_alignment():
     m = _aligned_model()
     m.logical_entities["cust"].term_map = TermMap(class_iri="http://acme.com/Customer")
     g = export_r2rml(m, allow_unmapped=True)
-    classes = {str(o) for o in g.objects(predicate=RR["class"])}
+    classes = {txt(o) for o in g.objects(predicate=RR["class"])}
     assert "http://acme.com/Customer" in classes
     assert "http://fibo/Customer" not in classes
 
@@ -209,7 +210,7 @@ def test_subject_template_override_verbatim():
         subject_template="https://acme.com/id/customer/{customer_id}"
     )
     templates = {
-        str(o) for o in export_r2rml(m, allow_unmapped=True).objects(predicate=RR.template)
+        txt(o) for o in export_r2rml(m, allow_unmapped=True).objects(predicate=RR.template)
     }
     assert "https://acme.com/id/customer/{customer_id}" in templates
 
@@ -221,8 +222,8 @@ def test_attribute_predicate_and_datatype_override():
         datatype="http://www.w3.org/2001/XMLSchema#string",
     )
     g = export_r2rml(m, allow_unmapped=True)
-    preds = {str(o) for o in g.objects(predicate=RR.predicate)}
-    dtypes = {str(o) for o in g.objects(predicate=RR.datatype)}
+    preds = {txt(o) for o in g.objects(predicate=RR.predicate)}
+    dtypes = {txt(o) for o in g.objects(predicate=RR.datatype)}
     assert "http://acme.com/hasId" in preds
     assert "http://www.w3.org/2001/XMLSchema#string" in dtypes
 

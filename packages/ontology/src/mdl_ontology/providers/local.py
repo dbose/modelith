@@ -1,6 +1,7 @@
 """Local-file vocabulary provider.
 
-Loads declared RDF/OWL/Turtle files into one rdflib graph and searches/browses them.
+Loads declared RDF/OWL/Turtle files into one RDF graph (via the `_rdf` adapter) and
+searches/browses them.
 This is the original `OntologyRegistry` graph behaviour, extracted behind the provider
 contract and enriched to understand the annotations real ontologies actually use:
 `rdfs:label` (FIBO/OWL) alongside `skos:prefLabel`, `skos:altLabel` synonyms,
@@ -12,9 +13,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from rdflib import Graph, URIRef
-from rdflib.namespace import RDFS, SKOS
-
+from mdl_ontology._rdf import IRI as URIRef
+from mdl_ontology._rdf import RDFS, SKOS, Graph, is_iri, txt
 from mdl_ontology.providers.base import (
     OntologyRef,
     ResolvedTerm,
@@ -98,9 +98,9 @@ class LocalFileProvider:
         results: list[tuple[int, ResolvedTerm]] = []
         seen: set[str] = set()
         for subj in set(self.graph.subjects()):
-            if not isinstance(subj, URIRef):
+            if not is_iri(subj):
                 continue
-            iri = str(subj)
+            iri = txt(subj)
             if iri in seen:
                 continue
             seen.add(iri)
@@ -133,10 +133,10 @@ class LocalFileProvider:
         if (subj, None, None) not in self.graph and (None, None, subj) not in self.graph:
             return None
 
-        def _card(u: URIRef) -> dict:
+        def _card(u) -> dict:
             return {
-                "iri": str(u),
-                "prefixed": self._prefixed_for(str(u)),
+                "iri": txt(u),
+                "prefixed": self._prefixed_for(txt(u)),
                 "label": self._label(u),
             }
 
@@ -144,11 +144,11 @@ class LocalFileProvider:
         children: dict[str, dict] = {}
         for pred in _PARENT_PREDS:
             for o in self.graph.objects(subj, pred):
-                if isinstance(o, URIRef):
-                    parents[str(o)] = _card(o)
+                if is_iri(o):
+                    parents[txt(o)] = _card(o)
             for s in self.graph.subjects(pred, subj):
-                if isinstance(s, URIRef):
-                    children[str(s)] = _card(s)
+                if is_iri(s):
+                    children[txt(s)] = _card(s)
         return TermCard(
             iri=iri,
             prefixed=self._prefixed_for(iri),
@@ -185,11 +185,11 @@ class LocalFileProvider:
     def _first(self, subj, preds) -> str | None:
         for pred in preds:
             for o in self.graph.objects(subj, pred):
-                return str(o)
+                return txt(o)
         return None
 
     def _label(self, subj) -> str:
-        return self._first(subj, _LABEL_PREDS) or local_name(str(subj))
+        return self._first(subj, _LABEL_PREDS) or local_name(txt(subj))
 
     def _definition(self, subj) -> str | None:
         return self._first(subj, _DEF_PREDS)
@@ -197,7 +197,7 @@ class LocalFileProvider:
     def _synonyms(self, subj) -> list[str]:
         out: list[str] = []
         for pred in _SYNONYM_PREDS:
-            out.extend(str(o) for o in self.graph.objects(subj, pred))
+            out.extend(txt(o) for o in self.graph.objects(subj, pred))
         return sorted(set(out))
 
     def _prefixed_for(self, iri: str) -> str:
