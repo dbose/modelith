@@ -71,6 +71,7 @@ where it touches SQL, by a real `dbt build` against DuckDB.
 | Round-trip safe (keeps hand edits) | Yes | n/a | No | n/a |
 | Drift caught + classified | Yes | No | No | Manual |
 | Reverse an existing dbt project | Yes | No | No | No |
+| Reverse a live warehouse (real PK/FK) | Yes | No | Yes | No |
 | Compiles one model to many targets | Yes | No | No (DDL only) | No |
 | Lives in git, no server to run | Yes | Yes | No (desktop app) | Yes |
 | Ontology / governance alignment | Yes | No | Partial | No |
@@ -217,6 +218,13 @@ What the extension adds on top of the canvas:
   "No drift — model matches the manifest" resting state, not an empty panel. A quick-fix
   reconciles additive/cosmetic changes; breaking drift is only ever explained, never
   auto-applied — the same safety boundary the CLI's `--reconcile` enforces.
+- **Reverse a warehouse, in the editor.** *Modelith: Reverse from a Live Database* runs a
+  step-by-step wizard — pick or scaffold a `profiles.yml`, test the connection, choose a
+  schema — and reverses a live warehouse into a model (or right-click a `dbt_project.yml`,
+  a `profiles.yml`, or a `.sql` folder). Every ambiguous decision the engine records lands
+  in a **Reverse Review** panel grouped by kind (relationships, surrogate strips, SCD2,
+  rollups) with confidence badges and inline **Accept / Reject** — the CLI's `--interactive`
+  prompt as a proper review surface.
 - **Warehouse Config view.** A live, role-grouped picture of how your `reverse:` config
   classifies every model, with **Suggest Config** and **Import a Standard** in its title
   bar (preview-then-apply, with a real diff). Authoring, discovering, and sharing the
@@ -354,8 +362,10 @@ predicate IRI, datatype), authored in YAML or through the canvas Inspector (and 
 extension). Entities you have aligned to an ontology are typed with that aligned IRI
 automatically. See [docs/knowledge-graph.md](docs/knowledge-graph.md).
 
-**Reverse engineering.** Point `mdl reverse` at a compiled dbt project (`manifest.json`
-plus `catalog.json`) and get a logical model back. It excludes staging and intermediate
+**Reverse engineering.** Point `mdl reverse` at a **live database** (`--connect`, via your
+dbt adapter + `profiles.yml` — real PK/FK read from the warehouse's constraint catalog), a
+compiled dbt project (`manifest.json` plus `catalog.json`), or a folder of raw SQL DDL, and
+get a logical model back. It excludes staging and intermediate
 models, collapses SCD2 column triples into a pattern, strips surrogate keys (keeping a
 conformed dimension's natural key), marks reporting rollups unmanaged rather than minting
 keyless entities, detects Data Vault structures, and infers relationships from tests and
@@ -418,14 +428,90 @@ touches disk or git until you submit the proposal.
 
 ## Reverse engineering a real warehouse
 
-`mdl reverse` lifts a compiled dbt project into a logical model. On a real, organically
-grown warehouse the heuristics do a lot automatically — but their conventions are
-US-dbt/Kimball by default, so a shop with different naming (medallion `bronze_`/`gold_`,
-`f_`/`d_` facts and dims, non-English) can be misclassified. Two things make that safe:
-a **classification review** that surfaces every decision, and a **`--naming` override**
-that teaches reverse your conventions.
+`mdl reverse` lifts a warehouse into a logical model from any of three sources — a
+**live database**, a compiled **dbt project** (`manifest.json` + `catalog.json`), or a
+folder of **raw SQL DDL** — all through the same engine: surrogate stripping, staging
+exclusion, SCD2/rollup detection, relationship inference, confidence bands, and a
+reviewable decision ledger. On a real, organically grown warehouse the heuristics do a lot
+automatically, and two things make the rest safe: a **classification review** that surfaces
+every decision, and a **`--naming` override** that teaches reverse your conventions.
 
-### 1. Reverse and read the review
+### Reverse a live warehouse (no dbt project needed)
+
+The headline path, and the one for a team with only a warehouse: point Modelith at a live
+database and it reverse-engineers a logical model directly — **including real primary and
+foreign keys** read from the warehouse's own constraint catalog. This is the erwin move
+(reverse from a live connection), git-native and ULID-stable.
+
+Modelith writes no database drivers. It connects the way dbt does — through your dbt
+adapter and a `profiles.yml` (a *connection config, nothing else*) — so a non-dbt team
+installs dbt purely as a connection layer, and a dbt team reuses its existing profile.
+Credentials never touch Modelith: secrets stay `env_var()` placeholders your dbt resolves.
+
+```bash
+# 1. scaffold a connection template (or reuse an existing profiles.yml)
+mdl reverse --init-profile snowflake      # writes profiles.yml; secrets as env_var placeholders
+pip install dbt-snowflake                 # the adapter, in your dbt env
+
+# 2. reverse the live schema
+mdl reverse --connect --schema analytics --profiles-dir . --out model
+```
+
+It runs `dbt debug` to test the connection, introspects the schema (columns, types,
+nullability, and **declared PK/FK/unique**), and reverses it through the full engine:
+
+![mdl reverse --connect: testing the connection, introspecting the schema, and reversing four entities with declared foreign keys recovered at high confidence](docs/assets/reverse-live-terminal.svg)
+
+The declared keys are the point. A foreign key the warehouse declares lands as a
+**high-confidence, auto-accepted relationship** — not a guess — so the recovered model is
+authoritative, not approximate:
+
+```mermaid
+erDiagram
+  customer {
+    bigint customer_id PK
+    bigint region_id FK
+    string legal_name
+    string email
+  }
+  orders {
+    bigint order_id PK
+    bigint customer_id FK
+    bigint product_id FK
+    date order_date
+    integer quantity
+  }
+  product {
+    bigint product_id PK
+    string sku
+    decimal list_price
+  }
+  region {
+    bigint region_id PK
+    string region_name
+    string region_code
+  }
+  region  ||--o{ customer : "customer in region"
+  customer ||--o{ orders  : "order for customer"
+  product ||--o{ orders   : "order of product"
+```
+
+Where a warehouse *doesn't* enforce or declare its keys (common on Snowflake and BigQuery),
+reverse falls back to name-based inference and records those as medium-confidence proposals
+you triage in the review ledger (the Reverse Review panel, or `mdl decisions`). Nullability
+is always recovered — `information_schema.columns.is_nullable` is universal.
+
+Supported adapters: DuckDB, Postgres, Snowflake, BigQuery, Redshift, Databricks. Each needs
+`dbt-core` + its `dbt-<adapter>` in your environment; `mdl reverse --init-profile <adapter>`
+prints exactly what to install. Filter a large warehouse with `--schema` / `--database` /
+`--select <tables>`, and pass `--no-constraints` to skip constraint introspection (a
+connection without catalog privileges still reverses, keys inferred).
+
+**In the editor:** run **Modelith: Reverse from a Live Database** from the command palette,
+or right-click a `profiles.yml` and choose **Reverse Engineer** — a step-by-step wizard
+detects or scaffolds the connection, tests it, and reverses into the Reverse Review panel.
+
+### 1. Reverse a dbt project, and read the review
 
 ```bash
 mdl reverse --project transform/target/manifest.json --out model
@@ -1186,6 +1272,9 @@ mdl validate [--format json]                      schema, refs, ontology, naming
 mdl lint [--fix]                                  naming-standards lint
 mdl generate [--target] [--emit-contract] [...]   emit the dbt project (+ optional targets)
 mdl reverse --project <manifest|schema.yml> [--naming <f>]  lift a dbt project into a model
+mdl reverse --connect --schema <s> [--database <d>] [--select <t>]  lift a LIVE warehouse (dbt adapter + profiles.yml)
+mdl reverse --init-profile <adapter>              scaffold a profiles.yml connection template
+mdl reverse --ddl <dir> [--dialect <d>]           lift a folder of raw SQL DDL as one warehouse
 mdl reverse-config suggest|explain|apply|import   author/discover/share the reverse: config
 mdl drift --manifest <m> [--check|--reconcile]    compare model to compiled warehouse
 mdl drift --manifest <m> --explain [--format json]  annotate each drift with its reconcile action

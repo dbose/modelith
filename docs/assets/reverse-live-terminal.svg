@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="334" viewBox="0 0 760 334" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="14">
+<rect width="760" height="334" rx="10" fill="#0d1117" stroke="#30363d"/>
+<circle cx="22" cy="24" r="6" fill="#ff5f56"/>
+<circle cx="42" cy="24" r="6" fill="#ffbd2e"/>
+<circle cx="62" cy="24" r="6" fill="#27c93f"/>
+<text x="380.0" y="29" fill="#8b949e" text-anchor="middle" font-size="12">mdl — reverse from a live warehouse</text>
+<text x="20" y="54" fill="#7ee787">$</text>
+<text x="38" y="54" fill="#e6edf3">mdl reverse --connect --schema main --profiles-dir .</text>
+<text x="20" y="80" fill="#8b949e">  testing the connection (dbt debug)…</text>
+<text x="20" y="106" fill="#3fb950">  connection ok</text>
+<text x="20" y="132" fill="#8b949e">  introspecting schema 'main'…</text>
+<text x="20" y="158" fill="#3fb950">  introspected 5 table(s), 3 declared foreign key(s)</text>
+<text x="20" y="184" fill="#e6edf3">reversed 4 entities (1 staging/intermediate excluded)</text>
+<text x="20" y="210" fill="#56d4dd">  ✓ [medium-high] strip surrogate_key customer.customer_sk</text>
+<text x="20" y="236" fill="#56d4dd">  ✓ [high] customer.region_id → region</text>
+<text x="20" y="262" fill="#56d4dd">  ✓ [high] orders.customer_id → customer</text>
+<text x="20" y="288" fill="#56d4dd">  ✓ [high] orders.product_id → product</text>
+</svg>
