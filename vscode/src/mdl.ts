@@ -36,9 +36,17 @@ const SCRIPTS_SUBDIR = IS_WIN ? "Scripts" : "bin";
 export async function findMdl(root: string): Promise<MdlBin> {
   if (cached) return cached;
   const cfg = vscode.workspace.getConfiguration("modelith");
-  const explicit = cfg.get<string>("mdlPath");
+  const explicit = cfg.get<string>("mdlPath")?.trim();
   const candidates: MdlBin[] = [];
-  if (explicit) candidates.push({ cmd: explicit, args: [], label: explicit });
+  if (explicit) {
+    // Tolerate the natural mistake of pointing at the Scripts/bin DIRECTORY rather
+    // than the executable inside it: if the path is (or resolves to) a directory,
+    // append mdl(.exe). Spawning a directory just fails silently, so without this the
+    // setting looks ignored. A bare command (no separator, e.g. "mdl") is left as-is.
+    for (const c of explicitCandidates(explicit)) {
+      candidates.push({ cmd: c, args: [], label: c });
+    }
+  }
   const venv = path.join(root, ".venv", SCRIPTS_SUBDIR, MDL_BIN);
   if (fs.existsSync(venv)) {
     candidates.push({ cmd: venv, args: [], label: `.venv/${SCRIPTS_SUBDIR}/${MDL_BIN}` });
@@ -86,6 +94,29 @@ export async function findMdl(root: string): Promise<MdlBin> {
     }
   }
   throw new MdlNotFoundError();
+}
+
+/** Expand an explicit `modelith.mdlPath` into the candidate command(s) to probe.
+ * Handles the three shapes a user might enter:
+ *   - a directory (the Scripts/bin dir) → <dir>/mdl(.exe)
+ *   - a file that exists → use it verbatim
+ *   - a bare command or an as-yet-nonexistent path → try it verbatim, and if it
+ *     looks like a path, also try it + mdl(.exe) in case they meant the dir. */
+function explicitCandidates(explicit: string): string[] {
+  // Strip a trailing separator so path.join behaves and an existsSync dir check works.
+  const trimmed = explicit.replace(/[\\/]+$/, "") || explicit;
+  try {
+    if (fs.statSync(trimmed).isDirectory()) {
+      return [path.join(trimmed, MDL_BIN)];
+    }
+    return [trimmed]; // an existing file
+  } catch {
+    // Doesn't exist yet (or unreadable). If it contains a path separator the user
+    // meant a path — offer both the verbatim path and a dir-style join, so a Scripts
+    // dir that appears after install still resolves. A bare command → verbatim only.
+    const looksLikePath = /[\\/]/.test(trimmed);
+    return looksLikePath ? [trimmed, path.join(trimmed, MDL_BIN)] : [trimmed];
+  }
 }
 
 /** Well-known absolute install locations to probe when PATH is stripped, per OS. */

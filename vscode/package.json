@@ -271,7 +271,7 @@
         "modelith.mdlPath": {
           "type": "string",
           "default": "",
-          "markdownDescription": "Absolute path to the `mdl` executable (`mdl.exe` on Windows), or a command on PATH. Set this if auto-detect can't find your install. Empty = auto-detect: a workspace `.venv`, PATH, well-known install dirs, your selected Python interpreter's Scripts/bin dir, then `python -m mdl_cli`. Find your path with `where mdl` (Windows) or `which mdl`."
+          "markdownDescription": "Path to the `mdl` executable (`mdl.exe` on Windows), the folder that contains it (e.g. `...\\Python313\\Scripts`), or a command on PATH. Set this if auto-detect can't find your install. Empty = auto-detect: a workspace `.venv`, PATH, well-known install dirs, your selected Python interpreter's Scripts/bin dir, then `python -m mdl_cli`. Find your path with `where mdl` (Windows) or `which mdl`."
         },
         "modelith.modelDir": {
           "type": "string",
