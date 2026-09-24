@@ -3,6 +3,15 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
+import {
+  type Fsx,
+  type Platform,
+  explicitCandidates as explicitCandidatesPure,
+  mdlBin,
+  scriptsBinIn,
+  scriptsSubdir,
+  wellKnownBins as wellKnownBinsPure,
+} from "./resolve";
 
 /** Resolved invocation for the mdl CLI: command + prefix args (uv needs "run mdl"). */
 export interface MdlBin {
@@ -14,10 +23,32 @@ export interface MdlBin {
 let cached: MdlBin | null = null;
 
 const IS_WIN = process.platform === "win32";
+const PLATFORM: Platform = IS_WIN ? "win32" : "posix";
 /** The console-script basename: `mdl.exe` on Windows, `mdl` elsewhere. */
-const MDL_BIN = IS_WIN ? "mdl.exe" : "mdl";
+const MDL_BIN = mdlBin(PLATFORM);
 /** venv/conda script dir: `Scripts` on Windows, `bin` elsewhere. */
-const SCRIPTS_SUBDIR = IS_WIN ? "Scripts" : "bin";
+const SCRIPTS_SUBDIR = scriptsSubdir(PLATFORM);
+
+/** Real filesystem probes for the pure resolver (statSync/existsSync/readdirSync). */
+const REAL_FSX: Fsx = {
+  isDirectory(p) {
+    try {
+      return fs.statSync(p).isDirectory();
+    } catch {
+      return false;
+    }
+  },
+  exists(p) {
+    return fs.existsSync(p);
+  },
+  readdir(p) {
+    try {
+      return fs.readdirSync(p);
+    } catch {
+      return [];
+    }
+  },
+};
 
 /** Detection order: explicit setting → workspace venv → PATH → well-known bins →
  * the active interpreter's own Scripts/bin dir → `python -m mdl_cli` → `uv run mdl`.
@@ -40,10 +71,8 @@ export async function findMdl(root: string): Promise<MdlBin> {
   const candidates: MdlBin[] = [];
   if (explicit) {
     // Tolerate the natural mistake of pointing at the Scripts/bin DIRECTORY rather
-    // than the executable inside it: if the path is (or resolves to) a directory,
-    // append mdl(.exe). Spawning a directory just fails silently, so without this the
-    // setting looks ignored. A bare command (no separator, e.g. "mdl") is left as-is.
-    for (const c of explicitCandidates(explicit)) {
+    // than the executable inside it (see explicitCandidates in ./resolve).
+    for (const c of explicitCandidatesPure(explicit, PLATFORM, REAL_FSX)) {
       candidates.push({ cmd: c, args: [], label: c });
     }
   }
@@ -66,7 +95,7 @@ export async function findMdl(root: string): Promise<MdlBin> {
   // GUI-launched VS Code has a minimal PATH that excludes the per-user install
   // locations a shell profile would add, so `mdl (PATH)` misses a `uv tool` / `pipx`
   // / `pip install --user` install. Probe those well-known bins per platform.
-  for (const abs of wellKnownBins()) {
+  for (const abs of wellKnownBinsPure(PLATFORM, wellKnownEnv(), REAL_FSX)) {
     if (fs.existsSync(abs)) candidates.push({ cmd: abs, args: [], label: abs });
   }
 
@@ -96,77 +125,17 @@ export async function findMdl(root: string): Promise<MdlBin> {
   throw new MdlNotFoundError();
 }
 
-/** Expand an explicit `modelith.mdlPath` into the candidate command(s) to probe.
- * Handles the three shapes a user might enter:
- *   - a directory (the Scripts/bin dir) → <dir>/mdl(.exe)
- *   - a file that exists → use it verbatim
- *   - a bare command or an as-yet-nonexistent path → try it verbatim, and if it
- *     looks like a path, also try it + mdl(.exe) in case they meant the dir. */
-function explicitCandidates(explicit: string): string[] {
-  // Strip a trailing separator so path.join behaves and an existsSync dir check works.
-  const trimmed = explicit.replace(/[\\/]+$/, "") || explicit;
-  try {
-    if (fs.statSync(trimmed).isDirectory()) {
-      return [path.join(trimmed, MDL_BIN)];
-    }
-    return [trimmed]; // an existing file
-  } catch {
-    // Doesn't exist yet (or unreadable). If it contains a path separator the user
-    // meant a path — offer both the verbatim path and a dir-style join, so a Scripts
-    // dir that appears after install still resolves. A bare command → verbatim only.
-    const looksLikePath = /[\\/]/.test(trimmed);
-    return looksLikePath ? [trimmed, path.join(trimmed, MDL_BIN)] : [trimmed];
-  }
-}
-
-/** Well-known absolute install locations to probe when PATH is stripped, per OS. */
-function wellKnownBins(): string[] {
-  const home = process.env.HOME || os.homedir();
-  const bins: string[] = [];
-  // An active conda/virtualenv exports its prefix via env vars even when PATH is
-  // stripped by a GUI launch — check those first.
-  if (process.env.VIRTUAL_ENV) {
-    bins.push(path.join(process.env.VIRTUAL_ENV, SCRIPTS_SUBDIR, MDL_BIN));
-  }
-  if (process.env.CONDA_PREFIX) {
-    bins.push(path.join(process.env.CONDA_PREFIX, SCRIPTS_SUBDIR, MDL_BIN));
-  }
-  if (IS_WIN) {
-    const appData = process.env.APPDATA; // roaming: pip install --user scripts live here
-    const localApp = process.env.LOCALAPPDATA;
-    // pip install --user → %APPDATA%\Python\Python3XX\Scripts\mdl.exe. The Python
-    // version dir varies, so glob the known parents at probe time (readdir, no shell).
-    for (const parent of [
-      appData && path.join(appData, "Python"),
-      localApp && path.join(localApp, "Programs", "Python"),
-    ]) {
-      if (parent) bins.push(...winScriptsUnder(parent));
-    }
-    // uv tool / pipx on Windows.
-    if (localApp) {
-      bins.push(path.join(localApp, "uv", "tools", "modelith-dbt", "Scripts", MDL_BIN));
-      bins.push(path.join(localApp, "pipx", "venvs", "modelith-dbt", "Scripts", MDL_BIN));
-    }
-    bins.push(path.join(home, ".local", "bin", MDL_BIN)); // pipx default on some setups
-  } else {
-    bins.push(path.join(home, ".local", "bin", "mdl")); // uv tool install / pipx
-    bins.push(path.join(home, ".local", "share", "uv", "tools", "modelith", "bin", "mdl"));
-    bins.push("/opt/homebrew/bin/mdl");
-    bins.push("/usr/local/bin/mdl");
-  }
-  return bins;
-}
-
-/** Every `<parent>\PythonXXX\Scripts\mdl.exe` under a Windows Python parent dir. */
-function winScriptsUnder(parent: string): string[] {
-  try {
-    return fs
-      .readdirSync(parent)
-      .filter((d) => /^Python\d+/i.test(d))
-      .map((d) => path.join(parent, d, "Scripts", MDL_BIN));
-  } catch {
-    return [];
-  }
+/** Gather the env inputs the well-known-bin probe needs from this process.
+ * (explicitCandidates, wellKnownBins, winScriptsUnder live in ./resolve so they can
+ * be unit-tested on both platforms from one machine.) */
+function wellKnownEnv() {
+  return {
+    home: process.env.HOME || process.env.USERPROFILE || os.homedir(),
+    virtualEnv: process.env.VIRTUAL_ENV,
+    condaPrefix: process.env.CONDA_PREFIX,
+    appData: process.env.APPDATA,
+    localAppData: process.env.LOCALAPPDATA,
+  };
 }
 
 /** Interpreters to interrogate, best-first: the user's selected Python (from the
@@ -215,7 +184,7 @@ async function scriptsDirBin(python: string): Promise<string | undefined> {
   if (!dirs) return undefined;
   for (const dir of dirs.split(/\r?\n/).map((s) => s.trim())) {
     if (!dir) continue;
-    const bin = path.join(dir, MDL_BIN);
+    const bin = scriptsBinIn(dir, PLATFORM);
     if (fs.existsSync(bin)) return bin;
   }
   return undefined;
