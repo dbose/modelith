@@ -35,3 +35,4 @@ demo/**/dbt_packages/
 
 # Container-generated YAML-schema settings (paths are machine-specific).
 .vscode/settings.json
+.claude/worktrees/

@@ -2,7 +2,7 @@
   "name": "modelith-vscode",
   "displayName": "Modelith",
   "description": "Ontology-anchored, git-native data modeling for dbt — validate, generate, drift, and the Modelith canvas inside VS Code.",
-  "version": "0.3.9",
+  "version": "0.3.10",
   "publisher": "BosonResearch",
   "license": "Apache-2.0",
   "icon": "icon.png",
@@ -271,7 +271,7 @@
         "modelith.mdlPath": {
           "type": "string",
           "default": "",
-          "description": "Path to the mdl executable. Empty = auto-detect (.venv/bin/mdl → mdl on PATH → `uv run mdl`)."
+          "markdownDescription": "Path to the `mdl` executable (`mdl.exe` on Windows), the folder that contains it (e.g. `...\\Python313\\Scripts`), or a command on PATH. Set this if auto-detect can't find your install. Empty = auto-detect: a workspace `.venv`, PATH, well-known install dirs, your selected Python interpreter's Scripts/bin dir, then `python -m mdl_cli`. Find your path with `where mdl` (Windows) or `which mdl`."
         },
         "modelith.modelDir": {
           "type": "string",

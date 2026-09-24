@@ -31,6 +31,10 @@ gate "GATE 2  esbuild bundle"
 node esbuild.mjs >/dev/null 2>&1 || fail "bundle failed"
 echo "✓ bundles"
 
+# ── GATE 2b: mdl resolution (win32 + posix from one machine) ──────────────────
+gate "GATE 2b  mdl path resolution (cross-platform)"
+node scripts/resolve.test.mjs || fail "mdl resolution logic broke on win32 or posix"
+
 # ── GATE 3: every declared command is registered in code ──────────────────────
 gate "GATE 3  command wiring (no silent no-ops)"
 python3 - <<'PY' || fail "a declared command is not registered"
