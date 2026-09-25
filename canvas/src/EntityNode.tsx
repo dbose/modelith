@@ -8,6 +8,13 @@ export interface EntityNodeData {
   dimmed: boolean; // search-filtered out
   highlighted: boolean; // search hit / selected neighbourhood
   showTypes: boolean;
+  /** collapse wide tables to just the keys (PK + FK/relationship columns) so a
+   *  400-model warehouse is readable; a "+N more" row expands one entity on click */
+  collapseDetail?: boolean;
+  /** this entity is manually expanded, overriding the global collapse */
+  expanded?: boolean;
+  /** click the "+N more" row -> expand/collapse just this entity */
+  onToggleExpand?: (entityId: string) => void;
   /** attribute ULIDs that are an endpoint of some relationship (issue #5): pinned
    *  near the top so the anchored edges stay meaningful on tall cards */
   endpointAttrs?: Set<string>;
@@ -43,6 +50,9 @@ export const EntityNode = memo(function EntityNode({ data, selected }: NodeProps
     dimmed,
     highlighted,
     showTypes,
+    collapseDetail,
+    expanded,
+    onToggleExpand,
     endpointAttrs,
     highlightAttrs,
     dimAttrs,
@@ -61,7 +71,20 @@ export const EntityNode = memo(function EntityNode({ data, selected }: NodeProps
     .sort((x, y) => rank(x.a) - rank(y.a) || x.i - y.i) // stable within a rank
     .map((x) => x.a);
   const keys = ordered.filter((a) => a.role === "business_key");
-  const rest = ordered.filter((a) => a.role !== "business_key");
+  let rest = ordered.filter((a) => a.role !== "business_key");
+
+  // Collapse-to-keys: when the global collapse is on and this entity isn't manually
+  // expanded, keep only the columns that carry structure — PK (business keys, already in
+  // the keys section) plus FK/relationship endpoints — and hide plain attributes behind a
+  // "+N more" affordance. The keep-set uses the SAME endpointAttrs the edges anchor to, so
+  // a collapsed card still shows every column a relationship line touches.
+  const collapsed = !!collapseDetail && !expanded;
+  let hiddenCount = 0;
+  if (collapsed) {
+    const keep = rest.filter((a) => endpointAttrs?.has(a.id));
+    hiddenCount = rest.length - keep.length;
+    rest = keep;
+  }
 
   const row = (a: AttributeRow, pk: boolean) => {
     const cls =
@@ -131,6 +154,24 @@ export const EntityNode = memo(function EntityNode({ data, selected }: NodeProps
       <div className="attr-section">
         {rest.map((a) => row(a, false))}
         {entity.attributes.length === 0 && <div className="attr-row empty">no attributes</div>}
+        {hiddenCount > 0 && (
+          <div
+            className="attr-row more"
+            title="Show all columns"
+            onClick={onToggleExpand ? () => onToggleExpand(entity.id) : undefined}
+          >
+            {`+${hiddenCount} more`}
+          </div>
+        )}
+        {expanded && !!collapseDetail && (
+          <div
+            className="attr-row more"
+            title="Collapse to keys"
+            onClick={onToggleExpand ? () => onToggleExpand(entity.id) : undefined}
+          >
+            {"− collapse"}
+          </div>
+        )}
       </div>
     </div>
   );

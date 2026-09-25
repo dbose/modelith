@@ -109,6 +109,12 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
   position: relative; /* so the per-attribute handles anchor to THIS row (issue #5) */
 }
 .attr-row.empty { color: var(--text-dim); font-style: italic; }
+/* the "+N more" / "− collapse" affordance on a collapsed-to-keys entity card */
+.attr-row.more {
+  color: var(--text-dim); font-style: italic; cursor: pointer;
+  justify-content: center; height: 22px; font-size: 11px;
+}
+.attr-row.more:hover { color: var(--accent); background: var(--accent-soft); }
 /* attribute-level relationship highlighting (issue #5): the rows an edge/attribute
    hover touches brighten; the rest recede. */
 /* a joined column at either end of the hovered relationship: accent wash + a left
