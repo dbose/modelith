@@ -143,24 +143,24 @@ export class ReverseReviewProvider implements vscode.TreeDataProvider<Node> {
     return [];
   }
 
-  /** The single resting row for an empty review: the top ranked next-action when the
-   * assessment is available, else a sensible default. */
+  /** The single resting row for an empty review. Stays REVERSE-SPECIFIC — docs, drift,
+   * and definition next-actions belong to their own frames, not here. When there are no
+   * models yet, point at reversing one; otherwise the proposals are simply all reviewed. */
   private restingRow(): StatusNode {
-    const action = this.statusModel?.topAction();
-    if (action) {
-      return {
-        kind: "status",
-        label: action.title,
-        icon:
-          action.severity === "attention"
-            ? new vscode.ThemeIcon("warning")
-            : new vscode.ThemeIcon("lightbulb", new vscode.ThemeColor("charts.green")),
-        command: action.command
-          ? { command: action.command, title: action.title }
-          : undefined,
-      };
+    const s = this.statusModel?.status;
+    if (s && s.entity_count === 0) {
+      const reverse = s.next_actions.find((a) => a.id === "reverse");
+      if (reverse) {
+        return {
+          kind: "status",
+          label: reverse.title,
+          icon: new vscode.ThemeIcon("lightbulb", new vscode.ThemeColor("charts.green")),
+          command: reverse.command
+            ? { command: reverse.command, title: reverse.title }
+            : undefined,
+        };
+      }
     }
-    // No assessment yet (or a CLI too old for `mdl status`): the historical default.
     return {
       kind: "status",
       label: "No proposals pending review",

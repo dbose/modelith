@@ -109,6 +109,12 @@
           "contextualTitle": "Modelith Ontology"
         },
         {
+          "id": "modelithDocs",
+          "name": "Documentation",
+          "icon": "$(book)",
+          "contextualTitle": "Modelith Documentation"
+        },
+        {
           "id": "modelithDrift",
           "name": "Drift",
           "icon": "$(git-compare)",
@@ -523,14 +529,14 @@
           "group": "navigation@4"
         },
         {
-          "command": "modelith.docsOpen",
-          "when": "view == modelithReverse && modelith.docsGenerated",
-          "group": "navigation@5"
+          "command": "modelith.docsGenerate",
+          "when": "view == modelithDocs",
+          "group": "navigation@1"
         },
         {
-          "command": "modelith.docsGenerate",
-          "when": "view == modelithReverse && modelith.hasModels && !modelith.docsGenerated",
-          "group": "navigation@5"
+          "command": "modelith.docsOpen",
+          "when": "view == modelithDocs && modelith.docsGenerated",
+          "group": "navigation@2"
         },
         {
           "command": "modelith.ontologyAlign",

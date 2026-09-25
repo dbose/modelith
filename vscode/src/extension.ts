@@ -5,6 +5,7 @@ import type { LanguageClient } from "vscode-languageclient/node";
 import { CanvasManager } from "./canvasPanel";
 import { registerChatParticipant } from "./chatParticipant";
 import { ConfigTreeProvider } from "./configView";
+import { DocsProvider } from "./docsView";
 import { DriftCodeActionProvider, DriftManager } from "./driftDiagnostics";
 import { DriftTreeProvider } from "./driftView";
 import { executeLspCommand, startLsp } from "./lspClient";
@@ -268,6 +269,12 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   const ontology = new OntologyProvider(out);
   ctx.subscriptions.push(vscode.window.registerTreeDataProvider("modelithOntology", ontology));
   void ontology.refresh();
+
+  // Documentation: warehouse-global model docs (dbt-docs style), a concern of the WHOLE
+  // model — deliberately its own frame, not hung off Reverse Review. Driven by the
+  // shared StatusModel so its generated/stale state stays current.
+  const docs = new DocsProvider(statusModel);
+  ctx.subscriptions.push(vscode.window.registerTreeDataProvider("modelithDocs", docs));
 
   // Live refresh: when the decision ledger, the compiled manifest, or a model file
   // changes on disk, re-read proposals, re-assess the workspace, and re-read ontology

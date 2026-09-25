@@ -140,6 +140,67 @@ console.log("\nOntology frame — empty and resting states");
   ok(p.getTreeItem(rows[0]).label.includes("No ontology data"), "no-model state explains itself");
 }
 
+// --- Documentation frame ------------------------------------------------------
+const { DocsProvider } = await load("docsView.ts");
+
+// DocsProvider reads a StatusModel; stub one exposing `status` and onDidChange.
+function fakeStatusModel(status) {
+  return { status, onDidChange: () => ({ dispose() {} }) };
+}
+
+console.log("\nDocumentation frame — global, driven by status");
+{
+  // not generated yet
+  const p = new DocsProvider(fakeStatusModel({ entity_count: 7, docs_generated: false, docs_stale: false, next_actions: [] }));
+  const rows = p.getChildren().map((n) => p.getTreeItem(n));
+  ok(rows.some((r) => String(r.label).startsWith("Not generated")), "shows not-generated state with model count");
+  const gen = rows.find((r) => r.label === "Generate documentation");
+  ok(gen && gen.command?.command === "modelith.docsGenerate", "offers Generate (docsGenerate)");
+}
+{
+  // generated + up to date
+  const p = new DocsProvider(fakeStatusModel({ entity_count: 7, docs_generated: true, docs_stale: false, next_actions: [] }));
+  const rows = p.getChildren().map((n) => p.getTreeItem(n));
+  ok(rows.some((r) => r.label === "Docs up to date"), "shows up-to-date state");
+  const open = rows.find((r) => r.label === "Open documentation");
+  ok(open && open.command?.command === "modelith.docsOpen", "offers Open (docsOpen)");
+  ok(!rows.some((r) => r.label === "Regenerate documentation"), "no Regenerate when fresh");
+}
+{
+  // generated but stale -> Open + Regenerate
+  const p = new DocsProvider(fakeStatusModel({ entity_count: 7, docs_generated: true, docs_stale: true, next_actions: [] }));
+  const rows = p.getChildren().map((n) => p.getTreeItem(n));
+  ok(rows.some((r) => r.label === "Docs out of date"), "shows stale state");
+  ok(rows.some((r) => r.label === "Regenerate documentation"), "offers Regenerate when stale");
+}
+{
+  // no models -> reverse first, not a docs action
+  const p = new DocsProvider(fakeStatusModel({ entity_count: 0, docs_generated: false, docs_stale: false, next_actions: [] }));
+  const rows = p.getChildren().map((n) => p.getTreeItem(n));
+  ok(String(rows[0].label).includes("reverse a warehouse"), "no-models state points at reversing, not docs");
+}
+
+// --- Reverse Review resting row stays reverse-specific (no docs leakage) -------
+const { ReverseReviewProvider } = await load("reverseView.ts");
+console.log("\nReverse Review — resting row is reverse-specific (docs moved out)");
+{
+  const p = new ReverseReviewProvider({ appendLine() {}, append() {}, show() {} },
+    fakeStatusModel({ entity_count: 7, docs_generated: false, docs_stale: false,
+      next_actions: [{ id: "docs-generate", title: "Generate documentation", command: "modelith.docsGenerate", severity: "recommended", detail: "", cli: null }] }));
+  p.decisions = []; // empty review
+  const rows = p.getChildren().map((n) => p.getTreeItem(n));
+  ok(rows.length === 1 && rows[0].label === "No proposals pending review",
+    `empty review shows a reverse resting row, NOT the docs action: ${rows.map((r) => r.label)}`);
+}
+{
+  const p = new ReverseReviewProvider({ appendLine() {}, append() {}, show() {} },
+    fakeStatusModel({ entity_count: 0, docs_generated: false, docs_stale: false,
+      next_actions: [{ id: "reverse", title: "Reverse a warehouse or manifest", command: "modelith.reverseEngineer", severity: "recommended", detail: "", cli: null }] }));
+  p.decisions = [];
+  const rows = p.getChildren().map((n) => p.getTreeItem(n));
+  ok(rows[0].label === "Reverse a warehouse or manifest", "no models -> points at reversing");
+}
+
 rmSync(dir, { recursive: true, force: true });
 console.log();
 if (failed) { console.error(`✗ ${failed} assertion(s) failed`); process.exit(1); }
