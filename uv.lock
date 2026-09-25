@@ -939,7 +939,7 @@ requires-dist = [
 
 [[package]]
 name = "modelith-dbt"
-version = "0.6.4"
+version = "0.6.5"
 source = { editable = "." }
 dependencies = [
     { name = "dbt-artifacts-parser" },

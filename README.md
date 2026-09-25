@@ -469,6 +469,22 @@ reviewable decision ledger. On a real, organically grown warehouse the heuristic
 automatically, and two things make the rest safe: a **classification review** that surfaces
 every decision, and a **`--naming` override** that teaches reverse your conventions.
 
+On a genuinely messy warehouse, three things keep the first reverse clean:
+
+- **dbt tooling metadata is filtered out.** Models from installed packages
+  (`dbt_artifacts`, `elementary`, …) — `dim_dbt_models`, `fct_dbt_invocations`, and the
+  like — are operational metadata, not business models, so reverse excludes them by
+  source package and reports them under "excluded as tool metadata". Keep a package with
+  `mdl reverse --include-packages elementary`.
+- **Custom prefixes are surfaced, not guessed.** A house convention Modelith doesn't
+  recognise (say `pres_art_*` for a presentation/access layer) shows up under
+  **Unclassified** in the VS Code Warehouse Config view, with one-click **Assign role**
+  (mart / dimension / fact / staging) or **Exclude** — which writes the rule into your
+  `reverse:` config for you.
+- **Your config is never clobbered.** Re-reversing into a folder preserves the
+  `reverse:`, `naming:`, and `glossary:` blocks you authored there (comment-preserving),
+  so a hand-tuned `exclude` keeps filtering across runs.
+
 ### Reverse a live warehouse (no dbt project needed)
 
 The headline path, and the one for a team with only a warehouse: point Modelith at a live
