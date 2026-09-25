@@ -602,6 +602,13 @@ def reverse(
         "default reverse diverts to a fresh model-reversed-v<N> sibling to protect an "
         "existing model.",
     ),
+    include_packages: str = typer.Option(
+        None,
+        "--include-packages",
+        help="Comma-separated dbt package names to KEEP that would otherwise be excluded "
+        "as tool metadata (installed packages like dbt_artifacts/elementary are dropped "
+        "by default). e.g. --include-packages elementary",
+    ),
 ) -> None:
     """Reverse-engineer a dbt project into a Modelith model (spec §6).
 
@@ -703,11 +710,12 @@ def reverse(
         else:
             reverse_naming = folded
 
+    keep_pkgs = {p.strip() for p in (include_packages or "").split(",") if p.strip()}
     ledger = DecisionLedger.load(out)
     result = run_reverse(
         proj, project_name=name, target=target, ledger=ledger,
         interactive=interactive, naming=reverse_naming, auto_accept=floor,
-        reverse_config=reverse_config,
+        reverse_config=reverse_config, include_packages=keep_pkgs or None,
     )
 
     if interactive:
@@ -782,6 +790,13 @@ def _render_classification(result) -> None:
     _group("managed but no business key (check these)", s.entities_keyless, typer.colors.YELLOW)
     _group("marked reporting rollup (unmanaged)", s.rollups_unmanaged, typer.colors.BLUE)
     _group("excluded as staging/intermediate", s.excluded_staging, typer.colors.BLUE)
+    if s.excluded_foreign:
+        pkgs = sorted({pkg for _, pkg in s.excluded_foreign})
+        _group(
+            f"excluded as tool metadata ({', '.join(pkgs)})",
+            [name for name, _ in s.excluded_foreign],
+            typer.colors.BLUE,
+        )
     _group("SCD2 pattern detected", s.scd2_detected, typer.colors.BLUE)
     _group("Data Vault detected", s.data_vault, typer.colors.BLUE)
     _group("surrogate keys stripped", s.surrogate_keys_stripped, typer.colors.BLUE)

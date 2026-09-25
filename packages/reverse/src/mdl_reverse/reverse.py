@@ -101,6 +101,10 @@ class ReverseResult:
     model: Model
     proposals: list[Decision] = field(default_factory=list)
     excluded: list[str] = field(default_factory=list)  # staging/intermediate model names
+    # models dropped because they belong to an installed dbt package (dbt_artifacts,
+    # elementary, …), not the root project — tool metadata, not business models.
+    # each entry is (model_name, package_name).
+    excluded_foreign: list[tuple[str, str]] = field(default_factory=list)
 
     def logical_count(self) -> int:
         return len(self.model.logical_entities)
@@ -119,19 +123,24 @@ class ClassificationSummary:
     surrogate_keys_stripped: list[str] = field(default_factory=list)  # "entity.col"
     entities_kept: list[str] = field(default_factory=list)  # governed business entities
     entities_keyless: list[str] = field(default_factory=list)  # managed but no BK
+    # (model, package) pairs excluded as installed-package tool metadata
+    excluded_foreign: list[tuple[str, str]] = field(default_factory=list)
 
     def line_count(self) -> int:
         return sum(
             len(v) for v in (
                 self.excluded_staging, self.rollups_unmanaged, self.scd2_detected,
-                self.data_vault, self.surrogate_keys_stripped,
+                self.data_vault, self.surrogate_keys_stripped, self.excluded_foreign,
             )
         )
 
 
 def classification_summary(result: ReverseResult) -> ClassificationSummary:
     """Derive the per-rule classification summary from a ReverseResult."""
-    s = ClassificationSummary(excluded_staging=sorted(result.excluded))
+    s = ClassificationSummary(
+        excluded_staging=sorted(result.excluded),
+        excluded_foreign=sorted(result.excluded_foreign),
+    )
     for d in result.proposals:
         ev = d.evidence or {}
         if d.kind == "reporting_rollup":
@@ -166,6 +175,7 @@ def reverse(
     auto_accept_high: bool | None = None,
     naming: lifting.ReverseNaming | None = None,
     reverse_config=None,
+    include_packages: set[str] | None = None,
 ) -> ReverseResult:
     """Lift a manifest into IR. `auto_accept` is the confidence FLOOR: any inference at
     or above it is accepted automatically; everything below is left `proposed` for
@@ -207,9 +217,25 @@ def reverse(
     # is byte-for-byte the historical is_staging exclusion.
     from mdl_reverse.mapping import EXCLUDED_ROLES, resolve_layer
 
+    # Foreign-package models (dbt_artifacts, elementary, …) are tool metadata, not
+    # business models — drop them by default. A model is foreign when its package is set,
+    # differs from the root project, and isn't explicitly kept via include_packages.
+    root_project = getattr(manifest, "root_project", None)
+    keep_pkgs = {p.lower() for p in (include_packages or set())}
+    excluded_foreign: list[tuple[str, str]] = []
+
     business: dict[str, ManifestModel] = {}
     verdicts: dict[str, object] = {}
     for name, mm in manifest.models.items():
+        pkg = getattr(mm, "package_name", None)
+        if (
+            pkg
+            and root_project
+            and pkg != root_project
+            and pkg.lower() not in keep_pkgs
+        ):
+            excluded_foreign.append((name, pkg))
+            continue
         v = resolve_layer(name, mm.tags, getattr(mm, "path", None), reverse_config, naming)
         if v.role in EXCLUDED_ROLES:
             excluded.append(name)
@@ -239,7 +265,12 @@ def reverse(
         )
         proposals.extend(rel_proposals)
 
-    return ReverseResult(model=model, proposals=proposals, excluded=excluded)
+    return ReverseResult(
+        model=model,
+        proposals=proposals,
+        excluded=excluded,
+        excluded_foreign=excluded_foreign,
+    )
 
 
 def _lift_entity(
