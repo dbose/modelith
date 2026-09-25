@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from mdl_core.diagnostics import Severity
@@ -417,6 +417,12 @@ def create_app(
     _docs_dir = (model_dir / "target" / "mdl-docs").resolve()
 
     @app.get("/mdl-docs")
+    def mdl_docs_root() -> RedirectResponse:
+        # Redirect to the trailing-slash form so the page's RELATIVE asset links
+        # (assets/docs.css, entities/x.html) resolve under /mdl-docs/ instead of the
+        # server root — without this the stylesheet 404s and the page renders unstyled.
+        return RedirectResponse(url="mdl-docs/", status_code=308)
+
     @app.get("/mdl-docs/")
     @app.get("/mdl-docs/{path:path}")
     def mdl_docs(path: str = "") -> FileResponse:

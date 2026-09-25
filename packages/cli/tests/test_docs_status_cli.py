@@ -83,6 +83,13 @@ def test_server_serves_generated_docs(tmp_path):
     client = TestClient(create_app(tmp_path, read_only=True))
     assert client.get("/mdl-docs/").status_code == 200
     assert client.get("/mdl-docs/glossary.html").status_code == 200
+    # /mdl-docs (no trailing slash) MUST redirect to /mdl-docs/, or the page's relative
+    # asset links resolve at the server root and the stylesheet 404s (unstyled page).
+    noslash = client.get("/mdl-docs", follow_redirects=False)
+    assert noslash.status_code in (307, 308)
+    assert noslash.headers["location"].rstrip("/").endswith("mdl-docs")
+    # and the stylesheet resolves under the trailing-slash path
+    assert client.get("/mdl-docs/assets/docs.css").status_code == 200
     # path traversal is refused (URL-encoded so it reaches the handler unnormalised)
     escaped = client.get("/mdl-docs/%2e%2e%2f%2e%2e%2fmdl-project.yaml")
     assert escaped.status_code == 404
