@@ -192,6 +192,12 @@ def reverse(
         dbt_target=target,
         platform_targets=[target],
     )
+    # Carry the reverse config we were classified with back onto the model, so the
+    # written mdl-project.yaml round-trips the `reverse:` block (exclude/layers/…) that
+    # drove this run instead of an empty one. The writer preserves a user's existing file
+    # on re-reverse, and this ensures a FIRST write into a fresh dir also keeps the block.
+    if reverse_config is not None:
+        config.reverse = reverse_config
     model = Model(config)
     proposals: list[Decision] = []
     excluded: list[str] = []

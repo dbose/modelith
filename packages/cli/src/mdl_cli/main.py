@@ -647,6 +647,13 @@ def reverse(
     # (mdl-project.yaml), divert to a fresh, suffixed sibling (model-reversed-v1, -v2, …)
     # and say so — a reverse into a populated model dir would otherwise overwrite
     # hand-authored work. --force is the explicit opt-in to overwrite in place.
+    #
+    # `config_src` is the dir the user pointed --out at, held SEPARATELY from the
+    # (possibly diverted) write dir: the user authored their `reverse:` block there, so
+    # config/naming/auto-accept must be read from it — reading from the fresh diverted
+    # dir would silently drop an authored exclude/layer (the reported bug where a
+    # `reverse.exclude` was ignored on re-reverse because the load read the empty sibling).
+    config_src = out
     if not force:
         out = _nonclobbering_out(out)
 
@@ -674,9 +681,11 @@ def reverse(
     for w in proj.warnings:
         typer.secho(f"  {w}", fg=typer.colors.YELLOW)
 
-    reverse_naming = _load_reverse_naming(naming, out)
-    floor = _resolve_auto_accept(auto_accept, review_all, naming, out)
-    reverse_config = _load_reverse_config(naming, out)
+    # Read config/naming/auto-accept from where the USER authored it (config_src), not
+    # the diverted write dir, so an authored `reverse:` block drives this run.
+    reverse_naming = _load_reverse_naming(naming, config_src)
+    floor = _resolve_auto_accept(auto_accept, review_all, naming, config_src)
+    reverse_config = _load_reverse_config(naming, config_src)
     # Fold reverse.conventions (+ staging-layer prefixes) into the naming the pipeline
     # uses, so a project's declared prefixes/suffixes drive the legacy classifiers too.
     if reverse_config is not None:
