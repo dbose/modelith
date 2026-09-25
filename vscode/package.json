@@ -103,6 +103,12 @@
           "contextualTitle": "Modelith Reverse Review"
         },
         {
+          "id": "modelithOntology",
+          "name": "Ontology",
+          "icon": "$(symbol-namespace)",
+          "contextualTitle": "Modelith Ontology"
+        },
+        {
           "id": "modelithDrift",
           "name": "Drift",
           "icon": "$(git-compare)",
@@ -165,6 +171,26 @@
         "command": "modelith.docsOpen",
         "title": "Modelith: Open Docs",
         "icon": "$(book)"
+      },
+      {
+        "command": "modelith.ontologyRefresh",
+        "title": "Modelith: Refresh Ontology",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "modelith.ontologyAlign",
+        "title": "Modelith: Align to Ontology",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "modelith.ontologyPromote",
+        "title": "Promote Alignment",
+        "icon": "$(check)"
+      },
+      {
+        "command": "modelith.ontologyReject",
+        "title": "Reject Alignment",
+        "icon": "$(x)"
       },
       {
         "command": "modelith.reverseAccept",
@@ -505,6 +531,16 @@
           "command": "modelith.docsGenerate",
           "when": "view == modelithReverse && modelith.hasModels && !modelith.docsGenerated",
           "group": "navigation@5"
+        },
+        {
+          "command": "modelith.ontologyAlign",
+          "when": "view == modelithOntology",
+          "group": "navigation@1"
+        },
+        {
+          "command": "modelith.ontologyRefresh",
+          "when": "view == modelithOntology",
+          "group": "navigation@2"
         }
       ],
       "view/item/context": [
@@ -522,6 +558,16 @@
           "command": "modelith.driftMapModel",
           "when": "view == modelithDrift && viewItem == driftItem:modelRemoved",
           "group": "inline@1"
+        },
+        {
+          "command": "modelith.ontologyPromote",
+          "when": "view == modelithOntology && viewItem == ontologyProposal",
+          "group": "inline@1"
+        },
+        {
+          "command": "modelith.ontologyReject",
+          "when": "view == modelithOntology && viewItem == ontologyProposal",
+          "group": "inline@2"
         }
       ]
     }

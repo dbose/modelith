@@ -10,6 +10,7 @@ import { DriftTreeProvider } from "./driftView";
 import { executeLspCommand, startLsp } from "./lspClient";
 import { type Decision, ReverseReviewProvider } from "./reverseView";
 import { registerMcpProvider } from "./mcpProvider";
+import { OntologyProvider } from "./ontologyView";
 import { type LiveWizardContext, runReverseLiveWizard } from "./reverseLiveWizard";
 import {
   findDbtProjectDir,
@@ -262,16 +263,23 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   void reverse.refresh();
   void statusModel.refresh();
 
-  // Live refresh: when the decision ledger or the compiled manifest changes on disk,
-  // re-read the pending proposals and re-assess the workspace so the panel's counts and
-  // next-actions stay current without a manual refresh. (The only prior watcher fed the
-  // LSP; the trees were entirely command-driven.)
+  // Ontology: proposed alignments awaiting review (promote/reject) + industry coverage.
+  // The review surface for ontology alignment, mirroring Reverse Review.
+  const ontology = new OntologyProvider(out);
+  ctx.subscriptions.push(vscode.window.registerTreeDataProvider("modelithOntology", ontology));
+  void ontology.refresh();
+
+  // Live refresh: when the decision ledger, the compiled manifest, or a model file
+  // changes on disk, re-read proposals, re-assess the workspace, and re-read ontology
+  // alignments so the panel's counts and next-actions stay current without a manual
+  // refresh. (The only prior watcher fed the LSP; the trees were command-driven.)
   const stateWatcher = vscode.workspace.createFileSystemWatcher(
     "**/{.mdl/decisions.yaml,target/manifest.json,target/mdl-docs/index.html}",
   );
   const onStateChange = () => {
     void reverse.refresh();
     void statusModel.refresh();
+    void ontology.refresh();
   };
   ctx.subscriptions.push(
     stateWatcher,
@@ -1377,6 +1385,32 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   });
 
   cmd("modelith.reverseRefresh", () => reverse.refresh());
+
+  cmd("modelith.ontologyRefresh", () => ontology.refresh());
+
+  cmd("modelith.ontologyPromote", (node: unknown) => {
+    const a = ontology.proposalOf(node);
+    return a ? ontology.act(a, "promote") : undefined;
+  });
+
+  cmd("modelith.ontologyReject", (node: unknown) => {
+    const a = ontology.proposalOf(node);
+    return a ? ontology.act(a, "reject") : undefined;
+  });
+
+  cmd("modelith.ontologyAlign", () =>
+    withModelDir(async (dir) => {
+      const bin = await findMdl(dir);
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: "Modelith: aligning to ontology…" },
+        async () => {
+          const r = await runMdl(bin, ["ontology", "align", "-m", "."], dir, out);
+          out.appendLine(r.stdout + r.stderr);
+          await ontology.refresh(dir);
+        },
+      );
+    }),
+  );
 
   cmd("modelith.reverseAccept", (node: unknown) => {
     const d = decisionOf(node);

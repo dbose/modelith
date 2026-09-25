@@ -1157,13 +1157,99 @@ def ontology_check(
         raise typer.Exit(1)
 
 
+@ontology_app.command("status")
+def ontology_status(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    fmt: str = typer.Option("text", "--format", help="text|json"),
+) -> None:
+    """Proposed ontology alignments awaiting review + industry-coverage summary.
+
+    The JSON form is what the VS Code Ontology view consumes; `promote`/`clear`
+    (with the ref uri) act on the rows it lists."""
+    import json as _json
+
+    repo = _load(model_dir)
+    model = repo.model
+
+    # Proposed refs across conceptual entities and terms (the review queue). An
+    # accepted ref is done; a proposed one needs an architect's promote/reject.
+    proposed: list[dict] = []
+    for kind, objs in (
+        ("conceptual_entity", model.conceptual_entities.values()),
+        ("term", model.terms.values()),
+    ):
+        for obj in objs:
+            for ref in obj.ontology_refs:
+                if getattr(ref, "status", None) != "proposed":
+                    continue
+                proposed.append(
+                    {
+                        "id": obj.id,
+                        "name": obj.name,
+                        "kind": kind,
+                        "uri": ref.uri,
+                        "predicate": ref.predicate,
+                        "layer": ref.layer,
+                        "confidence": ref.confidence,
+                        "resolved_via": ref.resolved_via,
+                    }
+                )
+    proposed.sort(key=lambda r: (-(r["confidence"] or 0.0), r["name"], r["uri"]))
+
+    # Industry-alignment coverage, computed inline from the model so `ontology status`
+    # works on a BASE install: importing mdl_ontology (even for the pure coverage_report)
+    # pulls in the optional RDF stack via its package __init__, which a base install
+    # lacks. This mirrors mdl_ontology.layers.coverage_report over core concepts.
+    total_core = with_industry = exempt = 0
+    uncovered: list[str] = []
+    for obj in [*model.conceptual_entities.values(), *model.terms.values()]:
+        if getattr(obj, "ontology_layer", None) != "core":
+            continue
+        total_core += 1
+        if any(r.uri for r in obj.ontology_refs):
+            with_industry += 1
+        elif getattr(obj, "no_industry_equivalent", False):
+            exempt += 1
+        else:
+            uncovered.append(obj.name)
+    pct = round(100.0 * (with_industry + exempt) / total_core, 1) if total_core else 100.0
+    coverage = {
+        "coverage_pct": pct,
+        "total_core": total_core,
+        "core_with_industry": with_industry,
+        "core_exempt": exempt,
+        "core_uncovered": sorted(uncovered),
+    }
+    payload = {"proposed": proposed, "coverage": coverage}
+
+    if fmt == "json":
+        typer.echo(_json.dumps(payload, indent=2))
+        return
+    if proposed:
+        typer.secho(f"{len(proposed)} proposed alignment(s) awaiting review:", fg=typer.colors.CYAN)
+        for r in proposed:
+            conf = f"{r['confidence']:.2f}" if r["confidence"] is not None else "—"
+            typer.echo(f"  {r['name']} -> {r['uri']}  [{r['layer'] or '?'}, conf {conf}]")
+    else:
+        typer.secho("no proposed alignments — all reviewed", fg=typer.colors.GREEN)
+    typer.echo("")
+    typer.secho(
+        f"industry alignment coverage: {coverage['coverage_pct']}% "
+        f"({coverage['core_with_industry']}+{coverage['core_exempt']}/"
+        f"{coverage['total_core']} core terms)",
+        fg=typer.colors.CYAN,
+    )
+
+
 @ontology_app.command("promote")
 def ontology_promote(
     name: str = typer.Argument(..., help="Conceptual entity or term name"),
     model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    uri: str = typer.Option(None, "--uri", help="Promote only this ref (else all proposed)"),
 ) -> None:
     """Promote a proposed ontology alignment to accepted (§5.1: SMEs propose,
-    architects promote)."""
+    architects promote). With --uri, promote just that ref (used by the VS Code
+    Ontology view, where each row is one ref)."""
     from mdl_core.commands import CommandError, apply_command
 
     repo = _load(model_dir)
@@ -1173,12 +1259,44 @@ def ontology_promote(
     if obj is None:
         typer.secho(f"no conceptual entity or term {name!r}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
+    args = {"id": obj.id}
+    if uri:
+        args["uri"] = uri
     try:
-        apply_command(model_dir, "promote_alignment", {"id": obj.id})
+        apply_command(model_dir, "promote_alignment", args)
     except (CommandError, FileNotFoundError) as e:
         typer.secho(str(e), fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from e
     typer.secho(f"alignment on {name!r} promoted to accepted", fg=typer.colors.GREEN)
+
+
+@ontology_app.command("reject")
+def ontology_reject(
+    name: str = typer.Argument(..., help="Conceptual entity or term name"),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    uri: str = typer.Option(None, "--uri", help="Remove only this ref (else all)"),
+) -> None:
+    """Reject a proposed ontology alignment: remove the ref. With --uri, remove just
+    that one (used by the VS Code Ontology view). Rejecting a proposal simply drops
+    it; a later `mdl ontology align` may re-propose from fresh evidence."""
+    from mdl_core.commands import CommandError, apply_command
+
+    repo = _load(model_dir)
+    candidates = [*repo.model.conceptual_entities.values(), *repo.model.terms.values()]
+    objs = {o.name: o for o in candidates}
+    obj = objs.get(name)
+    if obj is None:
+        typer.secho(f"no conceptual entity or term {name!r}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+    args = {"id": obj.id}
+    if uri:
+        args["uri"] = uri
+    try:
+        apply_command(model_dir, "clear_alignment", args)
+    except (CommandError, FileNotFoundError) as e:
+        typer.secho(str(e), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from e
+    typer.secho(f"alignment on {name!r} removed", fg=typer.colors.GREEN)
 
 
 @ontology_app.command("vendor")
