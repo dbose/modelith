@@ -2355,19 +2355,35 @@ def reverse_config_suggest(
         typer.secho(str(e), fg=typer.colors.RED, err=True)
         raise typer.Exit(4) from e
     report = suggest_config(proj)
-    if not report.block:
+    if not report.block and not report.unclassified:
         typer.secho(
             "no clear folder/prefix conventions found — nothing to suggest", fg=typer.colors.YELLOW
         )
         return
     if fmt == "json":
         typer.echo(
-            json.dumps({"reverse": report.block, "rationale": report.rationale}, default=str)
+            json.dumps(
+                {
+                    "reverse": report.block,
+                    "rationale": report.rationale,
+                    "unclassified": report.unclassified,
+                },
+                default=str,
+            )
         )
     else:
         for line in report.rationale:
             typer.secho(f"# {line}", fg=typer.colors.CYAN)
-        typer.echo(dump_str({"reverse": report.block}))
+        if report.block:
+            typer.echo(dump_str({"reverse": report.block}))
+        if report.unclassified:
+            typer.secho(
+                "\n# unclassified prefixes (assign a role or exclude):",
+                fg=typer.colors.YELLOW,
+            )
+            for u in report.unclassified:
+                typer.echo(f"#   {u['prefix']}  ({u['count']} models, e.g. "
+                           f"{', '.join(u['sample_models'][:3])})")
     if apply:
         _write_reverse_block(model_dir, report.block, source="suggest-config")
         typer.secho("applied suggested reverse: config", fg=typer.colors.GREEN)
@@ -2395,10 +2411,25 @@ def reverse_config_explain(
     naming = naming_from_config(reverse_config)
     default_form = getattr(reverse_config, "target_form", None) or "denormalized"
 
+    from mdl_reverse.suggest import _prefix_of
+
+    root_project = getattr(proj, "root_project", None)
     rows = []
     for name in sorted(proj.models):
         mm = proj.models[name]
         v = resolve_layer(name, mm.tags, getattr(mm, "path", None), reverse_config, naming)
+        pkg = getattr(mm, "package_name", None)
+        foreign = bool(pkg and root_project and pkg != root_project)
+        # "unclassified": fell to the generic `business` role with no matched layer and
+        # no known-vocabulary prefix — i.e. a custom prefix reverse can't place. These are
+        # what the Config frame surfaces for the user to assign a role or exclude.
+        unclassified = (
+            v.role == "business"
+            and not v.layer_name
+            and not v.exempt
+            and _prefix_of(name) is None
+            and not foreign
+        )
         rows.append({
             "model": name,
             "role": v.role,
@@ -2407,6 +2438,9 @@ def reverse_config_explain(
             "excluded": v.role in ("staging", "intermediate", "exclude"),
             "target_form": v.target_form or default_form,
             "pattern": v.pattern,
+            "package": pkg,
+            "foreign": foreign,
+            "unclassified": unclassified,
         })
 
     if fmt == "json":

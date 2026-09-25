@@ -74,6 +74,10 @@ class SuggestReport:
 
     block: dict = field(default_factory=dict)
     rationale: list[str] = field(default_factory=list)
+    # Recurring prefixes that match NO known vocabulary (e.g. a house convention like
+    # `pres_art_`) — surfaced for the user to assign a role or exclude, since a custom
+    # prefix's meaning is theirs to decide. Each: {prefix, count, sample_models}.
+    unclassified: list[dict] = field(default_factory=list)
 
 
 def _prefix_of(name: str) -> str | None:
@@ -160,8 +164,50 @@ def suggest_config(manifest: ManifestProjection) -> SuggestReport:
                     report.rationale.append(f"exclude {glob} — model names contain '{h}'")
                 break
 
+    # 4) Unclassified prefixes: recurring leading tokens that match NO known vocabulary.
+    # A house convention like `pres_art_*` is invisible to the fixed _PREFIX_ROLE table,
+    # so those models silently become business entities. Surface the prefix (with a
+    # count + samples) for the user to assign a role or exclude — we never guess a custom
+    # prefix's meaning. Only models NOT already covered by a known prefix are considered.
+    unclassified_counts: Counter[str] = Counter()
+    unclassified_samples: dict[str, list[str]] = {}
+    for m in models:
+        if _prefix_of(m.name) is not None:
+            continue  # already a known prefix -> handled in (1)
+        cand = _unknown_prefix(m.name)
+        if cand is None:
+            continue
+        unclassified_counts[cand] += 1
+        unclassified_samples.setdefault(cand, [])
+        if len(unclassified_samples[cand]) < 5:
+            unclassified_samples[cand].append(m.name)
+    for pre, n in unclassified_counts.most_common():
+        if n < _MIN_PREFIX:
+            continue
+        report.unclassified.append(
+            {"prefix": pre, "count": n, "sample_models": unclassified_samples[pre]}
+        )
+        report.rationale.append(
+            f"unclassified prefix '{pre}' — {n} models; assign a role or exclude"
+        )
+
     if layers:
         report.block["layers"] = layers
     if exclude:
         report.block["exclude"] = exclude
     return report
+
+
+def _unknown_prefix(name: str) -> str | None:
+    """The candidate custom prefix of a model name that has no KNOWN prefix: the first
+    one or two `_`-tokens (so `pres_art_fund` -> `pres_art_`, `orders` -> None). Two
+    tokens are preferred when both are short-ish (a compound midfix like `pres_art_`);
+    a single leading token is the fallback. Returns None for a name with no `_`."""
+    parts = name.lower().split("_")
+    if len(parts) < 2:
+        return None
+    # a two-token compound prefix reads as the house convention when both tokens are
+    # short (<=4 chars, e.g. pres_art_); else fall back to the single leading token.
+    if len(parts) >= 3 and len(parts[0]) <= 4 and len(parts[1]) <= 4:
+        return f"{parts[0]}_{parts[1]}_"
+    return f"{parts[0]}_"

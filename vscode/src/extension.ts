@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import type { LanguageClient } from "vscode-languageclient/node";
@@ -927,6 +928,71 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
 
   // Click a model in the tree -> open mdl-project.yaml so the user can tweak the rule.
   cmd("modelith.configOpenProject", () => withModelDir((dir) => openProjectYaml(dir)));
+
+  // Assign a role to an unclassified custom-prefix group (e.g. pres_art_* -> mart), or
+  // exclude it — the discover→assign UX. `node` is the prefixGroup tree node; its id is
+  // `prefix:<pfx>`. Authors a reverse.layers or reverse.exclude entry via `reverse-config
+  // apply` (reading a temp block file), then refreshes the classification.
+  const prefixOf = (node: unknown): string | undefined => {
+    const id = (node as { id?: string })?.id;
+    return id?.startsWith("prefix:") ? id.slice("prefix:".length) : undefined;
+  };
+  const applyReverseBlock = async (dir: string, block: unknown): Promise<boolean> => {
+    const bin = await findMdl(dir);
+    const tmp = path.join(os.tmpdir(), `mdl-reverse-block-${Date.now()}.json`);
+    await fs.promises.writeFile(tmp, JSON.stringify(block), "utf8");
+    try {
+      const r = await runMdl(bin, ["reverse-config", "apply", tmp, "-m", "."], dir, out);
+      if (r.code !== 0) {
+        void vscode.window
+          .showErrorMessage("Modelith: could not apply the config.", "Show Output")
+          .then((a) => a && out.show());
+        return false;
+      }
+      return true;
+    } finally {
+      void fs.promises.unlink(tmp).catch(() => undefined);
+    }
+  };
+
+  cmd("modelith.configAssignPrefix", (node: unknown) =>
+    withModelDir(async (dir) => {
+      const prefix = prefixOf(node);
+      if (!prefix) return;
+      const ROLES = [
+        { label: "Mart", role: "mart" },
+        { label: "Dimension", role: "dimension" },
+        { label: "Fact", role: "fact" },
+        { label: "Staging (exclude)", role: "staging" },
+        { label: "Exclude entirely", role: "__exclude__" },
+      ];
+      const pick = await vscode.window.showQuickPick(
+        ROLES.map((r) => r.label),
+        { title: `Classify ${prefix}* models`, placeHolder: "Assign a role, or exclude" },
+      );
+      if (!pick) return;
+      const chosen = ROLES.find((r) => r.label === pick)!;
+      const block =
+        chosen.role === "__exclude__"
+          ? { exclude: [`${prefix}*`] }
+          : { layers: [{ name: prefix.replace(/_+$/, ""), role: chosen.role, match: { prefix } }] };
+      if (await applyReverseBlock(dir, block)) {
+        await configTree.refresh();
+        void vscode.window.setStatusBarMessage(`Modelith: classified ${prefix}* ✓`, 4000);
+      }
+    }),
+  );
+
+  cmd("modelith.configExcludePrefix", (node: unknown) =>
+    withModelDir(async (dir) => {
+      const prefix = prefixOf(node);
+      if (!prefix) return;
+      if (await applyReverseBlock(dir, { exclude: [`${prefix}*`] })) {
+        await configTree.refresh();
+        void vscode.window.setStatusBarMessage(`Modelith: excluded ${prefix}* ✓`, 4000);
+      }
+    }),
+  );
 
   // --- reverse engineering -----------------------------------------------------
 
