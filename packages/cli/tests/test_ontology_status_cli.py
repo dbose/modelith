@@ -40,7 +40,20 @@ def test_status_lists_proposed_and_coverage(tmp_path):
     assert r.exit_code == 0, r.output
     data = json.loads(r.output)
     assert any(p["name"] == name and p["uri"] == _URI for p in data["proposed"])
+    assert "accepted" in data  # the done side of the flow, even if empty
     assert "coverage_pct" in data["coverage"]
+
+
+def test_status_splits_proposed_and_accepted(tmp_path):
+    """A promoted ref moves from `proposed` to `accepted` — the flow the panel draws."""
+    write_model(tmp_path)
+    name = _seed_proposed(tmp_path)
+    runner.invoke(app, ["ontology", "promote", name, "-m", str(tmp_path), "--uri", _URI])
+    data = json.loads(
+        runner.invoke(app, ["ontology", "status", "-m", str(tmp_path), "--format", "json"]).output
+    )
+    assert not any(p["uri"] == _URI for p in data["proposed"])
+    assert any(a["name"] == name and a["uri"] == _URI for a in data["accepted"])
 
 
 def test_promote_by_uri_clears_the_queue(tmp_path):

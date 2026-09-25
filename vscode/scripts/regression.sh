@@ -35,6 +35,10 @@ echo "✓ bundles"
 gate "GATE 2b  mdl path resolution (cross-platform)"
 node scripts/resolve.test.mjs || fail "mdl resolution logic broke on win32 or posix"
 
+# ── GATE 2c: tree-view rendering (the panel frames actually populate) ──────────
+gate "GATE 2c  panel tree-view rendering"
+node scripts/treeview.test.mjs || fail "a panel frame does not render its rows correctly"
+
 # ── GATE 3: every declared command is registered in code ──────────────────────
 gate "GATE 3  command wiring (no silent no-ops)"
 python3 - <<'PY' || fail "a declared command is not registered"

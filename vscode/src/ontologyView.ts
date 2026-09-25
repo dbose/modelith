@@ -1,13 +1,13 @@
 import * as vscode from "vscode";
 import { findMdl, findModelDir, runMdl } from "./mdl";
 
-/** The Ontology tree view: proposed ontology alignments awaiting an architect's
- * review (concept/term -> vocabulary URI, with layer + confidence), each with inline
- * Promote / Reject actions, plus an industry-coverage summary row. Mirrors the Reverse
- * Review view — the review surface ontology alignment previously lacked. Reads
- * `mdl ontology status --format json`; acts via `mdl ontology promote|reject --uri`. */
+/** The Ontology tree view: ontology alignment as a visible flow — proposals awaiting
+ * review, the accepted (done) side, and industry coverage — in collapsible, counted
+ * sections. Proposed rows carry inline Promote / Reject. It is the review surface
+ * ontology alignment lacked, mirroring Reverse Review. Reads `mdl ontology status
+ * --format json`; acts via `mdl ontology promote|reject --uri`. */
 
-interface ProposedAlignment {
+interface Alignment {
   id: string;
   name: string;
   kind: "conceptual_entity" | "term";
@@ -27,21 +27,33 @@ interface Coverage {
 }
 
 interface OntologyStatus {
-  proposed: ProposedAlignment[];
+  proposed: Alignment[];
+  accepted: Alignment[];
   coverage: Coverage;
 }
 
-type Node = ProposalNode | StatusNode | UncoveredNode;
-interface ProposalNode {
-  kind: "proposal";
-  a: ProposedAlignment;
+type Node = SectionNode | AlignmentNode | StatusNode | UncoveredNode;
+/** A collapsible section header with a count — the flow's stages. */
+interface SectionNode {
+  kind: "section";
+  id: "review" | "accepted" | "coverage";
+  label: string;
+  icon: vscode.ThemeIcon;
+  count?: number;
+  description?: string;
+  children: Node[];
+  collapsed: boolean;
 }
-/** A resting/summary row (coverage, or "all reviewed"). */
+interface AlignmentNode {
+  kind: "alignment";
+  a: Alignment;
+  state: "proposed" | "accepted";
+}
+/** A non-actionable informational row (resting state, empty section). */
 interface StatusNode {
   kind: "status";
   label: string;
   icon: vscode.ThemeIcon;
-  description?: string;
 }
 interface UncoveredNode {
   kind: "uncovered";
@@ -80,71 +92,142 @@ export class OntologyProvider implements vscode.TreeDataProvider<Node> {
   }
 
   getTreeItem(node: Node): vscode.TreeItem {
-    if (node.kind === "status") {
-      const ti = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
-      ti.iconPath = node.icon;
-      if (node.description) ti.description = node.description;
-      ti.contextValue = "ontologyStatus";
-      return ti;
+    switch (node.kind) {
+      case "section": {
+        const label = node.count != null ? `${node.label} (${node.count})` : node.label;
+        const ti = new vscode.TreeItem(
+          label,
+          node.collapsed
+            ? vscode.TreeItemCollapsibleState.Collapsed
+            : vscode.TreeItemCollapsibleState.Expanded,
+        );
+        ti.iconPath = node.icon;
+        if (node.description) ti.description = node.description;
+        ti.contextValue = `ontologySection:${node.id}`;
+        return ti;
+      }
+      case "alignment": {
+        const a = node.a;
+        const ti = new vscode.TreeItem(
+          `${a.name} → ${prefixed(a.uri)}`,
+          vscode.TreeItemCollapsibleState.None,
+        );
+        const conf = a.confidence != null ? `${Math.round(a.confidence * 100)}%` : "";
+        ti.description = [a.layer, conf].filter(Boolean).join(" · ");
+        ti.tooltip = new vscode.MarkdownString(
+          `**${a.name}** _(${a.kind.replace("_", " ")})_\n\n` +
+            `${node.state === "accepted" ? "✓ accepted" : "⏳ proposed"} · aligns to\n\n` +
+            `\`${a.uri}\`\n\npredicate: \`${a.predicate}\`${
+              a.resolved_via ? ` · via ${a.resolved_via}` : ""
+            }`,
+        );
+        ti.iconPath =
+          node.state === "accepted"
+            ? new vscode.ThemeIcon("pass-filled", new vscode.ThemeColor("charts.green"))
+            : confidenceIcon(a.confidence);
+        // context value gates the inline Promote/Reject actions (proposed rows only)
+        ti.contextValue = node.state === "accepted" ? "ontologyAccepted" : "ontologyProposal";
+        return ti;
+      }
+      case "uncovered": {
+        const ti = new vscode.TreeItem(node.name, vscode.TreeItemCollapsibleState.None);
+        ti.iconPath = new vscode.ThemeIcon("circle-outline");
+        ti.description = "no industry alignment";
+        ti.contextValue = "ontologyUncovered";
+        return ti;
+      }
+      case "status": {
+        const ti = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
+        ti.iconPath = node.icon;
+        ti.contextValue = "ontologyStatus";
+        return ti;
+      }
     }
-    if (node.kind === "uncovered") {
-      const ti = new vscode.TreeItem(node.name, vscode.TreeItemCollapsibleState.None);
-      ti.iconPath = new vscode.ThemeIcon("circle-outline");
-      ti.description = "no industry alignment";
-      ti.contextValue = "ontologyUncovered";
-      return ti;
-    }
-    const a = node.a;
-    const ti = new vscode.TreeItem(`${a.name} → ${prefixed(a.uri)}`, vscode.TreeItemCollapsibleState.None);
-    const conf = a.confidence != null ? `${Math.round(a.confidence * 100)}%` : "";
-    ti.description = [a.layer, conf].filter(Boolean).join(" · ");
-    ti.tooltip = `${a.name} (${a.kind})\n→ ${a.uri}\npredicate: ${a.predicate}${
-      a.resolved_via ? `\nvia: ${a.resolved_via}` : ""
-    }`;
-    ti.iconPath = new vscode.ThemeIcon("lightbulb");
-    // gates the inline Promote/Reject actions contributed in package.json
-    ti.contextValue = "ontologyProposal";
-    return ti;
   }
 
   getChildren(node?: Node): Node[] {
-    if (node) return [];
+    if (node) return node.kind === "section" ? node.children : [];
     const s = this.status;
     if (!s) {
       return [
         {
           kind: "status",
-          label: "No ontology data — run in a model",
+          label: "No ontology data — open a model to review alignments",
           icon: new vscode.ThemeIcon("circle-slash"),
         },
       ];
     }
-    const rows: Node[] = [];
-    if (s.proposed.length === 0) {
-      rows.push({
-        kind: "status",
-        label: "No proposed alignments — all reviewed",
-        icon: new vscode.ThemeIcon("check", new vscode.ThemeColor("charts.green")),
-      });
-    } else {
-      for (const a of s.proposed) rows.push({ kind: "proposal", a });
-    }
-    // coverage summary always shown as the last row(s)
-    const c = s.coverage;
-    rows.push({
-      kind: "status",
-      label: `Industry coverage: ${c.coverage_pct}%`,
-      description: `${c.core_with_industry + c.core_exempt}/${c.total_core} core terms`,
-      icon: coverageIcon(c.coverage_pct),
+
+    const sections: Node[] = [];
+
+    // 1) To review — the action stage. Expanded, inline Promote/Reject on each row.
+    const reviewChildren: Node[] =
+      s.proposed.length > 0
+        ? s.proposed.map((a) => ({ kind: "alignment" as const, a, state: "proposed" as const }))
+        : [
+            {
+              kind: "status" as const,
+              label: "Nothing to review — all alignments decided",
+              icon: new vscode.ThemeIcon("check", new vscode.ThemeColor("charts.green")),
+            },
+          ];
+    sections.push({
+      kind: "section",
+      id: "review",
+      label: "To review",
+      icon: new vscode.ThemeIcon("inbox"),
+      count: s.proposed.length,
+      children: reviewChildren,
+      collapsed: false,
     });
-    for (const name of c.core_uncovered.slice(0, 20)) {
-      rows.push({ kind: "uncovered", name });
+
+    // 2) Accepted — the done side of the flow. Collapsed by default (reassurance, not
+    // a to-do). Only shown when there is at least one.
+    if (s.accepted.length > 0) {
+      sections.push({
+        kind: "section",
+        id: "accepted",
+        label: "Accepted",
+        icon: new vscode.ThemeIcon("pass-filled", new vscode.ThemeColor("charts.green")),
+        count: s.accepted.length,
+        children: s.accepted.map((a) => ({
+          kind: "alignment" as const,
+          a,
+          state: "accepted" as const,
+        })),
+        collapsed: true,
+      });
     }
-    return rows;
+
+    // 3) Coverage — the health readout. Collapsed; children are the uncovered terms.
+    const c = s.coverage;
+    const uncovered: Node[] = c.core_uncovered
+      .slice(0, 50)
+      .map((name) => ({ kind: "uncovered" as const, name }));
+    sections.push({
+      kind: "section",
+      id: "coverage",
+      label: "Industry coverage",
+      icon: coverageIcon(c.coverage_pct),
+      description: `${c.coverage_pct}% · ${c.core_with_industry + c.core_exempt}/${c.total_core} core`,
+      children:
+        uncovered.length > 0
+          ? uncovered
+          : [
+              {
+                kind: "status" as const,
+                label: "All core terms covered",
+                icon: new vscode.ThemeIcon("check", new vscode.ThemeColor("charts.green")),
+              },
+            ],
+      collapsed: true,
+    });
+
+    return sections;
   }
 
   /** Promote or reject one proposed alignment via the CLI, then refresh. */
-  async act(a: ProposedAlignment, verb: "promote" | "reject"): Promise<void> {
+  async act(a: Alignment, verb: "promote" | "reject"): Promise<void> {
     const dir = await findModelDir();
     if (!dir) return;
     const bin = await findMdl(dir);
@@ -153,10 +236,10 @@ export class OntologyProvider implements vscode.TreeDataProvider<Node> {
     await this.refresh(dir);
   }
 
-  /** Find a proposal by the node passed to a command (VS Code hands us the tree node). */
-  proposalOf(node: unknown): ProposedAlignment | undefined {
-    if (node && typeof node === "object" && "kind" in node && (node as Node).kind === "proposal") {
-      return (node as ProposalNode).a;
+  /** The alignment for a node passed to a command (VS Code hands us the tree node). */
+  proposalOf(node: unknown): Alignment | undefined {
+    if (node && typeof node === "object" && "kind" in node && (node as Node).kind === "alignment") {
+      return (node as AlignmentNode).a;
     }
     return undefined;
   }
@@ -166,6 +249,14 @@ export class OntologyProvider implements vscode.TreeDataProvider<Node> {
 function prefixed(uri: string): string {
   const tail = uri.split(/[#/]/).filter(Boolean).pop();
   return tail || uri;
+}
+
+/** Proposed-row icon graded by confidence, so the review queue reads at a glance. */
+function confidenceIcon(confidence: number | null): vscode.ThemeIcon {
+  if (confidence == null) return new vscode.ThemeIcon("question");
+  if (confidence >= 0.75) return new vscode.ThemeIcon("lightbulb-autofix");
+  if (confidence >= 0.4) return new vscode.ThemeIcon("lightbulb");
+  return new vscode.ThemeIcon("warning");
 }
 
 function coverageIcon(pct: number): vscode.ThemeIcon {

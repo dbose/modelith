@@ -1171,30 +1171,34 @@ def ontology_status(
     repo = _load(model_dir)
     model = repo.model
 
-    # Proposed refs across conceptual entities and terms (the review queue). An
-    # accepted ref is done; a proposed one needs an architect's promote/reject.
+    # Refs across conceptual entities and terms, split by review state so the UI can
+    # show the flow. Only refs EXPLICITLY marked `status: proposed` (what `mdl ontology
+    # align` writes) are the review queue; a ref with an accepted status, or with NO
+    # status at all (a hand-authored / already-established alignment), is the done side.
     proposed: list[dict] = []
+    accepted: list[dict] = []
     for kind, objs in (
         ("conceptual_entity", model.conceptual_entities.values()),
         ("term", model.terms.values()),
     ):
         for obj in objs:
             for ref in obj.ontology_refs:
-                if getattr(ref, "status", None) != "proposed":
-                    continue
-                proposed.append(
-                    {
-                        "id": obj.id,
-                        "name": obj.name,
-                        "kind": kind,
-                        "uri": ref.uri,
-                        "predicate": ref.predicate,
-                        "layer": ref.layer,
-                        "confidence": ref.confidence,
-                        "resolved_via": ref.resolved_via,
-                    }
-                )
+                row = {
+                    "id": obj.id,
+                    "name": obj.name,
+                    "kind": kind,
+                    "uri": ref.uri,
+                    "predicate": ref.predicate,
+                    "layer": ref.layer,
+                    "confidence": ref.confidence,
+                    "resolved_via": ref.resolved_via,
+                }
+                if getattr(ref, "status", None) == "proposed":
+                    proposed.append(row)
+                else:
+                    accepted.append(row)
     proposed.sort(key=lambda r: (-(r["confidence"] or 0.0), r["name"], r["uri"]))
+    accepted.sort(key=lambda r: (r["name"], r["uri"]))
 
     # Industry-alignment coverage, computed inline from the model so `ontology status`
     # works on a BASE install: importing mdl_ontology (even for the pure coverage_report)
@@ -1220,7 +1224,7 @@ def ontology_status(
         "core_exempt": exempt,
         "core_uncovered": sorted(uncovered),
     }
-    payload = {"proposed": proposed, "coverage": coverage}
+    payload = {"proposed": proposed, "accepted": accepted, "coverage": coverage}
 
     if fmt == "json":
         typer.echo(_json.dumps(payload, indent=2))
