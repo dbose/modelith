@@ -24,6 +24,11 @@ function Canvas() {
   const [toast, setToast] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [showTypes, setShowTypes] = useState(true);
+  // Collapse wide tables to keys (PK + FK) for a readable large-warehouse view. Defaults
+  // ON in the minimal/preview pane (a 400-model warehouse is unreadable at full detail);
+  // set below once `minimal` is known. `expandedEntities` holds per-entity overrides.
+  const [collapseDetail, setCollapseDetail] = useState(false);
+  const [expandedEntities, setExpandedEntities] = useState<Set<string>>(() => new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [panelTab, setPanelTab] = useState<PanelTab | null>(null);
   const [dirty, setDirty] = useState(false);
@@ -57,6 +62,19 @@ function Canvas() {
   const caps = useMemo(() => directCapabilities(readOnly), [readOnly]);
   const urlParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const minimal = urlParams.get("minimal") === "1";
+  // The preview pane (minimal) opens collapsed so a big warehouse is readable at a glance;
+  // the full canvas opens expanded. Runs once on mount (minimal is stable).
+  useEffect(() => {
+    if (minimal) setCollapseDetail(true);
+  }, [minimal]);
+  const onToggleExpand = useCallback((entityId: string) => {
+    setExpandedEntities((prev) => {
+      const next = new Set(prev);
+      if (next.has(entityId)) next.delete(entityId);
+      else next.add(entityId);
+      return next;
+    });
+  }, []);
   // The VS Code "Modelith: Import to Model" command reveals the canvas with
   // `?import=1`, so the Import wizard is already open when the panel appears.
   const openImport = urlParams.get("import") === "1";
@@ -213,6 +231,8 @@ function Canvas() {
         onSubmitQuery={submitQuery}
         showTypes={showTypes}
         onToggleTypes={() => setShowTypes((v) => !v)}
+        collapseDetail={collapseDetail}
+        onToggleCollapse={() => setCollapseDetail((v) => !v)}
         onFitView={() => canvasRef.current?.fitView()}
         onRelayout={(mode) => canvasRef.current?.relayout(mode)}
         onRefresh={refresh}
@@ -237,6 +257,9 @@ function Canvas() {
           onSelect={setSelectedId}
           query={query}
           showTypes={showTypes}
+          collapseDetail={collapseDetail}
+          expandedEntities={expandedEntities}
+          onToggleExpand={onToggleExpand}
           onError={setToast}
           handleRef={canvasRef}
         />

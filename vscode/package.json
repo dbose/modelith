@@ -2,7 +2,7 @@
   "name": "modelith-vscode",
   "displayName": "Modelith",
   "description": "Ontology-anchored, git-native data modeling for dbt — validate, generate, drift, and the Modelith canvas inside VS Code.",
-  "version": "0.3.11",
+  "version": "0.3.12",
   "publisher": "BosonResearch",
   "license": "Apache-2.0",
   "icon": "icon.png",
@@ -177,6 +177,21 @@
         "command": "modelith.docsOpen",
         "title": "Modelith: Open Docs",
         "icon": "$(book)"
+      },
+      {
+        "command": "modelith.setActiveModel",
+        "title": "Modelith: Set Active Model",
+        "icon": "$(database)"
+      },
+      {
+        "command": "modelith.configAssignPrefix",
+        "title": "Assign Role",
+        "icon": "$(tag)"
+      },
+      {
+        "command": "modelith.configExcludePrefix",
+        "title": "Exclude",
+        "icon": "$(circle-slash)"
       },
       {
         "command": "modelith.ontologyRefresh",
@@ -573,6 +588,16 @@
         {
           "command": "modelith.ontologyReject",
           "when": "view == modelithOntology && viewItem == ontologyProposal",
+          "group": "inline@2"
+        },
+        {
+          "command": "modelith.configAssignPrefix",
+          "when": "view == modelithConfig && viewItem == configUnclassified",
+          "group": "inline@1"
+        },
+        {
+          "command": "modelith.configExcludePrefix",
+          "when": "view == modelithConfig && viewItem == configUnclassified",
           "group": "inline@2"
         }
       ]

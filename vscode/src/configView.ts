@@ -16,17 +16,39 @@ export interface ClassifiedModel {
   excluded: boolean;
   target_form: string;
   pattern: string | null;
+  package?: string | null;
+  foreign?: boolean;
+  unclassified?: boolean;
 }
 
-type Node = GroupNode | ModelNode;
+type Node = GroupNode | PrefixGroupNode | ModelNode;
 interface GroupNode {
   kind: "group";
   role: string;
   items: ClassifiedModel[];
 }
+/** A group of unclassified models sharing a custom prefix (e.g. `pres_art_`), with
+ * inline Assign-role / Exclude actions — the discover→assign UX. `prefix` is what an
+ * assign/exclude action authors a rule for. */
+interface PrefixGroupNode {
+  kind: "prefixGroup";
+  prefix: string;
+  items: ClassifiedModel[];
+}
 interface ModelNode {
   kind: "model";
   item: ClassifiedModel;
+}
+
+/** The leading custom prefix of a model name (first one/two short `_`-tokens), mirroring
+ * the CLI's `_unknown_prefix` so the panel groups the same way suggest reports. */
+function customPrefix(name: string): string {
+  const parts = name.toLowerCase().split("_");
+  if (parts.length < 2) return name.toLowerCase();
+  if (parts.length >= 3 && parts[0].length <= 4 && parts[1].length <= 4) {
+    return `${parts[0]}_${parts[1]}_`;
+  }
+  return `${parts[0]}_`;
 }
 
 // Role -> a friendly group label + an icon. Ordered so the governed entity layers sit
@@ -107,6 +129,18 @@ export class ConfigTreeProvider implements vscode.TreeDataProvider<Node> {
   }
 
   getTreeItem(node: Node): vscode.TreeItem {
+    if (node.kind === "prefixGroup") {
+      const ti = new vscode.TreeItem(
+        `${node.prefix}* (${node.items.length})`,
+        vscode.TreeItemCollapsibleState.Expanded,
+      );
+      ti.iconPath = new vscode.ThemeIcon("question", new vscode.ThemeColor("charts.yellow"));
+      ti.description = "unclassified — assign a role or exclude";
+      // gates the inline Assign/Exclude actions; `id` carries the prefix for the command
+      ti.contextValue = "configUnclassified";
+      ti.id = `prefix:${node.prefix}`;
+      return ti;
+    }
     if (node.kind === "group") {
       const ti = new vscode.TreeItem(
         `${ROLE_LABEL[node.role] ?? node.role} (${node.items.length})`,
@@ -142,25 +176,52 @@ export class ConfigTreeProvider implements vscode.TreeDataProvider<Node> {
 
   getChildren(node?: Node): Node[] {
     if (!node) {
+      const out: Node[] = [];
+      // 1) Unclassified custom prefixes first — the thing needing a decision, grouped by
+      // prefix with inline Assign/Exclude. (foreign models are already excluded upstream
+      // so they show under their role group as "Tool metadata"; see below.)
+      const unclassified = this.models.filter((m) => m.unclassified);
+      const byPrefix = new Map<string, ClassifiedModel[]>();
+      for (const m of unclassified) {
+        const p = customPrefix(m.model);
+        (byPrefix.get(p) ?? byPrefix.set(p, []).get(p)!).push(m);
+      }
+      for (const prefix of [...byPrefix.keys()].sort()) {
+        out.push({ kind: "prefixGroup", prefix, items: byPrefix.get(prefix)! });
+      }
+      // 2) The role groups, excluding the unclassified rows (they're shown above).
+      const classified = this.models.filter((m) => !m.unclassified);
       const byRole = new Map<string, ClassifiedModel[]>();
-      for (const m of this.models) {
-        const list = byRole.get(m.role) ?? [];
-        list.push(m);
-        byRole.set(m.role, list);
+      for (const m of classified) {
+        (byRole.get(m.role) ?? byRole.set(m.role, []).get(m.role)!).push(m);
       }
       const roles = [...byRole.keys()].sort(
         (a, b) => (ROLE_ORDER.indexOf(a) + 100) - (ROLE_ORDER.indexOf(b) + 100),
       );
-      return roles.map((role) => ({
-        kind: "group" as const,
-        role,
-        items: (byRole.get(role) ?? []).sort((a, b) => a.model.localeCompare(b.model)),
-      }));
+      for (const role of roles) {
+        out.push({
+          kind: "group",
+          role,
+          items: (byRole.get(role) ?? []).sort((a, b) => a.model.localeCompare(b.model)),
+        });
+      }
+      return out;
     }
-    if (node.kind === "group") {
-      return node.items.map((item) => ({ kind: "model" as const, item }));
+    if (node.kind === "group" || node.kind === "prefixGroup") {
+      return node.items
+        .slice()
+        .sort((a, b) => a.model.localeCompare(b.model))
+        .map((item) => ({ kind: "model" as const, item }));
     }
     return [];
+  }
+
+  /** All model names carrying a given custom prefix — used by the Assign/Exclude
+   * commands to author a rule for the whole group. */
+  modelsWithPrefix(prefix: string): string[] {
+    return this.models
+      .filter((m) => m.unclassified && customPrefix(m.model) === prefix)
+      .map((m) => m.model);
   }
 
   get modelCount(): number {

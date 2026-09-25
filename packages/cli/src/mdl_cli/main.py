@@ -602,6 +602,13 @@ def reverse(
         "default reverse diverts to a fresh model-reversed-v<N> sibling to protect an "
         "existing model.",
     ),
+    include_packages: str = typer.Option(
+        None,
+        "--include-packages",
+        help="Comma-separated dbt package names to KEEP that would otherwise be excluded "
+        "as tool metadata (installed packages like dbt_artifacts/elementary are dropped "
+        "by default). e.g. --include-packages elementary",
+    ),
 ) -> None:
     """Reverse-engineer a dbt project into a Modelith model (spec §6).
 
@@ -647,6 +654,13 @@ def reverse(
     # (mdl-project.yaml), divert to a fresh, suffixed sibling (model-reversed-v1, -v2, …)
     # and say so — a reverse into a populated model dir would otherwise overwrite
     # hand-authored work. --force is the explicit opt-in to overwrite in place.
+    #
+    # `config_src` is the dir the user pointed --out at, held SEPARATELY from the
+    # (possibly diverted) write dir: the user authored their `reverse:` block there, so
+    # config/naming/auto-accept must be read from it — reading from the fresh diverted
+    # dir would silently drop an authored exclude/layer (the reported bug where a
+    # `reverse.exclude` was ignored on re-reverse because the load read the empty sibling).
+    config_src = out
     if not force:
         out = _nonclobbering_out(out)
 
@@ -674,9 +688,11 @@ def reverse(
     for w in proj.warnings:
         typer.secho(f"  {w}", fg=typer.colors.YELLOW)
 
-    reverse_naming = _load_reverse_naming(naming, out)
-    floor = _resolve_auto_accept(auto_accept, review_all, naming, out)
-    reverse_config = _load_reverse_config(naming, out)
+    # Read config/naming/auto-accept from where the USER authored it (config_src), not
+    # the diverted write dir, so an authored `reverse:` block drives this run.
+    reverse_naming = _load_reverse_naming(naming, config_src)
+    floor = _resolve_auto_accept(auto_accept, review_all, naming, config_src)
+    reverse_config = _load_reverse_config(naming, config_src)
     # Fold reverse.conventions (+ staging-layer prefixes) into the naming the pipeline
     # uses, so a project's declared prefixes/suffixes drive the legacy classifiers too.
     if reverse_config is not None:
@@ -694,11 +710,12 @@ def reverse(
         else:
             reverse_naming = folded
 
+    keep_pkgs = {p.strip() for p in (include_packages or "").split(",") if p.strip()}
     ledger = DecisionLedger.load(out)
     result = run_reverse(
         proj, project_name=name, target=target, ledger=ledger,
         interactive=interactive, naming=reverse_naming, auto_accept=floor,
-        reverse_config=reverse_config,
+        reverse_config=reverse_config, include_packages=keep_pkgs or None,
     )
 
     if interactive:
@@ -773,6 +790,13 @@ def _render_classification(result) -> None:
     _group("managed but no business key (check these)", s.entities_keyless, typer.colors.YELLOW)
     _group("marked reporting rollup (unmanaged)", s.rollups_unmanaged, typer.colors.BLUE)
     _group("excluded as staging/intermediate", s.excluded_staging, typer.colors.BLUE)
+    if s.excluded_foreign:
+        pkgs = sorted({pkg for _, pkg in s.excluded_foreign})
+        _group(
+            f"excluded as tool metadata ({', '.join(pkgs)})",
+            [name for name, _ in s.excluded_foreign],
+            typer.colors.BLUE,
+        )
     _group("SCD2 pattern detected", s.scd2_detected, typer.colors.BLUE)
     _group("Data Vault detected", s.data_vault, typer.colors.BLUE)
     _group("surrogate keys stripped", s.surrogate_keys_stripped, typer.colors.BLUE)
@@ -2331,19 +2355,35 @@ def reverse_config_suggest(
         typer.secho(str(e), fg=typer.colors.RED, err=True)
         raise typer.Exit(4) from e
     report = suggest_config(proj)
-    if not report.block:
+    if not report.block and not report.unclassified:
         typer.secho(
             "no clear folder/prefix conventions found — nothing to suggest", fg=typer.colors.YELLOW
         )
         return
     if fmt == "json":
         typer.echo(
-            json.dumps({"reverse": report.block, "rationale": report.rationale}, default=str)
+            json.dumps(
+                {
+                    "reverse": report.block,
+                    "rationale": report.rationale,
+                    "unclassified": report.unclassified,
+                },
+                default=str,
+            )
         )
     else:
         for line in report.rationale:
             typer.secho(f"# {line}", fg=typer.colors.CYAN)
-        typer.echo(dump_str({"reverse": report.block}))
+        if report.block:
+            typer.echo(dump_str({"reverse": report.block}))
+        if report.unclassified:
+            typer.secho(
+                "\n# unclassified prefixes (assign a role or exclude):",
+                fg=typer.colors.YELLOW,
+            )
+            for u in report.unclassified:
+                typer.echo(f"#   {u['prefix']}  ({u['count']} models, e.g. "
+                           f"{', '.join(u['sample_models'][:3])})")
     if apply:
         _write_reverse_block(model_dir, report.block, source="suggest-config")
         typer.secho("applied suggested reverse: config", fg=typer.colors.GREEN)
@@ -2371,10 +2411,25 @@ def reverse_config_explain(
     naming = naming_from_config(reverse_config)
     default_form = getattr(reverse_config, "target_form", None) or "denormalized"
 
+    from mdl_reverse.suggest import _prefix_of
+
+    root_project = getattr(proj, "root_project", None)
     rows = []
     for name in sorted(proj.models):
         mm = proj.models[name]
         v = resolve_layer(name, mm.tags, getattr(mm, "path", None), reverse_config, naming)
+        pkg = getattr(mm, "package_name", None)
+        foreign = bool(pkg and root_project and pkg != root_project)
+        # "unclassified": fell to the generic `business` role with no matched layer and
+        # no known-vocabulary prefix — i.e. a custom prefix reverse can't place. These are
+        # what the Config frame surfaces for the user to assign a role or exclude.
+        unclassified = (
+            v.role == "business"
+            and not v.layer_name
+            and not v.exempt
+            and _prefix_of(name) is None
+            and not foreign
+        )
         rows.append({
             "model": name,
             "role": v.role,
@@ -2383,6 +2438,9 @@ def reverse_config_explain(
             "excluded": v.role in ("staging", "intermediate", "exclude"),
             "target_form": v.target_form or default_form,
             "pattern": v.pattern,
+            "package": pkg,
+            "foreign": foreign,
+            "unclassified": unclassified,
         })
 
     if fmt == "json":
@@ -3601,6 +3659,28 @@ def _now_iso() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat()
 
 
+def _force_utf8_output() -> None:
+    """Make stdout/stderr encode UTF-8 so non-ASCII output never crashes the CLI.
+
+    On Windows the console defaults to a legacy code page (cp1252), whose `charmap`
+    codec cannot encode characters the CLI prints — the ✓/✗ verdict marks, em-dashes,
+    ellipses, the · separator. Without this, a command that SUCCEEDS (e.g. `reverse`
+    finished and found proposals) still dies with a UnicodeEncodeError while printing
+    its summary, and the caller sees a spurious failure. `reconfigure(encoding=…)`
+    exists on the standard TextIO wrappers (Python 3.7+); guard it so a wrapped or
+    redirected stream that lacks it is simply left as-is. errors="replace" is a final
+    safety net so an un-encodable glyph degrades to '?' rather than raising.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):  # e.g. detached/closed stream — never fatal
+            pass
+
+
 def main() -> None:
     """Console entry point. Wraps the Typer app so anonymous, opt-in telemetry can
     record the command + exit code exactly once, WITHOUT changing exit behavior.
@@ -3610,6 +3690,8 @@ def main() -> None:
     cannot see) and re-raise it faithfully. Telemetry is entirely fail-soft; it
     never alters the documented exit codes (0/1/2/3/4).
     """
+    _force_utf8_output()
+
     # Catch Typer's control-flow exceptions by the classes Typer ACTUALLY raises. This is
     # version-sensitive: older Typer vendors its own Click, so a parse error like
     # `NoSuchOption` derives from `typer._click.exceptions.UsageError` — a DIFFERENT class

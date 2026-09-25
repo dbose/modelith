@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import * as vscode from "vscode";
 import type { LanguageClient } from "vscode-languageclient/node";
@@ -283,10 +284,20 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   const stateWatcher = vscode.workspace.createFileSystemWatcher(
     "**/{.mdl/decisions.yaml,target/manifest.json,target/mdl-docs/index.html}",
   );
-  const onStateChange = () => {
-    void reverse.refresh();
-    void statusModel.refresh();
-    void ontology.refresh();
+  // Derive the model dir from a changed `.mdl/decisions.yaml` (two parents up), so a
+  // reverse into a FRESH dir (e.g. model_reversed/) refreshes THAT ledger — not the
+  // shallowest auto-discovered model dir (the empty-frame bug). A manifest/docs change
+  // carries no such dir, so those fall back to auto-discovery.
+  const onStateChange = (uri: vscode.Uri) => {
+    let dir: string | undefined;
+    const p = uri.fsPath;
+    if (p.endsWith(`${path.sep}decisions.yaml`) && p.includes(`${path.sep}.mdl${path.sep}`)) {
+      // <modelDir>/.mdl/decisions.yaml -> <modelDir>
+      dir = path.dirname(path.dirname(path.dirname(p)));
+    }
+    void reverse.refresh(dir);
+    void statusModel.refresh(dir);
+    void ontology.refresh(dir);
   };
   ctx.subscriptions.push(
     stateWatcher,
@@ -300,6 +311,29 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   const configTree = new ConfigTreeProvider(out);
   ctx.subscriptions.push(vscode.window.registerTreeDataProvider("modelithConfig", configTree));
   void configTree.refresh();
+
+  // Active-model indicator: which model dir the panels read. In a multi-model workspace
+  // (e.g. an original model/ plus a fresh model_reversed/) auto-discovery picks the
+  // shallowest, which may not be the one the user is reviewing. This status-bar item
+  // shows the active model and lets them switch it (sets modelith.modelDir, honored by
+  // findModelDir). Refreshes all state-driven panels on change.
+  const activeModelStatus = vscode.window.createStatusBarItem(
+    vscode.StatusBarAlignment.Left,
+    88,
+  );
+  activeModelStatus.command = "modelith.setActiveModel";
+  ctx.subscriptions.push(activeModelStatus);
+  const refreshActiveModelStatus = async () => {
+    const dir = await findModelDir();
+    if (dir) {
+      activeModelStatus.text = `$(database) ${path.basename(dir)}`;
+      activeModelStatus.tooltip = `Modelith active model: ${dir}\nClick to switch`;
+      activeModelStatus.show();
+    } else {
+      activeModelStatus.hide();
+    }
+  };
+  void refreshActiveModelStatus();
   // Serves the "before" side of an import diff (the pre-import mdl-project.yaml).
   ctx.subscriptions.push(
     vscode.workspace.registerTextDocumentContentProvider("modelith-before", {
@@ -928,6 +962,108 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   // Click a model in the tree -> open mdl-project.yaml so the user can tweak the rule.
   cmd("modelith.configOpenProject", () => withModelDir((dir) => openProjectYaml(dir)));
 
+  // Switch which model dir the panels read (multi-model workspaces). Sets
+  // modelith.modelDir (workspace scope) so findModelDir resolves it everywhere, then
+  // refreshes every state-driven panel + the status bar.
+  cmd("modelith.setActiveModel", async () => {
+    const hits = await vscode.workspace.findFiles("**/mdl-project.yaml", "**/node_modules/**", 20);
+    if (hits.length === 0) {
+      void vscode.window.showWarningMessage("Modelith: no mdl-project.yaml found in this workspace.");
+      return;
+    }
+    const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const items = hits
+      .map((h) => path.dirname(h.fsPath))
+      .sort()
+      .map((dir) => ({
+        label: `$(database) ${path.basename(dir)}`,
+        description: ws ? path.relative(ws, dir) || "." : dir,
+        dir,
+      }));
+    const pick = await vscode.window.showQuickPick(items, {
+      title: "Set the active Modelith model",
+      placeHolder: "Which model should the panels read?",
+    });
+    if (!pick) return;
+    const rel = ws ? path.relative(ws, pick.dir) : pick.dir;
+    await vscode.workspace
+      .getConfiguration("modelith")
+      .update("modelDir", rel || ".", vscode.ConfigurationTarget.Workspace);
+    await Promise.all([
+      reverse.refresh(pick.dir),
+      statusModel.refresh(pick.dir),
+      ontology.refresh(pick.dir),
+      configTree.refresh(),
+      refreshActiveModelStatus(),
+    ]);
+    void vscode.window.setStatusBarMessage(`Modelith: active model → ${path.basename(pick.dir)}`, 4000);
+  });
+
+  // Assign a role to an unclassified custom-prefix group (e.g. pres_art_* -> mart), or
+  // exclude it — the discover→assign UX. `node` is the prefixGroup tree node; its id is
+  // `prefix:<pfx>`. Authors a reverse.layers or reverse.exclude entry via `reverse-config
+  // apply` (reading a temp block file), then refreshes the classification.
+  const prefixOf = (node: unknown): string | undefined => {
+    const id = (node as { id?: string })?.id;
+    return id?.startsWith("prefix:") ? id.slice("prefix:".length) : undefined;
+  };
+  const applyReverseBlock = async (dir: string, block: unknown): Promise<boolean> => {
+    const bin = await findMdl(dir);
+    const tmp = path.join(os.tmpdir(), `mdl-reverse-block-${Date.now()}.json`);
+    await fs.promises.writeFile(tmp, JSON.stringify(block), "utf8");
+    try {
+      const r = await runMdl(bin, ["reverse-config", "apply", tmp, "-m", "."], dir, out);
+      if (r.code !== 0) {
+        void vscode.window
+          .showErrorMessage("Modelith: could not apply the config.", "Show Output")
+          .then((a) => a && out.show());
+        return false;
+      }
+      return true;
+    } finally {
+      void fs.promises.unlink(tmp).catch(() => undefined);
+    }
+  };
+
+  cmd("modelith.configAssignPrefix", (node: unknown) =>
+    withModelDir(async (dir) => {
+      const prefix = prefixOf(node);
+      if (!prefix) return;
+      const ROLES = [
+        { label: "Mart", role: "mart" },
+        { label: "Dimension", role: "dimension" },
+        { label: "Fact", role: "fact" },
+        { label: "Staging (exclude)", role: "staging" },
+        { label: "Exclude entirely", role: "__exclude__" },
+      ];
+      const pick = await vscode.window.showQuickPick(
+        ROLES.map((r) => r.label),
+        { title: `Classify ${prefix}* models`, placeHolder: "Assign a role, or exclude" },
+      );
+      if (!pick) return;
+      const chosen = ROLES.find((r) => r.label === pick)!;
+      const block =
+        chosen.role === "__exclude__"
+          ? { exclude: [`${prefix}*`] }
+          : { layers: [{ name: prefix.replace(/_+$/, ""), role: chosen.role, match: { prefix } }] };
+      if (await applyReverseBlock(dir, block)) {
+        await configTree.refresh();
+        void vscode.window.setStatusBarMessage(`Modelith: classified ${prefix}* ✓`, 4000);
+      }
+    }),
+  );
+
+  cmd("modelith.configExcludePrefix", (node: unknown) =>
+    withModelDir(async (dir) => {
+      const prefix = prefixOf(node);
+      if (!prefix) return;
+      if (await applyReverseBlock(dir, { exclude: [`${prefix}*`] })) {
+        await configTree.refresh();
+        void vscode.window.setStatusBarMessage(`Modelith: excluded ${prefix}* ✓`, 4000);
+      }
+    }),
+  );
+
   // --- reverse engineering -----------------------------------------------------
 
   // Run `mdl reverse …` in `cwd`, then surface what needs human review. Shared by the
@@ -1077,26 +1213,30 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
 
     const rel = vscode.workspace.asRelativePath(defaultTarget);
     const NEW_FOLDER = "Reverse into a new folder";
-    const OVERWRITE = "Overwrite existing model";
+    const OVERWRITE = "Update in place";
     const DRIFT = "Check drift instead";
 
     let choice: string | undefined;
     if (state === "model") {
-      const actions = manifest ? [NEW_FOLDER, DRIFT, OVERWRITE] : [NEW_FOLDER, OVERWRITE];
-      choice = await vscode.window.showWarningMessage(
-        `A Modelith model already exists at ${rel}. Reverse into a new folder, ` +
-          (manifest ? "check drift against the existing model, " : "") +
-          "or overwrite it?",
+      // "Update in place" re-reverses into the SAME folder: it applies (and preserves)
+      // the folder's reverse:/naming:/glossary: config, refreshes the entities, and
+      // prunes ones that no longer exist — the natural "I tweaked the config, re-run"
+      // flow. "Reverse into a new folder" keeps a fresh snapshot beside it.
+      const actions = manifest ? [OVERWRITE, NEW_FOLDER, DRIFT] : [OVERWRITE, NEW_FOLDER];
+      choice = await vscode.window.showInformationMessage(
+        `Re-reverse the model at ${rel}? "Update in place" applies and keeps that folder's ` +
+          "config; \"new folder\" writes a fresh copy beside it" +
+          (manifest ? ", or check drift against it." : "."),
         { modal: true },
         ...actions,
       );
     } else if (state === "partial") {
       choice = await vscode.window.showWarningMessage(
         `${rel} looks like a Modelith model with a missing or renamed project file. ` +
-          "Reverse into a new folder, or overwrite what's there?",
+          "Update it in place, or reverse into a new folder?",
         { modal: true },
-        NEW_FOLDER,
         OVERWRITE,
+        NEW_FOLDER,
       );
     } else {
       // foreign: non-empty folder that isn't a model. Offer a self-contained subfolder.

@@ -79,6 +79,11 @@ export interface ModelCanvasProps {
   onSelect: (id: string | null) => void;
   query?: string;
   showTypes?: boolean;
+  /** collapse wide tables to keys (PK + FK) for a readable large-warehouse view */
+  collapseDetail?: boolean;
+  /** per-entity overrides of the global collapse */
+  expandedEntities?: Set<string>;
+  onToggleExpand?: (entityId: string) => void;
   /** Surfaced by the shell however it likes (a toast, a banner). */
   onError?: (message: string) => void;
   handleRef?: React.Ref<ModelCanvasHandle>;
@@ -100,6 +105,9 @@ export function ModelCanvas({
   onSelect,
   query = "",
   showTypes = true,
+  collapseDetail = false,
+  expandedEntities,
+  onToggleExpand,
   onError,
   handleRef,
 }: ModelCanvasProps) {
@@ -232,6 +240,9 @@ export function ModelCanvas({
           highlighted:
             (q !== "" && matches.has(e.id)) || (hoveredAttr !== null && entsForAttr.has(e.id)),
           showTypes,
+          collapseDetail,
+          expanded: expandedEntities?.has(e.id) ?? false,
+          onToggleExpand,
           endpointAttrs: endpointAttrsByEntity.get(e.id),
           highlightAttrs: hitAttrsByEntity.get(e.id),
           onHoverAttr: setHoveredAttr,
@@ -285,6 +296,9 @@ export function ModelCanvas({
     query,
     selectedId,
     showTypes,
+    collapseDetail,
+    expandedEntities,
+    onToggleExpand,
     saColors,
     entityIndex,
     endpointAttrsByEntity,

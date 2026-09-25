@@ -30,6 +30,7 @@ export const workspace = { getConfiguration: () => ({ get: () => undefined }) };
 // ./mdl exports the provider imports — never called here (we drive getChildren directly).
 export const findMdl = async () => ({ cmd: "mdl", args: [], label: "mdl" });
 export const findModelDir = async () => undefined;
+export const findManifestPath = async () => undefined;
 export const runMdl = async () => ({ code: 1, stdout: "", stderr: "" });
 `;
 
@@ -199,6 +200,30 @@ console.log("\nReverse Review — resting row is reverse-specific (docs moved ou
   p.decisions = [];
   const rows = p.getChildren().map((n) => p.getTreeItem(n));
   ok(rows[0].label === "Reverse a warehouse or manifest", "no models -> points at reversing");
+}
+
+// --- Warehouse Config frame: unclassified custom prefixes group + assign/exclude -----
+const { ConfigTreeProvider } = await load("configView.ts");
+console.log("\nWarehouse Config — unclassified custom prefixes surface for assignment");
+{
+  const p = new ConfigTreeProvider({ appendLine() {}, append() {}, show() {} });
+  p.models = [
+    { model: "dim_customer", role: "dimension", layer: null, exempt: false, excluded: false, target_form: "denormalized", pattern: null, unclassified: false },
+    { model: "pres_art_fund_a", role: "business", layer: null, exempt: false, excluded: false, target_form: "denormalized", pattern: null, unclassified: true },
+    { model: "pres_art_fund_b", role: "business", layer: null, exempt: false, excluded: false, target_form: "denormalized", pattern: null, unclassified: true },
+  ];
+  const top = p.getChildren();
+  const items = top.map((n) => p.getTreeItem(n));
+  const unclassified = top.find((n) => n.kind === "prefixGroup");
+  ok(!!unclassified, "an unclassified prefix group is rendered");
+  const ti = p.getTreeItem(unclassified);
+  ok(ti.label === "pres_art_* (2)", `prefix group counts its models: ${ti.label}`);
+  ok(ti.contextValue === "configUnclassified", "prefix group gates Assign/Exclude actions");
+  ok(ti.id === "prefix:pres_art_", "prefix group carries the prefix in its id");
+  ok(p.modelsWithPrefix("pres_art_").length === 2, "modelsWithPrefix returns the group's models");
+  // the classified dimension still appears in a normal role group, not the prefix group
+  ok(items.some((i) => String(i.label).startsWith("Dimensions")), "classified models keep their role group");
+  ok(!top.some((n) => n.kind === "prefixGroup" && n.prefix !== "pres_art_"), "only real unclassified prefixes group");
 }
 
 rmSync(dir, { recursive: true, force: true });

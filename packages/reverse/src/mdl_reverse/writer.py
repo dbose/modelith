@@ -11,7 +11,52 @@ from __future__ import annotations
 from pathlib import Path
 
 from mdl_core.ir import Model
-from mdl_core.yaml_io import dump_str
+from mdl_core.yaml_io import dump_str, load_file
+
+# Config keys the USER owns — a re-reverse must never clobber them. Reverse only owns
+# the identity/target of the project; everything below is hand-authored policy that a
+# re-run into an existing dir must preserve (the reported data-loss bug: an authored
+# `reverse.exclude` was wiped on re-reverse).
+_USER_OWNED_CONFIG = (
+    "reverse",
+    "naming",
+    "glossary",
+    "ontology_stack",
+    "platform_targets",
+    "kg_base_iri",
+)
+
+
+def _write_project_config(model: Model, root: Path) -> None:
+    """Write mdl-project.yaml, PRESERVING an existing one's user-authored config.
+
+    A first reverse into an empty dir writes the fresh config as-is. Re-reversing into a
+    dir that already has an mdl-project.yaml loads it (comment-preserving) and updates
+    ONLY the fields reverse owns (name, dbt_target), keeping the user's reverse/naming/
+    glossary/ontology_stack blocks and any hand edits intact."""
+    fresh = model.config.model_dump(exclude_none=True, mode="json")
+    dest = root / "mdl-project.yaml"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+
+    if dest.exists():
+        try:
+            existing = load_file(dest)  # ruamel round-trip node (keeps comments)
+        except Exception:  # noqa: BLE001 - an unreadable prior config: fall back to fresh
+            existing = None
+        if existing is not None and hasattr(existing, "get"):
+            # Reverse-owned identity fields refresh; user-owned policy is preserved. A
+            # user-owned key absent from `existing` but present in `fresh` (e.g. reverse
+            # carried a config it was classified with) is filled in, not dropped.
+            for key in ("name", "dbt_target"):
+                if key in fresh:
+                    existing[key] = fresh[key]
+            for key in _USER_OWNED_CONFIG:
+                if key not in existing and key in fresh:
+                    existing[key] = fresh[key]
+            dest.write_text(dump_str(existing), encoding="utf-8")
+            return
+
+    dest.write_text(dump_str(fresh), encoding="utf-8")
 
 
 def write_model(model: Model, root: Path) -> list[str]:
@@ -33,10 +78,9 @@ def write_model(model: Model, root: Path) -> list[str]:
         path.write_text(dump_str(data), encoding="utf-8")
         written.append(rel)
 
-    # project config
-    cfg = model.config.model_dump(exclude_none=True, mode="json")
-    (root / "mdl-project.yaml").parent.mkdir(parents=True, exist_ok=True)
-    (root / "mdl-project.yaml").write_text(dump_str(cfg), encoding="utf-8")
+    # project config — preserves a user's existing mdl-project.yaml on a re-reverse
+    # (the authored reverse:/naming:/glossary: blocks survive; see _write_project_config).
+    _write_project_config(model, root)
     written.append("mdl-project.yaml")
 
     for sa in model.subject_areas.values():
@@ -60,7 +104,42 @@ def write_model(model: Model, root: Path) -> list[str]:
     for pt in model.physical_tables.values():
         dump(f"physical/{pt.target}/tables/{pt.name.lower()}.yaml", pt)
 
+    # Prune stale object files from a PRIOR reverse into this dir: an entity that no
+    # longer exists (e.g. now excluded by an edited reverse.exclude) would otherwise
+    # linger. Only the object subdirs reverse OWNS are swept, and only `.yaml` files —
+    # never mdl-project.yaml, .mdl/, or anything the user added elsewhere.
+    _prune_stale(root, set(written))
+
     return written
+
+
+# The directory trees write_model manages — swept for stale files on a re-reverse.
+# mdl-project.yaml (root) and .mdl/ are deliberately excluded (user/state, not objects).
+_OWNED_DIRS = ("conceptual", "logical", "physical")
+
+
+def _prune_stale(root: Path, written: set[str]) -> None:
+    """Delete `.yaml` files under the reverse-owned object dirs that this write did not
+    produce, so an in-place re-reverse doesn't leave orphaned entities behind. Scoped to
+    _OWNED_DIRS; empties leftover directories. Never touches mdl-project.yaml or .mdl/."""
+    for owned in _OWNED_DIRS:
+        base = root / owned
+        if not base.is_dir():
+            continue
+        for path in base.rglob("*.yaml"):
+            rel = str(path.relative_to(root))
+            if rel not in written:
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
+        # tidy now-empty subdirectories (deepest first), leaving the tree clean
+        for d in sorted(base.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+            if d.is_dir() and not any(d.iterdir()):
+                try:
+                    d.rmdir()
+                except OSError:
+                    pass
 
 
 def _slug(name: str) -> str:

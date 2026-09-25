@@ -13,6 +13,8 @@ export function TopBar({
   onSubmitQuery,
   showTypes,
   onToggleTypes,
+  collapseDetail,
+  onToggleCollapse,
   onFitView,
   onRelayout,
   onRefresh,
@@ -34,6 +36,8 @@ export function TopBar({
   onSubmitQuery: () => void;
   showTypes: boolean;
   onToggleTypes: () => void;
+  collapseDetail: boolean;
+  onToggleCollapse: () => void;
   onFitView: () => void;
   onRelayout: (mode?: LayoutMode) => void;
   onRefresh: () => void;
@@ -125,6 +129,13 @@ export function TopBar({
           title="Toggle data types"
         >
           {"{T}"}
+        </button>
+        <button
+          className={"tool-btn" + (collapseDetail ? " active" : "")}
+          onClick={onToggleCollapse}
+          title="Collapse to keys (PK + FK only) — readable for large models"
+        >
+          {"⇕"}
         </button>
         <button
           className="tool-btn"

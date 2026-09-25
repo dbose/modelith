@@ -93,3 +93,36 @@ def test_suggest_then_classify_roundtrip():
     # dim_customer classifies as a dimension; stg_orders as staging (excluded)
     assert resolve_layer("dim_customer", [], "models/marts/dim_customer.sql", rc).role == "dimension"
     assert resolve_layer("stg_orders", [], "models/staging/stg_orders.sql", rc).role == "staging"
+
+
+def _manifest_with_prefix(prefix: str, n: int, root: str = "my_project"):
+    from mdl_reverse.manifest import ManifestModel, ManifestProjection
+
+    models = {
+        f"{prefix}model_{i}": ManifestModel(
+            name=f"{prefix}model_{i}",
+            unique_id=f"model.{root}.{prefix}model_{i}",
+            package_name=root,
+            path=f"models/{prefix}model_{i}.sql",
+        )
+        for i in range(n)
+    }
+    return ManifestProjection(models=models, root_project=root)
+
+
+def test_suggest_reports_unclassified_custom_prefix():
+    from mdl_reverse.suggest import suggest_config
+
+    report = suggest_config(_manifest_with_prefix("pres_art_", 12))
+    prefixes = {u["prefix"]: u["count"] for u in report.unclassified}
+    assert prefixes.get("pres_art_") == 12
+    # a known prefix is NOT reported as unclassified
+    assert not any(u["prefix"] == "dim_" for u in report.unclassified)
+
+
+def test_suggest_ignores_rare_unclassified_prefix():
+    from mdl_reverse.suggest import suggest_config
+
+    # a single model with an odd prefix is below _MIN_PREFIX -> not surfaced (noise)
+    report = suggest_config(_manifest_with_prefix("zzz_odd_", 1))
+    assert not report.unclassified

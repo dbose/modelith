@@ -48,6 +48,11 @@ class ManifestModel:
     # manifest) behaves exactly as before.
     path: str | None = None
     fqn: list[str] = field(default_factory=list)
+    # The dbt package that owns this model. First-party models carry the root project's
+    # name; models from an installed package (dbt_artifacts, elementary, …) carry that
+    # package's name. Used to auto-exclude tool metadata that isn't a business model.
+    # Absent on DDL/older manifests -> None (treated as first-party).
+    package_name: str | None = None
 
 
 # Manifest schema versions this reader has been exercised against. The reader is
@@ -70,6 +75,9 @@ class ManifestProjection:
     models: dict[str, ManifestModel]
     dbt_schema_version: str | None = None
     warnings: list[str] = field(default_factory=list)
+    # The root dbt project's name (manifest metadata.project_name), so a reader can tell
+    # first-party models from installed-package ones. None for non-dbt sources.
+    root_project: str | None = None
 
     def model_names(self) -> set[str]:
         return set(self.models)
@@ -170,6 +178,13 @@ def _project(raw: dict[str, Any]) -> ManifestProjection:
             )
         config = node.get("config") or {}
         contract = config.get("contract") or {}
+        fqn = list(node.get("fqn") or [])
+        # package_name: the field when present, else dbt's unique_id (model.<pkg>.<name>)
+        # or fqn[0] as fallbacks — all three agree for a normal manifest.
+        pkg = node.get("package_name")
+        if not pkg:
+            parts = unique_id.split(".")
+            pkg = parts[1] if len(parts) >= 3 else (fqn[0] if fqn else None)
         models[name] = ManifestModel(
             name=name,
             unique_id=unique_id,
@@ -182,10 +197,15 @@ def _project(raw: dict[str, Any]) -> ManifestProjection:
             # dbt records the model's source location; carry it for folder-based
             # layer classification. Absent in DDL/older manifests -> stays None/[].
             path=node.get("original_file_path") or node.get("path") or None,
-            fqn=list(node.get("fqn") or []),
+            fqn=fqn,
+            package_name=pkg,
         )
+    root_project = meta.get("project_name") if isinstance(meta, dict) else None
     return ManifestProjection(
-        models=models, dbt_schema_version=schema_version, warnings=warnings
+        models=models,
+        dbt_schema_version=schema_version,
+        warnings=warnings,
+        root_project=root_project,
     )
 
 
