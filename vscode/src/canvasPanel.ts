@@ -16,8 +16,40 @@ export class CanvasManager {
   private port: number | undefined;
   private servedDir: string | undefined;
   private panel: vscode.WebviewPanel | undefined;
+  private docsPanel: vscode.WebviewPanel | undefined;
 
   constructor(private out: vscode.OutputChannel) {}
+
+  /** Open the generated docs site (served at /mdl-docs by the same `mdl serve`
+   * process) in an integrated tab, mirroring `open()`. Honors `canvas.display`:
+   * "external" opens the system browser; otherwise a webview panel embeds the URL.
+   * The caller runs `mdl docs generate` first, so the route is already populated. */
+  async openDocs(modelDir: string): Promise<void> {
+    const cfg = vscode.workspace.getConfiguration("modelith");
+    await this.ensureServer(modelDir);
+    const local = vscode.Uri.parse(`http://127.0.0.1:${this.port}/mdl-docs/`);
+    const external = await vscode.env.asExternalUri(local);
+    const url = external.toString();
+
+    if (cfg.get<string>("canvas.display") === "external") {
+      await vscode.env.openExternal(vscode.Uri.parse(url));
+      vscode.window.setStatusBarMessage(`Modelith docs: ${url}`, 5000);
+      return;
+    }
+    if (this.docsPanel) {
+      this.docsPanel.webview.html = this.html(url);
+      this.docsPanel.reveal();
+      return;
+    }
+    this.docsPanel = vscode.window.createWebviewPanel(
+      "modelithDocs",
+      "Modelith Docs",
+      vscode.ViewColumn.One,
+      { enableScripts: true, retainContextWhenHidden: true },
+    );
+    this.docsPanel.webview.html = this.html(url);
+    this.docsPanel.onDidDispose(() => (this.docsPanel = undefined));
+  }
 
   /** Open (or reveal) the canvas. `query` (e.g. "import=1") is appended to the
    * canvas URL — the "Import to Model" command passes it so the same Import
@@ -115,6 +147,7 @@ export class CanvasManager {
   dispose(): void {
     this.stop();
     this.panel?.dispose();
+    this.docsPanel?.dispose();
   }
 
   private html(url: string): string {

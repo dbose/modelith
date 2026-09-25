@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Glossary{% endblock %}
+{% block content %}
+<h1>Glossary</h1>
+
+{% if glossary.terms %}
+<section>
+  <h2>Business terms</h2>
+  <dl class="glossary">
+    {% for t in glossary.terms %}
+    <dt>{{ t.name }}{% if t.synonyms %}<span class="muted"> ({{ t.synonyms|join(", ") }})</span>{% endif %}</dt>
+    <dd>{{ t.definition or "" }}</dd>
+    {% endfor %}
+  </dl>
+</section>
+{% endif %}
+
+{% if glossary.domains %}
+<section>
+  <h2>Domains</h2>
+  <table class="grid">
+    <thead><tr><th>Name</th><th>Base type</th><th>Values</th><th>Definition</th></tr></thead>
+    <tbody>
+      {% for d in glossary.domains %}
+      <tr><td class="mono">{{ d.name }}</td><td>{{ d.base_type }}</td>
+        <td class="muted">{% if d.enum %}{{ d.enum|join(", ") }}{% elif d.value_set %}→ {{ d.value_set }}{% else %}—{% endif %}</td>
+        <td class="muted">{{ d.definition or "" }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
+{% if glossary.code_sets %}
+<section>
+  <h2>Code sets</h2>
+  {% for c in glossary.code_sets %}
+  <h3 class="sub">{{ c.name }}</h3>
+  {% if c.definition %}<p class="muted">{{ c.definition }}</p>{% endif %}
+  <p class="mono muted">{{ c.members|join(", ") }}</p>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% if not glossary.terms and not glossary.domains and not glossary.code_sets %}
+<p class="muted">No glossary terms, domains, or code sets defined yet.</p>
+{% endif %}
+{% endblock %}

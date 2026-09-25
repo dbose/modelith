@@ -47,12 +47,14 @@ gov_app = typer.Typer(help="Governance: plan/apply/pull/conformance against a ca
 catalog_app = typer.Typer(
     help="Cross-repo model catalog: publish/browse model repos (base-tier, no governance)."
 )
+docs_app = typer.Typer(help="Generate and serve a static documentation site (dbt-docs style).")
 app.add_typer(ontology_app, name="ontology")
 app.add_typer(emit_app, name="emit")
 app.add_typer(export_app, name="export")
 app.add_typer(import_app, name="import")
 app.add_typer(gov_app, name="gov")
 app.add_typer(catalog_app, name="catalog")
+app.add_typer(docs_app, name="docs")
 
 
 def _mdl_version() -> str:
@@ -1155,13 +1157,103 @@ def ontology_check(
         raise typer.Exit(1)
 
 
+@ontology_app.command("status")
+def ontology_status(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    fmt: str = typer.Option("text", "--format", help="text|json"),
+) -> None:
+    """Proposed ontology alignments awaiting review + industry-coverage summary.
+
+    The JSON form is what the VS Code Ontology view consumes; `promote`/`clear`
+    (with the ref uri) act on the rows it lists."""
+    import json as _json
+
+    repo = _load(model_dir)
+    model = repo.model
+
+    # Refs across conceptual entities and terms, split by review state so the UI can
+    # show the flow. Only refs EXPLICITLY marked `status: proposed` (what `mdl ontology
+    # align` writes) are the review queue; a ref with an accepted status, or with NO
+    # status at all (a hand-authored / already-established alignment), is the done side.
+    proposed: list[dict] = []
+    accepted: list[dict] = []
+    for kind, objs in (
+        ("conceptual_entity", model.conceptual_entities.values()),
+        ("term", model.terms.values()),
+    ):
+        for obj in objs:
+            for ref in obj.ontology_refs:
+                row = {
+                    "id": obj.id,
+                    "name": obj.name,
+                    "kind": kind,
+                    "uri": ref.uri,
+                    "predicate": ref.predicate,
+                    "layer": ref.layer,
+                    "confidence": ref.confidence,
+                    "resolved_via": ref.resolved_via,
+                }
+                if getattr(ref, "status", None) == "proposed":
+                    proposed.append(row)
+                else:
+                    accepted.append(row)
+    proposed.sort(key=lambda r: (-(r["confidence"] or 0.0), r["name"], r["uri"]))
+    accepted.sort(key=lambda r: (r["name"], r["uri"]))
+
+    # Industry-alignment coverage, computed inline from the model so `ontology status`
+    # works on a BASE install: importing mdl_ontology (even for the pure coverage_report)
+    # pulls in the optional RDF stack via its package __init__, which a base install
+    # lacks. This mirrors mdl_ontology.layers.coverage_report over core concepts.
+    total_core = with_industry = exempt = 0
+    uncovered: list[str] = []
+    for obj in [*model.conceptual_entities.values(), *model.terms.values()]:
+        if getattr(obj, "ontology_layer", None) != "core":
+            continue
+        total_core += 1
+        if any(r.uri for r in obj.ontology_refs):
+            with_industry += 1
+        elif getattr(obj, "no_industry_equivalent", False):
+            exempt += 1
+        else:
+            uncovered.append(obj.name)
+    pct = round(100.0 * (with_industry + exempt) / total_core, 1) if total_core else 100.0
+    coverage = {
+        "coverage_pct": pct,
+        "total_core": total_core,
+        "core_with_industry": with_industry,
+        "core_exempt": exempt,
+        "core_uncovered": sorted(uncovered),
+    }
+    payload = {"proposed": proposed, "accepted": accepted, "coverage": coverage}
+
+    if fmt == "json":
+        typer.echo(_json.dumps(payload, indent=2))
+        return
+    if proposed:
+        typer.secho(f"{len(proposed)} proposed alignment(s) awaiting review:", fg=typer.colors.CYAN)
+        for r in proposed:
+            conf = f"{r['confidence']:.2f}" if r["confidence"] is not None else "—"
+            typer.echo(f"  {r['name']} -> {r['uri']}  [{r['layer'] or '?'}, conf {conf}]")
+    else:
+        typer.secho("no proposed alignments — all reviewed", fg=typer.colors.GREEN)
+    typer.echo("")
+    typer.secho(
+        f"industry alignment coverage: {coverage['coverage_pct']}% "
+        f"({coverage['core_with_industry']}+{coverage['core_exempt']}/"
+        f"{coverage['total_core']} core terms)",
+        fg=typer.colors.CYAN,
+    )
+
+
 @ontology_app.command("promote")
 def ontology_promote(
     name: str = typer.Argument(..., help="Conceptual entity or term name"),
     model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    uri: str = typer.Option(None, "--uri", help="Promote only this ref (else all proposed)"),
 ) -> None:
     """Promote a proposed ontology alignment to accepted (§5.1: SMEs propose,
-    architects promote)."""
+    architects promote). With --uri, promote just that ref (used by the VS Code
+    Ontology view, where each row is one ref)."""
     from mdl_core.commands import CommandError, apply_command
 
     repo = _load(model_dir)
@@ -1171,12 +1263,44 @@ def ontology_promote(
     if obj is None:
         typer.secho(f"no conceptual entity or term {name!r}", fg=typer.colors.RED, err=True)
         raise typer.Exit(1)
+    args = {"id": obj.id}
+    if uri:
+        args["uri"] = uri
     try:
-        apply_command(model_dir, "promote_alignment", {"id": obj.id})
+        apply_command(model_dir, "promote_alignment", args)
     except (CommandError, FileNotFoundError) as e:
         typer.secho(str(e), fg=typer.colors.RED, err=True)
         raise typer.Exit(1) from e
     typer.secho(f"alignment on {name!r} promoted to accepted", fg=typer.colors.GREEN)
+
+
+@ontology_app.command("reject")
+def ontology_reject(
+    name: str = typer.Argument(..., help="Conceptual entity or term name"),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    uri: str = typer.Option(None, "--uri", help="Remove only this ref (else all)"),
+) -> None:
+    """Reject a proposed ontology alignment: remove the ref. With --uri, remove just
+    that one (used by the VS Code Ontology view). Rejecting a proposal simply drops
+    it; a later `mdl ontology align` may re-propose from fresh evidence."""
+    from mdl_core.commands import CommandError, apply_command
+
+    repo = _load(model_dir)
+    candidates = [*repo.model.conceptual_entities.values(), *repo.model.terms.values()]
+    objs = {o.name: o for o in candidates}
+    obj = objs.get(name)
+    if obj is None:
+        typer.secho(f"no conceptual entity or term {name!r}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+    args = {"id": obj.id}
+    if uri:
+        args["uri"] = uri
+    try:
+        apply_command(model_dir, "clear_alignment", args)
+    except (CommandError, FileNotFoundError) as e:
+        typer.secho(str(e), fg=typer.colors.RED, err=True)
+        raise typer.Exit(1) from e
+    typer.secho(f"alignment on {name!r} removed", fg=typer.colors.GREEN)
 
 
 @ontology_app.command("vendor")
@@ -2794,6 +2918,103 @@ def serve(
 
     telemetry.emit("canvas_opened", {"surface": "serve"})
     run_server(model_dir, host=host, port=port, read_only=read_only)
+
+
+@docs_app.command("generate")
+def docs_generate(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    out: Path = typer.Option(
+        None, "--out", "-o", help="Output dir (default: <model-dir>/target/mdl-docs)"
+    ),
+    base_url: str = typer.Option(
+        "", "--base-url", help="URL prefix for publishing under a sub-path"
+    ),
+    neighbourhood_radius: int = typer.Option(
+        2, "--neighbourhood-radius", help="Hops of related entities in each entity's ERD"
+    ),
+) -> None:
+    """Generate a static, self-contained documentation site (dbt-docs style).
+
+    The output opens offline (no server) and is safe to commit or publish to a wiki,
+    S3, or GitHub Pages. It carries a left model tree-view, a structured page per
+    entity with a neighbourhood ERD, an overview diagram, and a glossary."""
+    from mdl_docs import render_site
+
+    from mdl_core.status import assess
+
+    repo = _load(model_dir)
+    # Base the default output on the RESOLVED model dir (repo.root), so `-m .` at a repo
+    # root writes to <model>/target/mdl-docs — the same place `mdl docs serve` and the
+    # server's /mdl-docs mount look — not ./target/mdl-docs beside the wrong dir.
+    dest = out or (repo.root / "target" / "mdl-docs")
+    status = assess(repo.root, model=repo.model)
+    files = render_site(
+        repo.model,
+        dest,
+        base_url=base_url,
+        neighbourhood_radius=neighbourhood_radius,
+        status_summary=status.to_dict(),
+    )
+    typer.secho(
+        f"Wrote {len(files)} files to {dest}  (open {dest / 'index.html'})",
+        fg=typer.colors.GREEN,
+    )
+    from mdl_cli import telemetry
+
+    telemetry.emit("docs_generated", {"entities": len(repo.model.logical_entities)})
+
+
+@docs_app.command("serve")
+def docs_serve(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    host: str = typer.Option("127.0.0.1", "--host"),
+    port: int = typer.Option(4820, "--port", "-p"),
+    regenerate: bool = typer.Option(
+        True, "--regenerate/--no-regenerate", help="Regenerate the site before serving"
+    ),
+) -> None:
+    """Generate (unless --no-regenerate) and serve the docs site at /mdl-docs."""
+    from mdl_server.app import serve as run_server
+
+    from mdl_core.repo import find_project_root
+
+    if regenerate:
+        docs_generate(model_dir=model_dir, out=None, base_url="", neighbourhood_radius=2)
+    # Resolve the model dir the same way _load does (so `-m .` at a repo root finds the
+    # child model/), and hand the RESOLVED dir to the server, or its /mdl-docs mount
+    # would look under the unresolved path and 404.
+    resolved = find_project_root(model_dir)
+    typer.secho(
+        f"Modelith docs: http://{host}:{port}/mdl-docs  (model: {resolved})",
+        fg=typer.colors.CYAN,
+    )
+    run_server(resolved, host=host, port=port, read_only=True)
+
+
+@app.command()
+def status(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    manifest: Path = typer.Option(None, "--manifest", help="dbt manifest for the drift signal"),
+    fmt: str = typer.Option("text", "--format", help="text|json"),
+) -> None:
+    """Where is this workspace, and what should I do next? Ranked next-actions from the
+    current model + .mdl state. `--format json` is what the VS Code panel consumes."""
+    import json as _json
+
+    from mdl_core.status import assess
+
+    st = assess(model_dir, manifest=manifest)
+    if fmt == "json":
+        typer.echo(_json.dumps(st.to_dict(), indent=2))
+        return
+    typer.secho(st.summary, fg=typer.colors.CYAN)
+    if st.next_actions:
+        typer.echo("\nNext actions:")
+        for a in st.next_actions:
+            typer.echo(f"  - {a.title}")
+            typer.echo(f"      {a.detail}")
+            if a.cli:
+                typer.secho(f"      $ {a.cli}", fg=typer.colors.BRIGHT_BLACK)
 
 
 @app.command()

@@ -1,0 +1,154 @@
+{% extends "base.html" %}
+{% block title %}{{ entity.name }}{% endblock %}
+{% block content %}
+{% set ce = entity.conceptual or {} %}
+<nav class="crumbs"><a href="{{ root }}index.html">Overview</a> / {{ entity.name }}</nav>
+
+<header class="entity-head">
+  <h1>{{ entity.name }}</h1>
+  <div class="badges">
+    {% if entity.pattern %}<span class="badge">{{ entity.pattern }}</span>{% endif %}
+    {% if ce.subject_area %}<span class="badge badge-sa">{{ ce.subject_area.name }}</span>{% endif %}
+    {% if entity.category %}<span class="badge">{{ entity.category.role }} · {{ entity.category.category }}</span>{% endif %}
+  </div>
+  {% if entity.definition %}<p class="lead">{{ entity.definition }}</p>
+  {% elif ce.definition %}<p class="lead">{{ ce.definition }}</p>{% endif %}
+  {% if ce.synonyms %}<p class="muted">Also known as: {{ ce.synonyms|join(", ") }}</p>{% endif %}
+</header>
+
+<section>
+  <h2>Neighbourhood <span class="muted">(radius {{ radius }}, {{ neighbour_count }} related)</span></h2>
+  {% include "_erd.html" %}
+</section>
+
+<section>
+  <h2>Attributes</h2>
+  <table class="grid">
+    <thead><tr><th>Name</th><th>Type</th><th>Role</th><th>Null</th><th>Keys</th><th>Definition</th></tr></thead>
+    <tbody>
+      {% for a in entity.attributes %}
+      <tr>
+        <td class="mono">{{ a.name }}</td>
+        <td class="mono muted">{{ a.domain or "—" }}
+          {% if a.enum_values %}<span class="enum" title="{{ a.enum_values|join(', ') }}">enum</span>{% endif %}
+        </td>
+        <td>{{ a.role }}</td>
+        <td>{{ "yes" if a.nullable else "no" }}</td>
+        <td>
+          {% if a.role == "business_key" %}<span class="key key-pk">PK</span>{% endif %}
+          {% if a.ontology_iri %}<span class="key key-ont" title="{{ a.ontology_iri }}">◆</span>{% endif %}
+        </td>
+        <td class="muted">{{ a.definition or "" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% if entity.key_groups %}
+<section>
+  <h2>Keys</h2>
+  <ul class="plain">
+    {% for kg in entity.key_groups %}
+    <li><span class="key key-{{ kg.type }}">{{ kg.type|upper }}</span>
+      <strong>{{ kg.name or kg.type }}</strong>
+      {% if kg.definition %}<span class="muted">— {{ kg.definition }}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if outgoing or incoming %}
+<section>
+  <h2>Relationships</h2>
+  {% if outgoing %}
+  <h3 class="sub">References (this → other)</h3>
+  <table class="grid">
+    <thead><tr><th>Name</th><th>To</th><th>Cardinality</th><th>Join</th></tr></thead>
+    <tbody>
+      {% for r in outgoing %}
+      <tr><td>{{ r.name }}</td>
+        <td><a href="{{ root }}entities/{{ r.to_slug }}.html">{{ r.to_entity }}</a></td>
+        <td>{{ r.cardinality }}</td>
+        <td class="mono muted">{{ r.from_cols }} → {{ r.to_cols }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  {% if incoming %}
+  <h3 class="sub">Referenced by (other → this)</h3>
+  <table class="grid">
+    <thead><tr><th>Name</th><th>From</th><th>Cardinality</th><th>Join</th></tr></thead>
+    <tbody>
+      {% for r in incoming %}
+      <tr><td>{{ r.name }}</td>
+        <td><a href="{{ root }}entities/{{ r.from_slug }}.html">{{ r.from_entity }}</a></td>
+        <td>{{ r.cardinality }}</td>
+        <td class="mono muted">{{ r.from_cols }} → {{ r.to_cols }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if ce.ontology_refs or (entity.attributes | selectattr('ontology_refs') | list) %}
+<section>
+  <h2>Ontology alignment</h2>
+  {% if ce.ontology_refs %}
+  <h3 class="sub">Entity</h3>
+  <table class="grid">
+    <thead><tr><th>Predicate</th><th>URI</th><th>Layer</th><th>Status</th><th>Confidence</th></tr></thead>
+    <tbody>
+      {% for r in ce.ontology_refs %}
+      <tr><td>{{ r.predicate }}</td><td class="mono">{{ r.uri }}</td><td>{{ r.layer or "—" }}</td>
+        <td><span class="status status-{{ r.status }}">{{ r.status }}</span></td>
+        <td>{{ "%.2f"|format(r.confidence) if r.confidence is not none else "—" }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+  {% for a in entity.attributes if a.ontology_refs %}
+  <h3 class="sub">{{ a.name }}</h3>
+  <table class="grid">
+    <thead><tr><th>Predicate</th><th>URI</th><th>Layer</th><th>Status</th><th>Confidence</th></tr></thead>
+    <tbody>
+      {% for r in a.ontology_refs %}
+      <tr><td>{{ r.predicate }}</td><td class="mono">{{ r.uri }}</td><td>{{ r.layer or "—" }}</td>
+        <td><span class="status status-{{ r.status }}">{{ r.status }}</span></td>
+        <td>{{ "%.2f"|format(r.confidence) if r.confidence is not none else "—" }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endfor %}
+</section>
+{% endif %}
+
+{% if ce.stewardship or entity.udp %}
+<section>
+  <h2>Governance</h2>
+  {% if ce.stewardship %}
+  <p>Owner: <strong>{{ ce.stewardship.owner or "—" }}</strong> ·
+     Steward: <strong>{{ ce.stewardship.steward or "—" }}</strong></p>
+  {% endif %}
+  {% if entity.udp %}
+  <table class="grid"><thead><tr><th>Property</th><th>Value</th></tr></thead>
+    <tbody>{% for k, v in entity.udp.items() %}<tr><td>{{ k }}</td><td>{{ v }}</td></tr>{% endfor %}</tbody>
+  </table>
+  {% endif %}
+</section>
+{% endif %}
+
+{% if where_used %}
+<section>
+  <h2>Where used</h2>
+  <ul class="plain">
+    {% for u in where_used %}
+    <li>{{ u.logical_entity }}{% if u.physical %} →
+      {{ u.physical|map(attribute='name')|join(', ') }}{% endif %}</li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}

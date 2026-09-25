@@ -14,6 +14,7 @@ members = [
     "modelith-cli",
     "modelith-core",
     "modelith-dbt",
+    "modelith-docs",
     "modelith-emit-contract",
     "modelith-emit-dbt",
     "modelith-emit-erd",
@@ -938,7 +939,7 @@ requires-dist = [
 
 [[package]]
 name = "modelith-dbt"
-version = "0.6.2"
+version = "0.6.3"
 source = { editable = "." }
 dependencies = [
     { name = "dbt-artifacts-parser" },
@@ -1000,6 +1001,23 @@ dev = [
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-cov", specifier = ">=5.0" },
     { name = "ruff", specifier = ">=0.6" },
+]
+
+[[package]]
+name = "modelith-docs"
+version = "0.1.0"
+source = { editable = "packages/docs" }
+dependencies = [
+    { name = "jinja2" },
+    { name = "modelith-core" },
+    { name = "modelith-emit-erd" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "jinja2", specifier = ">=3.1.6" },
+    { name = "modelith-core", editable = "packages/core" },
+    { name = "modelith-emit-erd", editable = "packages/emit-erd" },
 ]
 
 [[package]]

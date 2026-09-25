@@ -40,13 +40,18 @@ PROJECT_FILE = "mdl-project.yaml"
 
 def find_project_root(start: Path) -> Path:
     """The model directory for `start`: `start` itself if it holds an
-    `mdl-project.yaml`, else the nearest ancestor that does, else `start` unchanged.
+    `mdl-project.yaml`, else the nearest ancestor that does, else the single immediate
+    child that does (the "I'm at the repo root, the model is in model/" case), else
+    `start` unchanged.
 
-    This is what lets every command run from ANYWHERE inside a model — a nested
-    working dir, or the project root one level above — instead of forcing the user to
-    `cd` into the exact folder holding the project file (issue #7). Returning `start`
-    unchanged when nothing is found keeps the caller's "no mdl-project.yaml in <dir>"
-    error pointing at the directory the user actually named."""
+    This is what lets every command run from ANYWHERE around a model — a nested working
+    dir, the project root one level above, OR the repo root one level above the model
+    dir (the layout `mdl init --workspace` scaffolds: model/ beside transform/) —
+    instead of forcing the user to `cd` into the exact folder holding the project file
+    (issue #7). The downward step fires ONLY when exactly one immediate child qualifies,
+    so an ambiguous layout (two model dirs) still falls through to the helpful
+    "the model is in <names>/" error rather than silently picking one. Returning `start`
+    unchanged when nothing is found keeps that error pointing at the named directory."""
     start = Path(start)
     # A file path is meaningless as a root; resolve to its directory first.
     base = start if start.is_dir() else start.parent
@@ -54,6 +59,14 @@ def find_project_root(start: Path) -> Path:
     for d in (base, *base.parents):
         if (d / PROJECT_FILE).is_file():
             return d
+    # Nothing walking up — try one level down: a single child holding the project file
+    # is the unambiguous "repo root, model in model/" case.
+    try:
+        children = [p.parent for p in base.glob(f"*/{PROJECT_FILE}") if p.is_file()]
+    except OSError:
+        children = []
+    if len(children) == 1:
+        return children[0]
     return start
 
 

@@ -2,7 +2,7 @@
   "name": "modelith-vscode",
   "displayName": "Modelith",
   "description": "Ontology-anchored, git-native data modeling for dbt — validate, generate, drift, and the Modelith canvas inside VS Code.",
-  "version": "0.3.10",
+  "version": "0.3.11",
   "publisher": "BosonResearch",
   "license": "Apache-2.0",
   "icon": "icon.png",
@@ -103,6 +103,18 @@
           "contextualTitle": "Modelith Reverse Review"
         },
         {
+          "id": "modelithOntology",
+          "name": "Ontology",
+          "icon": "$(symbol-namespace)",
+          "contextualTitle": "Modelith Ontology"
+        },
+        {
+          "id": "modelithDocs",
+          "name": "Documentation",
+          "icon": "$(book)",
+          "contextualTitle": "Modelith Documentation"
+        },
+        {
           "id": "modelithDrift",
           "name": "Drift",
           "icon": "$(git-compare)",
@@ -155,6 +167,36 @@
         "command": "modelith.reverseRefresh",
         "title": "Modelith: Refresh Reverse Review",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "modelith.docsGenerate",
+        "title": "Modelith: Generate Docs",
+        "icon": "$(book)"
+      },
+      {
+        "command": "modelith.docsOpen",
+        "title": "Modelith: Open Docs",
+        "icon": "$(book)"
+      },
+      {
+        "command": "modelith.ontologyRefresh",
+        "title": "Modelith: Refresh Ontology",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "modelith.ontologyAlign",
+        "title": "Modelith: Align to Ontology",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "modelith.ontologyPromote",
+        "title": "Promote Alignment",
+        "icon": "$(check)"
+      },
+      {
+        "command": "modelith.ontologyReject",
+        "title": "Reject Alignment",
+        "icon": "$(x)"
       },
       {
         "command": "modelith.reverseAccept",
@@ -485,6 +527,26 @@
           "command": "modelith.reverseRefresh",
           "when": "view == modelithReverse",
           "group": "navigation@4"
+        },
+        {
+          "command": "modelith.docsGenerate",
+          "when": "view == modelithDocs",
+          "group": "navigation@1"
+        },
+        {
+          "command": "modelith.docsOpen",
+          "when": "view == modelithDocs && modelith.docsGenerated",
+          "group": "navigation@2"
+        },
+        {
+          "command": "modelith.ontologyAlign",
+          "when": "view == modelithOntology",
+          "group": "navigation@1"
+        },
+        {
+          "command": "modelith.ontologyRefresh",
+          "when": "view == modelithOntology",
+          "group": "navigation@2"
         }
       ],
       "view/item/context": [
@@ -502,6 +564,16 @@
           "command": "modelith.driftMapModel",
           "when": "view == modelithDrift && viewItem == driftItem:modelRemoved",
           "group": "inline@1"
+        },
+        {
+          "command": "modelith.ontologyPromote",
+          "when": "view == modelithOntology && viewItem == ontologyProposal",
+          "group": "inline@1"
+        },
+        {
+          "command": "modelith.ontologyReject",
+          "when": "view == modelithOntology && viewItem == ontologyProposal",
+          "group": "inline@2"
         }
       ]
     }

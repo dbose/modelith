@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}{{ subject_area.name }}{% endblock %}
+{% block content %}
+<nav class="crumbs"><a href="{{ root }}index.html">Overview</a> / {{ subject_area.name }}</nav>
+<h1>{{ subject_area.name }}</h1>
+{% if subject_area.definition %}<p class="lead">{{ subject_area.definition }}</p>{% endif %}
+<p class="muted">{{ entities|length }} model(s) in this subject area.</p>
+
+<section>
+  <h2>Diagram</h2>
+  {% include "_erd.html" %}
+</section>
+
+<section>
+  <h2>Models</h2>
+  <ul class="card-list">
+    {% for ent in entities %}
+    <li><a href="{{ root }}entities/{{ ent.name|slug }}.html">{{ ent.name }}</a>
+      {% if ent.definition %}<div class="muted">{{ ent.definition }}</div>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endblock %}

@@ -5,11 +5,13 @@ import type { LanguageClient } from "vscode-languageclient/node";
 import { CanvasManager } from "./canvasPanel";
 import { registerChatParticipant } from "./chatParticipant";
 import { ConfigTreeProvider } from "./configView";
+import { DocsProvider } from "./docsView";
 import { DriftCodeActionProvider, DriftManager } from "./driftDiagnostics";
 import { DriftTreeProvider } from "./driftView";
 import { executeLspCommand, startLsp } from "./lspClient";
 import { type Decision, ReverseReviewProvider } from "./reverseView";
 import { registerMcpProvider } from "./mcpProvider";
+import { OntologyProvider } from "./ontologyView";
 import { type LiveWizardContext, runReverseLiveWizard } from "./reverseLiveWizard";
 import {
   findDbtProjectDir,
@@ -24,6 +26,7 @@ import {
   upgradeHint,
 } from "./mdl";
 import { registerSchemas } from "./schemas";
+import { StatusModel } from "./statusModel";
 import { initTelemetry, track } from "./telemetry";
 
 let canvas: CanvasManager;
@@ -229,11 +232,68 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     }),
   );
 
+  // Shared workspace assessment (`mdl status`): one source of truth for "what next",
+  // feeding the Reverse view's resting row, the docs-state context keys, and the panel
+  // next-actions. Fail-soft: an old CLI without `mdl status` just leaves it empty.
+  const statusModel = new StatusModel(out);
+  ctx.subscriptions.push({ dispose: () => statusModel.dispose() });
+  ctx.subscriptions.push(
+    statusModel.onDidChange((s) => {
+      void vscode.commands.executeCommand(
+        "setContext",
+        "modelith.hasModels",
+        !!s && s.entity_count > 0,
+      );
+      void vscode.commands.executeCommand(
+        "setContext",
+        "modelith.hasPendingDecisions",
+        !!s && s.pending_count > 0,
+      );
+      void vscode.commands.executeCommand(
+        "setContext",
+        "modelith.docsGenerated",
+        !!s && s.docs_generated,
+      );
+    }),
+  );
+
   // Reverse Review: the decision-ledger proposals from `mdl reverse`, in a tree with
   // Accept/Reject actions — the editor form of `mdl reverse --interactive`.
-  const reverse = new ReverseReviewProvider(out);
+  const reverse = new ReverseReviewProvider(out, statusModel);
   ctx.subscriptions.push(vscode.window.registerTreeDataProvider("modelithReverse", reverse));
   void reverse.refresh();
+  void statusModel.refresh();
+
+  // Ontology: proposed alignments awaiting review (promote/reject) + industry coverage.
+  // The review surface for ontology alignment, mirroring Reverse Review.
+  const ontology = new OntologyProvider(out);
+  ctx.subscriptions.push(vscode.window.registerTreeDataProvider("modelithOntology", ontology));
+  void ontology.refresh();
+
+  // Documentation: warehouse-global model docs (dbt-docs style), a concern of the WHOLE
+  // model — deliberately its own frame, not hung off Reverse Review. Driven by the
+  // shared StatusModel so its generated/stale state stays current.
+  const docs = new DocsProvider(statusModel);
+  ctx.subscriptions.push(vscode.window.registerTreeDataProvider("modelithDocs", docs));
+
+  // Live refresh: when the decision ledger, the compiled manifest, or a model file
+  // changes on disk, re-read proposals, re-assess the workspace, and re-read ontology
+  // alignments so the panel's counts and next-actions stay current without a manual
+  // refresh. (The only prior watcher fed the LSP; the trees were command-driven.)
+  const stateWatcher = vscode.workspace.createFileSystemWatcher(
+    "**/{.mdl/decisions.yaml,target/manifest.json,target/mdl-docs/index.html}",
+  );
+  const onStateChange = () => {
+    void reverse.refresh();
+    void statusModel.refresh();
+    void ontology.refresh();
+  };
+  ctx.subscriptions.push(
+    stateWatcher,
+    stateWatcher.onDidChange(onStateChange),
+    stateWatcher.onDidCreate(onStateChange),
+    stateWatcher.onDidDelete(onStateChange),
+  );
 
   // Warehouse Config: a live view of how the reverse: config classifies every dbt model,
   // grouped by role, with Suggest/Import in its title bar. The home of the config workflow.
@@ -457,6 +517,51 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
       } catch (e) {
         if (isMdlNotFound(e)) throw e; // let cmd() offer the one-click installer
         void vscode.window.showErrorMessage(`Modelith canvas: ${e}`);
+      }
+    }),
+  );
+
+  cmd("modelith.docsGenerate", () =>
+    withModelDir(async (dir) => {
+      const bin = await findMdl(dir);
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: "Modelith: generating docs…" },
+        async () => {
+          const r = await runMdl(bin, ["docs", "generate", "-m", "."], dir, out);
+          out.appendLine(r.stdout + r.stderr);
+          if (r.code !== 0) {
+            out.show(true);
+            void vscode.window.showErrorMessage("Modelith: docs generation failed — see output.");
+            return;
+          }
+          track("docs_generated");
+          await statusModel.refresh(dir);
+          const open = "Open Docs";
+          const choice = await vscode.window.showInformationMessage(
+            "Modelith docs generated.",
+            open,
+          );
+          if (choice === open) await canvas.openDocs(dir);
+        },
+      );
+    }),
+  );
+
+  cmd("modelith.docsOpen", () =>
+    withModelDir(async (dir) => {
+      // Generate on demand if the site is missing, so "Open Docs" always shows something.
+      if (!statusModel.status?.docs_generated) {
+        const bin = await findMdl(dir);
+        const r = await runMdl(bin, ["docs", "generate", "-m", "."], dir, out);
+        out.appendLine(r.stdout + r.stderr);
+        await statusModel.refresh(dir);
+      }
+      try {
+        await canvas.openDocs(dir);
+        track("docs_opened");
+      } catch (e) {
+        if (isMdlNotFound(e)) throw e;
+        void vscode.window.showErrorMessage(`Modelith docs: ${e}`);
       }
     }),
   );
@@ -1287,6 +1392,32 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   });
 
   cmd("modelith.reverseRefresh", () => reverse.refresh());
+
+  cmd("modelith.ontologyRefresh", () => ontology.refresh());
+
+  cmd("modelith.ontologyPromote", (node: unknown) => {
+    const a = ontology.proposalOf(node);
+    return a ? ontology.act(a, "promote") : undefined;
+  });
+
+  cmd("modelith.ontologyReject", (node: unknown) => {
+    const a = ontology.proposalOf(node);
+    return a ? ontology.act(a, "reject") : undefined;
+  });
+
+  cmd("modelith.ontologyAlign", () =>
+    withModelDir(async (dir) => {
+      const bin = await findMdl(dir);
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: "Modelith: aligning to ontology…" },
+        async () => {
+          const r = await runMdl(bin, ["ontology", "align", "-m", "."], dir, out);
+          out.appendLine(r.stdout + r.stderr);
+          await ontology.refresh(dir);
+        },
+      );
+    }),
+  );
 
   cmd("modelith.reverseAccept", (node: unknown) => {
     const d = decisionOf(node);
