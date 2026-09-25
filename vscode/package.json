@@ -179,6 +179,11 @@
         "icon": "$(book)"
       },
       {
+        "command": "modelith.setActiveModel",
+        "title": "Modelith: Set Active Model",
+        "icon": "$(database)"
+      },
+      {
         "command": "modelith.configAssignPrefix",
         "title": "Assign Role",
         "icon": "$(tag)"
