@@ -33,6 +33,7 @@ FORCE_INCLUDE = {
     "packages/emit-graph/src/mdl_emit_graph": "mdl_emit_graph",
     "packages/emit-erd/src/mdl_emit_erd": "mdl_emit_erd",
     "packages/reverse/src/mdl_reverse": "mdl_reverse",
+    "packages/docs/src/mdl_docs": "mdl_docs",
     "packages/ontology/src/mdl_ontology": "mdl_ontology",
     "packages/emit-semantic/src/mdl_emit_semantic": "mdl_emit_semantic",
     "packages/governance/src/mdl_governance": "mdl_governance",

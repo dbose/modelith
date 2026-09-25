@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}{{ project.name or "Model" }} overview{% endblock %}
+{% block content %}
+<h1>{{ project.name or "Model" }}</h1>
+<p class="lead">
+  {{ counts.entities }} logical models, {{ counts.relationships }} relationships
+  {% if project.dbt_target %}· dbt target <code>{{ project.dbt_target }}</code>{% endif %}
+</p>
+
+{% if status and status.next_actions %}
+<section class="callout">
+  <h2>Next actions</h2>
+  <p class="muted">{{ status.summary }}</p>
+  <ul class="actions">
+    {% for a in status.next_actions %}
+    <li class="action action-{{ a.severity }}">
+      <strong>{{ a.title }}</strong>
+      <span class="action-detail">{{ a.detail }}</span>
+      {% if a.cli %}<code class="action-cli">{{ a.cli }}</code>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<section>
+  <h2>Diagram</h2>
+  {% include "_erd.html" %}
+</section>
+
+{% if subject_areas %}
+<section>
+  <h2>Subject areas</h2>
+  <ul class="card-list">
+    {% for sa in subject_areas %}
+    <li><a href="{{ root }}subject-areas/{{ sa.name|slug }}.html">{{ sa.name }}</a>
+      <span class="muted">{{ sa.member_count }} member(s)</span>
+      {% if sa.definition %}<div class="muted">{{ sa.definition }}</div>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<section>
+  <h2>All models</h2>
+  <table class="grid">
+    <thead><tr><th>Model</th><th>Pattern</th><th>Attributes</th><th>Definition</th></tr></thead>
+    <tbody>
+      {% for ent in entities %}
+      <tr>
+        <td><a href="{{ root }}entities/{{ ent.name|slug }}.html">{{ ent.name }}</a></td>
+        <td>{{ ent.pattern or "—" }}</td>
+        <td>{{ ent.attributes|length }}</td>
+        <td class="muted">{{ ent.definition or "" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

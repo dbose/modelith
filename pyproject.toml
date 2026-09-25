@@ -101,6 +101,7 @@ dev-mode-dirs = [
     "packages/emit-graph/src",
     "packages/emit-erd/src",
     "packages/reverse/src",
+    "packages/docs/src",
     "packages/ontology/src",
     "packages/emit-semantic/src",
     "packages/governance/src",

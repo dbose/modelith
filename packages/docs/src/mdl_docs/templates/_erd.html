@@ -1,0 +1,5 @@
+{# Reusable Mermaid ERD block. `erd` is the mermaid source text; `caption` optional. #}
+<figure class="erd">
+  <pre class="mermaid">{{ erd }}</pre>
+  {% if caption %}<figcaption>{{ caption }}</figcaption>{% endif %}
+</figure>

@@ -19,12 +19,23 @@ def _safe(name: str) -> str:
     return s or "_"
 
 
-def emit_mermaid(model: Model) -> str:
+def emit_mermaid(model: Model, *, include: set[str] | None = None) -> str:
     """A ```mermaid erDiagram block. `type_map` is cosmetic (Mermaid shows a type
-    token per attribute); we use the abstract base type so it reads logically."""
+    token per attribute); we use the abstract base type so it reads logically.
+
+    `include` is an optional set of logical-entity ULIDs to scope the diagram to (used
+    by the docs generator's per-entity neighbourhood ERD). None (the default) renders
+    the whole model, so every existing caller is unaffected. Foreign keys are kept only
+    when BOTH endpoints are in scope, so a scoped diagram never draws a half-edge to an
+    entity it does not show."""
     from mdl_emit_dbt.platforms import get_adapter
 
     tables = build_tables(model, get_adapter("duckdb"))
+    if include is not None:
+        keep = {model.logical_entities[i].name for i in include if i in model.logical_entities}
+        for t in tables:
+            t.foreign_keys = [fk for fk in t.foreign_keys if fk.ref_table in keep]
+        tables = [t for t in tables if t.name in keep]
     lines = ["erDiagram"]
 
     for t in tables:
