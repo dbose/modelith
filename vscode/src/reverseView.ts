@@ -1,5 +1,6 @@
 import * as vscode from "vscode";
 import { findMdl, findModelDir, runMdl } from "./mdl";
+import type { StatusModel } from "./statusModel";
 
 /** The Reverse Review tree: pending decision-ledger proposals from `mdl reverse`,
  * grouped by kind (relationship / surrogate strip / SCD2 / rollup) with a confidence
@@ -17,7 +18,7 @@ export interface Decision {
   evidence: Record<string, unknown>;
 }
 
-type Node = GroupNode | DecisionNode;
+type Node = GroupNode | DecisionNode | StatusNode;
 interface GroupNode {
   kind: "group";
   label: string;
@@ -26,6 +27,14 @@ interface GroupNode {
 interface DecisionNode {
   kind: "decision";
   decision: Decision;
+}
+/** A resting/next-action row shown when there are no pending proposals, so the view
+ * explains itself and points at the next step instead of rendering a blank pane. */
+interface StatusNode {
+  kind: "status";
+  label: string;
+  icon: vscode.ThemeIcon;
+  command?: vscode.Command;
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -47,7 +56,15 @@ export class ReverseReviewProvider implements vscode.TreeDataProvider<Node> {
   readonly onDidChangeTreeData = this.emitter.event;
   private decisions: Decision[] = [];
 
-  constructor(private readonly out: vscode.OutputChannel) {}
+  constructor(
+    private readonly out: vscode.OutputChannel,
+    private readonly statusModel?: StatusModel,
+  ) {
+    // Redraw the resting row when the shared assessment changes (e.g. after a reverse
+    // or after docs are generated), so "what to do next" stays current with no manual
+    // refresh.
+    this.statusModel?.onDidChange(() => this.emitter.fire(undefined));
+  }
 
   /** Re-read the pending proposals from `.mdl/decisions.yaml` and refresh the tree.
    * Pass `modelDir` to read a SPECIFIC model (e.g. the one a right-click reverse just
@@ -80,6 +97,13 @@ export class ReverseReviewProvider implements vscode.TreeDataProvider<Node> {
   }
 
   getTreeItem(node: Node): vscode.TreeItem {
+    if (node.kind === "status") {
+      const ti = new vscode.TreeItem(node.label, vscode.TreeItemCollapsibleState.None);
+      ti.iconPath = node.icon;
+      ti.contextValue = "reverseStatus";
+      if (node.command) ti.command = node.command;
+      return ti;
+    }
     if (node.kind === "group") {
       const ti = new vscode.TreeItem(
         `${node.label} (${node.items.length})`,
@@ -100,6 +124,11 @@ export class ReverseReviewProvider implements vscode.TreeDataProvider<Node> {
 
   getChildren(node?: Node): Node[] {
     if (!node) {
+      // No pending proposals -> a next-action resting row (not a blank pane), driven by
+      // the shared workspace assessment so it reflects the real next step.
+      if (this.decisions.length === 0) {
+        return [this.restingRow()];
+      }
       // group by kind, kinds with items only
       const kinds = [...new Set(this.decisions.map((d) => d.kind))];
       return kinds.map((k) => ({
@@ -112,6 +141,31 @@ export class ReverseReviewProvider implements vscode.TreeDataProvider<Node> {
       return node.items.map((decision) => ({ kind: "decision" as const, decision }));
     }
     return [];
+  }
+
+  /** The single resting row for an empty review: the top ranked next-action when the
+   * assessment is available, else a sensible default. */
+  private restingRow(): StatusNode {
+    const action = this.statusModel?.topAction();
+    if (action) {
+      return {
+        kind: "status",
+        label: action.title,
+        icon:
+          action.severity === "attention"
+            ? new vscode.ThemeIcon("warning")
+            : new vscode.ThemeIcon("lightbulb", new vscode.ThemeColor("charts.green")),
+        command: action.command
+          ? { command: action.command, title: action.title }
+          : undefined,
+      };
+    }
+    // No assessment yet (or a CLI too old for `mdl status`): the historical default.
+    return {
+      kind: "status",
+      label: "No proposals pending review",
+      icon: new vscode.ThemeIcon("check", new vscode.ThemeColor("charts.green")),
+    };
   }
 
   /** Write a verdict for one proposal and refresh. Used by the Accept/Reject commands. */
