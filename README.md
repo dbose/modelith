@@ -178,6 +178,39 @@ in and dims the rest.
 
 ![The ER canvas with a relationship line running from one entity's foreign-key attribute row to the referenced entity's primary-key row, with crow's-foot cardinality](docs/assets/canvas.png)
 
+## Documentation
+
+`mdl docs generate` produces a static documentation site for the model, the way
+`dbt docs generate` does for a dbt project:
+
+```bash
+mdl docs generate            # -> target/mdl-docs/
+```
+
+The output is a self-contained, offline HTML bundle (no server, no network): a left
+tree-view of every logical model grouped by subject area, a structured page per entity
+(attributes, keys, relationships, ontology alignment with confidence, stewardship,
+where-used), a per-entity ER diagram of its neighbourhood
+(`--neighbourhood-radius`, default 2), an overview with the full ERD, and a glossary.
+Because it is just files, commit it, publish it to a wiki, S3, or GitHub Pages
+(`--base-url` sets the sub-path), or open `index.html` straight from disk. Diagrams are
+Mermaid, rendered client-side by a vendored copy.
+
+Preview it locally with a server, or open it as a tab inside VS Code (**Modelith:
+Open Docs** in the Reverse Review title bar):
+
+```bash
+mdl docs serve               # regenerates, then serves at /mdl-docs
+```
+
+`mdl status` tells you where the workspace stands and what to do next — no models yet,
+proposals to review, docs to generate, drift to check — and is what drives the
+next-action rows in the VS Code panel:
+
+```bash
+mdl status                   # or: mdl status --format json
+```
+
 ## In VS Code
 
 Install the extension from the marketplace (Open VSX — see
@@ -185,7 +218,7 @@ Install the extension from the marketplace (Open VSX — see
 from the packaged `.vsix`:
 
 ```bash
-code --install-extension vscode/modelith-vscode-0.3.7.vsix
+code --install-extension vscode/modelith-vscode-0.3.11.vsix
 ```
 
 The extension does not bundle its own copy of the canvas. It launches `mdl serve`
