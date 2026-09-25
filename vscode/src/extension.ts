@@ -1213,26 +1213,30 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
 
     const rel = vscode.workspace.asRelativePath(defaultTarget);
     const NEW_FOLDER = "Reverse into a new folder";
-    const OVERWRITE = "Overwrite existing model";
+    const OVERWRITE = "Update in place";
     const DRIFT = "Check drift instead";
 
     let choice: string | undefined;
     if (state === "model") {
-      const actions = manifest ? [NEW_FOLDER, DRIFT, OVERWRITE] : [NEW_FOLDER, OVERWRITE];
-      choice = await vscode.window.showWarningMessage(
-        `A Modelith model already exists at ${rel}. Reverse into a new folder, ` +
-          (manifest ? "check drift against the existing model, " : "") +
-          "or overwrite it?",
+      // "Update in place" re-reverses into the SAME folder: it applies (and preserves)
+      // the folder's reverse:/naming:/glossary: config, refreshes the entities, and
+      // prunes ones that no longer exist — the natural "I tweaked the config, re-run"
+      // flow. "Reverse into a new folder" keeps a fresh snapshot beside it.
+      const actions = manifest ? [OVERWRITE, NEW_FOLDER, DRIFT] : [OVERWRITE, NEW_FOLDER];
+      choice = await vscode.window.showInformationMessage(
+        `Re-reverse the model at ${rel}? "Update in place" applies and keeps that folder's ` +
+          "config; \"new folder\" writes a fresh copy beside it" +
+          (manifest ? ", or check drift against it." : "."),
         { modal: true },
         ...actions,
       );
     } else if (state === "partial") {
       choice = await vscode.window.showWarningMessage(
         `${rel} looks like a Modelith model with a missing or renamed project file. ` +
-          "Reverse into a new folder, or overwrite what's there?",
+          "Update it in place, or reverse into a new folder?",
         { modal: true },
-        NEW_FOLDER,
         OVERWRITE,
+        NEW_FOLDER,
       );
     } else {
       // foreign: non-empty folder that isn't a model. Offer a self-contained subfolder.

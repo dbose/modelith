@@ -104,7 +104,42 @@ def write_model(model: Model, root: Path) -> list[str]:
     for pt in model.physical_tables.values():
         dump(f"physical/{pt.target}/tables/{pt.name.lower()}.yaml", pt)
 
+    # Prune stale object files from a PRIOR reverse into this dir: an entity that no
+    # longer exists (e.g. now excluded by an edited reverse.exclude) would otherwise
+    # linger. Only the object subdirs reverse OWNS are swept, and only `.yaml` files —
+    # never mdl-project.yaml, .mdl/, or anything the user added elsewhere.
+    _prune_stale(root, set(written))
+
     return written
+
+
+# The directory trees write_model manages — swept for stale files on a re-reverse.
+# mdl-project.yaml (root) and .mdl/ are deliberately excluded (user/state, not objects).
+_OWNED_DIRS = ("conceptual", "logical", "physical")
+
+
+def _prune_stale(root: Path, written: set[str]) -> None:
+    """Delete `.yaml` files under the reverse-owned object dirs that this write did not
+    produce, so an in-place re-reverse doesn't leave orphaned entities behind. Scoped to
+    _OWNED_DIRS; empties leftover directories. Never touches mdl-project.yaml or .mdl/."""
+    for owned in _OWNED_DIRS:
+        base = root / owned
+        if not base.is_dir():
+            continue
+        for path in base.rglob("*.yaml"):
+            rel = str(path.relative_to(root))
+            if rel not in written:
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
+        # tidy now-empty subdirectories (deepest first), leaving the tree clean
+        for d in sorted(base.rglob("*"), key=lambda p: len(p.parts), reverse=True):
+            if d.is_dir() and not any(d.iterdir()):
+                try:
+                    d.rmdir()
+                except OSError:
+                    pass
 
 
 def _slug(name: str) -> str:

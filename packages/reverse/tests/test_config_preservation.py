@@ -86,3 +86,42 @@ def test_reload_after_writer_preserve_keeps_model_loadable(tmp_path):
     write_model(_minimal_model(), tmp_path)
     repo = ModelRepo.load(tmp_path)
     assert repo.model.config.reverse.exclude == ["*_dbt_*"]
+
+
+def _model_with(names):
+    from mdl_core.ids import new_ulid
+    from mdl_core.ir import ConceptualEntity, LogicalEntity, Model
+
+    m = Model(ProjectConfig(name="p", dbt_target="duckdb"))
+    for nm in names:
+        ce = ConceptualEntity(id=new_ulid(), name=nm)
+        m.add(ce)
+        m.add(LogicalEntity(id=new_ulid(), name=nm, realises=ce.id))
+    return m
+
+
+def test_reverse_prunes_stale_entities_on_rewrite(tmp_path):
+    """An in-place re-reverse removes entity files that no longer exist (e.g. now
+    excluded), instead of leaving them orphaned — the reported in-place-update gap."""
+    write_model(_model_with(["customer", "orphan"]), tmp_path)
+    assert (tmp_path / "logical" / "entities" / "customer.yaml").exists()
+    assert (tmp_path / "logical" / "entities" / "orphan.yaml").exists()
+
+    # second write: only customer survives -> orphan.yaml must be pruned
+    write_model(_model_with(["customer"]), tmp_path)
+    assert (tmp_path / "logical" / "entities" / "customer.yaml").exists()
+    assert not (tmp_path / "logical" / "entities" / "orphan.yaml").exists()
+
+
+def test_prune_never_touches_project_file_or_mdl_state(tmp_path):
+    from mdl_core.ir import Model
+
+    (tmp_path / ".mdl").mkdir()
+    (tmp_path / ".mdl" / "decisions.yaml").write_text("decisions: []\n", encoding="utf-8")
+    (tmp_path / "mdl-project.yaml").write_text(
+        "name: p\ndbt_target: duckdb\nreverse:\n  exclude: ['x_*']\n", encoding="utf-8"
+    )
+    write_model(Model(ProjectConfig(name="p", dbt_target="duckdb")), tmp_path)
+    # the user's project file + .mdl state are untouched by the prune
+    assert "x_*" in (tmp_path / "mdl-project.yaml").read_text()
+    assert (tmp_path / ".mdl" / "decisions.yaml").exists()
