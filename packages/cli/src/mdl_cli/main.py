@@ -47,12 +47,14 @@ gov_app = typer.Typer(help="Governance: plan/apply/pull/conformance against a ca
 catalog_app = typer.Typer(
     help="Cross-repo model catalog: publish/browse model repos (base-tier, no governance)."
 )
+docs_app = typer.Typer(help="Generate and serve a static documentation site (dbt-docs style).")
 app.add_typer(ontology_app, name="ontology")
 app.add_typer(emit_app, name="emit")
 app.add_typer(export_app, name="export")
 app.add_typer(import_app, name="import")
 app.add_typer(gov_app, name="gov")
 app.add_typer(catalog_app, name="catalog")
+app.add_typer(docs_app, name="docs")
 
 
 def _mdl_version() -> str:
@@ -2794,6 +2796,94 @@ def serve(
 
     telemetry.emit("canvas_opened", {"surface": "serve"})
     run_server(model_dir, host=host, port=port, read_only=read_only)
+
+
+@docs_app.command("generate")
+def docs_generate(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    out: Path = typer.Option(
+        None, "--out", "-o", help="Output dir (default: <model-dir>/target/mdl-docs)"
+    ),
+    base_url: str = typer.Option(
+        "", "--base-url", help="URL prefix for publishing under a sub-path"
+    ),
+    neighbourhood_radius: int = typer.Option(
+        2, "--neighbourhood-radius", help="Hops of related entities in each entity's ERD"
+    ),
+) -> None:
+    """Generate a static, self-contained documentation site (dbt-docs style).
+
+    The output opens offline (no server) and is safe to commit or publish to a wiki,
+    S3, or GitHub Pages. It carries a left model tree-view, a structured page per
+    entity with a neighbourhood ERD, an overview diagram, and a glossary."""
+    from mdl_docs import render_site
+
+    from mdl_core.status import assess
+
+    repo = _load(model_dir)
+    dest = out or (model_dir / "target" / "mdl-docs")
+    status = assess(model_dir, model=repo.model)
+    files = render_site(
+        repo.model,
+        dest,
+        base_url=base_url,
+        neighbourhood_radius=neighbourhood_radius,
+        status_summary=status.to_dict(),
+    )
+    typer.secho(
+        f"Wrote {len(files)} files to {dest}  (open {dest / 'index.html'})",
+        fg=typer.colors.GREEN,
+    )
+    from mdl_cli import telemetry
+
+    telemetry.emit("docs_generated", {"entities": len(repo.model.logical_entities)})
+
+
+@docs_app.command("serve")
+def docs_serve(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    host: str = typer.Option("127.0.0.1", "--host"),
+    port: int = typer.Option(4820, "--port", "-p"),
+    regenerate: bool = typer.Option(
+        True, "--regenerate/--no-regenerate", help="Regenerate the site before serving"
+    ),
+) -> None:
+    """Generate (unless --no-regenerate) and serve the docs site at /mdl-docs."""
+    from mdl_server.app import serve as run_server
+
+    if regenerate:
+        docs_generate(model_dir=model_dir, out=None, base_url="", neighbourhood_radius=2)
+    typer.secho(
+        f"Modelith docs: http://{host}:{port}/mdl-docs  (model: {model_dir})",
+        fg=typer.colors.CYAN,
+    )
+    run_server(model_dir, host=host, port=port, read_only=True)
+
+
+@app.command()
+def status(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    manifest: Path = typer.Option(None, "--manifest", help="dbt manifest for the drift signal"),
+    fmt: str = typer.Option("text", "--format", help="text|json"),
+) -> None:
+    """Where is this workspace, and what should I do next? Ranked next-actions from the
+    current model + .mdl state. `--format json` is what the VS Code panel consumes."""
+    import json as _json
+
+    from mdl_core.status import assess
+
+    st = assess(model_dir, manifest=manifest)
+    if fmt == "json":
+        typer.echo(_json.dumps(st.to_dict(), indent=2))
+        return
+    typer.secho(st.summary, fg=typer.colors.CYAN)
+    if st.next_actions:
+        typer.echo("\nNext actions:")
+        for a in st.next_actions:
+            typer.echo(f"  - {a.title}")
+            typer.echo(f"      {a.detail}")
+            if a.cli:
+                typer.secho(f"      $ {a.cli}", fg=typer.colors.BRIGHT_BLACK)
 
 
 @app.command()

@@ -409,6 +409,33 @@ def create_app(
         git_router(model_dir, read_only=read_only, identity_policy=policy, audit=audit)
     )
 
+    # Generated documentation site (mdl docs generate). Served at /mdl-docs (NOT
+    # /api/docs, which is FastAPI's own Swagger UI) BEFORE the SPA catch-all so it is
+    # not swallowed. A dynamic handler (not a static mount) so docs generated AFTER the
+    # server started are picked up with no restart, which is the extension's flow
+    # (generate, then open the tab). Read-only; path-traversal is guarded.
+    _docs_dir = (model_dir / "target" / "mdl-docs").resolve()
+
+    @app.get("/mdl-docs")
+    @app.get("/mdl-docs/")
+    @app.get("/mdl-docs/{path:path}")
+    def mdl_docs(path: str = "") -> FileResponse:
+        rel = path or "index.html"
+        target = (_docs_dir / rel).resolve()
+        # never serve outside the docs dir, and only if it has been generated
+        if _docs_dir not in target.parents and target != _docs_dir:
+            raise HTTPException(status_code=404)
+        if target.is_dir():
+            target = target / "index.html"
+        if not target.is_file():
+            if not _docs_dir.exists():
+                raise HTTPException(
+                    status_code=404,
+                    detail="Docs not generated yet. Run `mdl docs generate`.",
+                )
+            raise HTTPException(status_code=404)
+        return FileResponse(target)
+
     # Static canvas build. Mounted last so /api/* wins.
     if STATIC_DIR.exists():
         app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
