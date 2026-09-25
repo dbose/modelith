@@ -58,15 +58,27 @@ def test_add_entity_from_a_nested_dir_walks_up(project):
     assert not (nested / "mdl-project.yaml").exists()
 
 
-def test_helpful_message_when_run_from_the_project_root_above(project):
-    """Running from the root ABOVE the model (where walking up finds nothing) gives a
-    message that points into the model, not a bare 'no mdl-project.yaml in .'."""
-    root, _ = project
+def test_descends_into_single_child_from_the_project_root_above(project):
+    """Running from the repo root ABOVE the model, where exactly one child holds the
+    project file (the `mdl init --workspace` layout: model/ beside transform/), resolves
+    DOWN into it — every command just works from the root, no -m needed."""
+    root, model = project
+    assert find_project_root(root) == model.resolve()
+    assert ModelRepo.load(root).model.config.name == "testmodel"
+
+
+def test_ambiguous_children_still_error_helpfully(tmp_path):
+    """Two candidate model dirs below the root is ambiguous, so we do NOT guess: the
+    helpful 'the model is in a, b/' error stands, naming both."""
+    for name in ("model-a", "model-b"):
+        d = tmp_path / name
+        d.mkdir()
+        write_model(d)
+    assert find_project_root(tmp_path) == tmp_path  # unchanged -> caller errors
     with pytest.raises(FileNotFoundError) as ei:
-        ModelRepo.load(root)
+        ModelRepo.load(tmp_path)
     msg = str(ei.value)
-    assert "my-model" in msg  # names the subdir to go into
-    assert "-m my-model" in msg  # and how to point at it
+    assert "model-a" in msg and "model-b" in msg
 
 
 def test_plain_message_when_no_model_anywhere(tmp_path):

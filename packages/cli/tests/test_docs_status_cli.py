@@ -46,6 +46,22 @@ def test_status_text(tmp_path):
     assert "Next actions" in r.output
 
 
+def test_commands_run_from_repo_root_above_model(tmp_path):
+    """The reported UX bug: from a repo root whose model is in model/, `mdl docs
+    generate` / `mdl status` must just work (auto-descend), not error."""
+    model = tmp_path / "model"
+    model.mkdir()
+    write_model(model)
+    # generate from the ROOT, not the model dir
+    r = runner.invoke(app, ["docs", "generate", "-m", str(tmp_path)])
+    assert r.exit_code == 0, r.output
+    # docs land under the resolved model dir, where the server also looks
+    assert (model / "target" / "mdl-docs" / "index.html").is_file()
+    assert not (tmp_path / "target").exists()  # NOT beside the repo root
+    r2 = runner.invoke(app, ["status", "-m", str(tmp_path)])
+    assert r2.exit_code == 0, r2.output
+
+
 def test_status_json_shape(tmp_path):
     write_model(tmp_path)
     r = runner.invoke(app, ["status", "-m", str(tmp_path), "--format", "json"])

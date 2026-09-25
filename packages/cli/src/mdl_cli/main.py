@@ -2821,8 +2821,11 @@ def docs_generate(
     from mdl_core.status import assess
 
     repo = _load(model_dir)
-    dest = out or (model_dir / "target" / "mdl-docs")
-    status = assess(model_dir, model=repo.model)
+    # Base the default output on the RESOLVED model dir (repo.root), so `-m .` at a repo
+    # root writes to <model>/target/mdl-docs — the same place `mdl docs serve` and the
+    # server's /mdl-docs mount look — not ./target/mdl-docs beside the wrong dir.
+    dest = out or (repo.root / "target" / "mdl-docs")
+    status = assess(repo.root, model=repo.model)
     files = render_site(
         repo.model,
         dest,
@@ -2851,13 +2854,19 @@ def docs_serve(
     """Generate (unless --no-regenerate) and serve the docs site at /mdl-docs."""
     from mdl_server.app import serve as run_server
 
+    from mdl_core.repo import find_project_root
+
     if regenerate:
         docs_generate(model_dir=model_dir, out=None, base_url="", neighbourhood_radius=2)
+    # Resolve the model dir the same way _load does (so `-m .` at a repo root finds the
+    # child model/), and hand the RESOLVED dir to the server, or its /mdl-docs mount
+    # would look under the unresolved path and 404.
+    resolved = find_project_root(model_dir)
     typer.secho(
-        f"Modelith docs: http://{host}:{port}/mdl-docs  (model: {model_dir})",
+        f"Modelith docs: http://{host}:{port}/mdl-docs  (model: {resolved})",
         fg=typer.colors.CYAN,
     )
-    run_server(model_dir, host=host, port=port, read_only=True)
+    run_server(resolved, host=host, port=port, read_only=True)
 
 
 @app.command()

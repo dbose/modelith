@@ -264,7 +264,13 @@ def test_main_wrapper_records_validate_pass_and_fail(tmp_path, monkeypatch):
     CliRunner().invoke(cli_main.app, ["init", "--demo", str(tmp_path)])
     monkeypatch.setattr("mdl_cli.telemetry.ensure_consent", lambda: False)
 
-    for target, expected in [(str(tmp_path / "model"), 0), (str(tmp_path), 1)]:
+    # A model-less dir for the failure case: an empty sibling with no mdl-project.yaml
+    # anywhere below it (tmp_path itself would now resolve DOWN into its single model/
+    # child and pass — the intended run-from-repo-root behaviour).
+    empty = tmp_path / "no-model-here"
+    empty.mkdir()
+
+    for target, expected in [(str(tmp_path / "model"), 0), (str(empty), 1)]:
         recorded: list = []
         monkeypatch.setattr(
             "mdl_cli.telemetry.record",
