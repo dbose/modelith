@@ -3601,6 +3601,28 @@ def _now_iso() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat()
 
 
+def _force_utf8_output() -> None:
+    """Make stdout/stderr encode UTF-8 so non-ASCII output never crashes the CLI.
+
+    On Windows the console defaults to a legacy code page (cp1252), whose `charmap`
+    codec cannot encode characters the CLI prints — the ✓/✗ verdict marks, em-dashes,
+    ellipses, the · separator. Without this, a command that SUCCEEDS (e.g. `reverse`
+    finished and found proposals) still dies with a UnicodeEncodeError while printing
+    its summary, and the caller sees a spurious failure. `reconfigure(encoding=…)`
+    exists on the standard TextIO wrappers (Python 3.7+); guard it so a wrapped or
+    redirected stream that lacks it is simply left as-is. errors="replace" is a final
+    safety net so an un-encodable glyph degrades to '?' rather than raising.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            continue
+        try:
+            reconfigure(encoding="utf-8", errors="replace")
+        except (ValueError, OSError):  # e.g. detached/closed stream — never fatal
+            pass
+
+
 def main() -> None:
     """Console entry point. Wraps the Typer app so anonymous, opt-in telemetry can
     record the command + exit code exactly once, WITHOUT changing exit behavior.
@@ -3610,6 +3632,8 @@ def main() -> None:
     cannot see) and re-raise it faithfully. Telemetry is entirely fail-soft; it
     never alters the documented exit codes (0/1/2/3/4).
     """
+    _force_utf8_output()
+
     # Catch Typer's control-flow exceptions by the classes Typer ACTUALLY raises. This is
     # version-sensitive: older Typer vendors its own Click, so a parse error like
     # `NoSuchOption` derives from `typer._click.exceptions.UsageError` — a DIFFERENT class
