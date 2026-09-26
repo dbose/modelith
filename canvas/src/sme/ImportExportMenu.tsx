@@ -136,6 +136,7 @@ const IMPORT_FORMATS = [
   { id: "sql", label: "SQL DDL", hint: "CREATE TABLE … PRIMARY KEY / FOREIGN KEY" },
   { id: "mermaid", label: "Mermaid erDiagram", hint: "structural: entities, attributes, relationships" },
   { id: "json-schema", label: "JSON Schema", hint: "each object definition becomes an entity" },
+  { id: "erwin", label: "erwin XML", hint: "entities, keys, relationships, subject areas, subtypes" },
 ];
 
 function ImportPanel({
@@ -230,7 +231,7 @@ function ImportPanel({
       <input
         type="file"
         className="ie-file"
-        accept=".sql,.mmd,.md,.json,.txt"
+        accept=".sql,.mmd,.md,.json,.xml,.txt"
         onChange={(e) => onFile(e.target.files?.[0] ?? null)}
       />
       {format === "mermaid" && (

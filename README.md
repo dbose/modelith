@@ -449,8 +449,8 @@ and a conformance kit that validates a bespoke mapping in CI.
 ### Import and export, from the Model tab
 
 The Model tab's toolbar has **Export** and **Import** menus. Export downloads the model
-in any interchange format; import parses SQL DDL, a Mermaid diagram, or a JSON Schema and
-stages it as a proposal you review before it lands.
+in any interchange format; import parses SQL DDL, a Mermaid diagram, a JSON Schema, or an
+**erwin XML export** and stages it as a proposal you review before it lands.
 
 ![The Export menu open in the Model-tab toolbar: a SQL dialect selector and download items for SQL DDL, Mermaid erDiagram, DBML, CSV, an ODCS data contract, and Neo4j Cypher](docs/assets/export-menu.png)
 
@@ -458,6 +458,24 @@ stages it as a proposal you review before it lands.
 
 An imported model is visible on the canvas immediately as a staged preview — nothing
 touches disk or git until you submit the proposal.
+
+### Import from erwin
+
+Nobody adopts a modeling tool greenfield, so `mdl import erwin` reads a real erwin Data
+Modeler XML export and turns it into a committable Modelith model — entities, primary and
+foreign keys, relationships (with their verb phrases), subtype/supertype categories,
+subject areas, and domains, keeping the physical names alongside the logical ones:
+
+```bash
+mdl import erwin your-model.xml -o model     # writes a fresh model
+mdl import erwin your-model.xml -o model --apply   # or merge into an existing one
+```
+
+It parses the export by streaming, so 7-10MB files import without a memory spike, and it
+degrades gracefully: anything Modelith doesn't model (views, ER-diagram layout, physical
+transforms) is skipped with a note rather than a failure. In VS Code it's on the palette
+(**Modelith: Import Erwin XML**), a button in the Reverse Review panel, and a right-click
+on any `.xml` file.
 
 ## Reverse engineering a real warehouse
 

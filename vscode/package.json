@@ -2,7 +2,7 @@
   "name": "modelith-vscode",
   "displayName": "Modelith",
   "description": "Ontology-anchored, git-native data modeling for dbt — validate, generate, drift, and the Modelith canvas inside VS Code.",
-  "version": "0.3.12",
+  "version": "0.3.14",
   "publisher": "BosonResearch",
   "license": "Apache-2.0",
   "icon": "icon.png",
@@ -286,6 +286,11 @@
         "title": "Modelith: Import to Model"
       },
       {
+        "command": "modelith.importErwin",
+        "title": "Modelith: Import Erwin XML",
+        "icon": "$(cloud-download)"
+      },
+      {
         "command": "modelith.stopServer",
         "title": "Modelith: Stop Canvas Server"
       },
@@ -465,6 +470,11 @@
           "group": "modelith@0"
         },
         {
+          "command": "modelith.importErwin",
+          "when": "resourceExtname == .xml",
+          "group": "modelith@1"
+        },
+        {
           "command": "modelith.liftModel",
           "when": "resourceExtname == .sql",
           "group": "modelith"
@@ -534,14 +544,19 @@
           "group": "navigation@2"
         },
         {
-          "command": "modelith.compareReversed",
+          "command": "modelith.importErwin",
           "when": "view == modelithReverse",
           "group": "navigation@3"
         },
         {
-          "command": "modelith.reverseRefresh",
+          "command": "modelith.compareReversed",
           "when": "view == modelithReverse",
           "group": "navigation@4"
+        },
+        {
+          "command": "modelith.reverseRefresh",
+          "when": "view == modelithReverse",
+          "group": "navigation@5"
         },
         {
           "command": "modelith.docsGenerate",

@@ -2727,16 +2727,56 @@ def import_osi_cmd(
 
 @import_app.command("erwin")
 def import_erwin_cmd(
-    file: Path = typer.Argument(..., help="erwin XML export"),
+    file: Path = typer.Argument(..., help="erwin XML export (.xml)"),
     out: Path = typer.Option(Path("model"), "--out", "-o"),
     name: str = typer.Option(None, "--name"),
+    apply: bool = typer.Option(
+        False,
+        "--apply",
+        help="Merge the erwin model INTO the existing model at --out via the editing "
+        "engine, instead of writing a fresh model. Use when adding erwin objects to a "
+        "model you already have.",
+    ),
+    force: bool = typer.Option(
+        False, "--force", help="Overwrite --out in place instead of diverting to a sibling."
+    ),
 ) -> None:
-    """Import an erwin XML export into the IR (spec §6.4)."""
-    model = import_erwin(file.read_text(encoding="utf-8"), project_name=name)
-    write_reversed(model, out)
+    """Import a real erwin XML export into a Modelith model (spec §6.4).
+
+    Default: write a fresh model at --out (like `mdl reverse` — an erwin export is a whole
+    model). If --out already holds a model it diverts to a `-reversed-v<N>` sibling unless
+    --force. With --apply, merge the erwin objects into the existing model at --out through
+    the same validated mutation engine manual edits use."""
+    # streaming reader handles 7-10MB files; pass the PATH so it reads the file directly.
+    result = import_erwin(file, project_name=name)
+    for w in result.warnings:
+        typer.secho(f"  note: {w}", fg=typer.colors.YELLOW)
+
+    if apply:
+        from mdl_emit_erd.imports.model import model_to_commands
+
+        from mdl_core.commands import CommandError, apply_command
+
+        applied = 0
+        for c in model_to_commands(result.model):
+            try:
+                apply_command(out, c["op"], c["payload"])
+                applied += 1
+            except (CommandError, FileNotFoundError) as e:
+                typer.secho(f"  skipped {c['op']}: {e}", fg=typer.colors.YELLOW)
+        typer.secho(
+            f"merged {len(result.model.logical_entities)} entities from erwin into {out} "
+            f"({applied} change(s) applied)",
+            fg=typer.colors.GREEN,
+        )
+        return
+
+    if not force:
+        out = _nonclobbering_out(out)
+    write_reversed(result.model, out)
     typer.secho(
-        f"imported {len(model.logical_entities)} entities, "
-        f"{len(model.relationships)} relationships from erwin to {out}",
+        f"imported {len(result.model.logical_entities)} entities, "
+        f"{len(result.model.relationships)} relationships from erwin to {out}",
         fg=typer.colors.GREEN,
     )
 

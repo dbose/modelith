@@ -162,6 +162,7 @@ def project(model: Model, *, subject_area: str | None = None) -> dict:
             {
                 "id": le.id,
                 "name": le.name,
+                "physical_name": le.physical_name,
                 "definition": le.definition,
                 "pattern": le.pattern,
                 "conceptual": conceptual,
@@ -172,6 +173,7 @@ def project(model: Model, *, subject_area: str | None = None) -> dict:
                     {
                         "id": a.id,
                         "name": a.name,
+                        "physical_name": a.physical_name,
                         "definition": a.definition,
                         "domain": a.domain,
                         "role": a.role,
@@ -222,6 +224,9 @@ def project(model: Model, *, subject_area: str | None = None) -> dict:
                 "cardinality": rel.cardinality,
                 "identifying": rel.identifying,
                 "optionality": rel.optionality,
+                # erwin verb phrases: "<parent> <verb_phrase> <child>" and the inverse
+                "verb_phrase": rel.verb_phrase,
+                "inverse_verb_phrase": rel.inverse_verb_phrase,
             }
         )
 

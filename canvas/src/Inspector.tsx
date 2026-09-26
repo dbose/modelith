@@ -56,6 +56,18 @@ export function Inspector({
             readOnly={readOnly}
             onCommit={(v) => exec("rename_entity", { id: entity.id, name: v })}
           />
+          {(entity.physical_name || !readOnly) && (
+            <div className="physical-name-row" title="Physical table name (erwin Physical_Name)">
+              <span className="physical-label">physical</span>
+              <EditableText
+                value={entity.physical_name ?? ""}
+                className="physical-name-input"
+                placeholder={readOnly ? "—" : "physical table name…"}
+                readOnly={readOnly}
+                onCommit={(v) => exec("rename_entity", { id: entity.id, physical_name: v })}
+              />
+            </div>
+          )}
           <div>
             <SubjectAreaPicker entity={entity} doc={doc} readOnly={readOnly} exec={exec} />
             <PatternPicker entity={entity} readOnly={readOnly} exec={exec} />
@@ -260,10 +272,33 @@ export function Inspector({
             const other = r.from.entity === entity.id ? r.to.entity : r.from.entity;
             return (
               <div key={r.id} className="rel-row">
-                <button className="rel-link" onClick={() => onFocusEntity(other)}>
-                  <span className="rel-card">{cardinalityGlyph(r, entity.id)}</span>
-                  {entityName(other)}
-                </button>
+                <div className="rel-main">
+                  <button className="rel-link" onClick={() => onFocusEntity(other)}>
+                    <span className="rel-card">{cardinalityGlyph(r, entity.id)}</span>
+                    {entityName(other)}
+                  </button>
+                  {(r.verb_phrase || r.inverse_verb_phrase || !readOnly) && (
+                    <div className="verb-phrases" title="erwin verb phrases (parent → child, and inverse)">
+                      <EditableText
+                        value={r.verb_phrase ?? ""}
+                        className="verb-input"
+                        placeholder={readOnly ? "" : "verb phrase…"}
+                        readOnly={readOnly}
+                        onCommit={(v) => exec("update_relationship", { id: r.id, verb_phrase: v })}
+                      />
+                      <span className="verb-sep">/</span>
+                      <EditableText
+                        value={r.inverse_verb_phrase ?? ""}
+                        className="verb-input"
+                        placeholder={readOnly ? "" : "inverse…"}
+                        readOnly={readOnly}
+                        onCommit={(v) =>
+                          exec("update_relationship", { id: r.id, inverse_verb_phrase: v })
+                        }
+                      />
+                    </div>
+                  )}
+                </div>
                 {!readOnly && (
                   <button
                     className="mini-btn danger"
@@ -510,6 +545,11 @@ function AttrRow({
       <tr>
         <td className={a.role === "business_key" ? "pk" : ""}>
           {a.name}
+          {a.physical_name && a.physical_name !== a.name && (
+            <span className="physical-col" title="Physical column name">
+              {a.physical_name}
+            </span>
+          )}
           {a.enum_values && a.enum_values.length > 0 && (
             <span className="enum-badge" title={`Allowed: ${a.enum_values.join(", ")}`}>
               enum
@@ -527,6 +567,15 @@ function AttrRow({
     <tr>
       <td className={a.role === "business_key" ? "pk" : ""}>
         <EditableText value={a.name} readOnly={false} onCommit={(v) => upd({ name: v })} />
+        {(a.physical_name || false) && (
+          <EditableText
+            value={a.physical_name ?? ""}
+            className="physical-col-input"
+            placeholder="physical…"
+            readOnly={false}
+            onCommit={(v) => upd({ physical_name: v })}
+          />
+        )}
         {a.enum_values && a.enum_values.length > 0 && (
           <span className="enum-badge" title={`Allowed: ${a.enum_values.join(", ")}`}>
             enum
