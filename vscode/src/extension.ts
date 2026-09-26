@@ -619,6 +619,59 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     }),
   );
 
+  // Import an erwin XML export into a fresh Modelith model. An erwin export is a whole
+  // model (like a reverse), so this WRITES a model dir via the CLI (10MB-safe, server-
+  // free) and opens it — not a canvas paste. Reachable from the palette, the Reverse
+  // Review title bar, and an .xml right-click (which passes the clicked URI).
+  cmd("modelith.importErwin", (arg: unknown) =>
+    withModelDir(async (dir) => {
+      let fileUri = arg instanceof vscode.Uri ? arg : undefined;
+      if (!fileUri) {
+        const picked = await vscode.window.showOpenDialog({
+          title: "Import erwin XML",
+          canSelectMany: false,
+          filters: { "erwin XML": ["xml"] },
+          openLabel: "Import",
+        });
+        if (!picked || picked.length === 0) return;
+        fileUri = picked[0];
+      }
+      const file = fileUri.fsPath;
+      // Default the target at the workspace's model dir; the picker confirms/redirects
+      // (reusing the reverse no-clobber "update in place vs new folder" flow).
+      const res = await resolveReverseTarget(await bestDefaultTarget(dir), undefined);
+      if (!res) return;
+      const bin = await findMdl(dir);
+      const args = ["import", "erwin", file, "-o", res.target];
+      if (res.force) args.push("--force");
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: "Modelith: importing erwin XML…" },
+        async () => {
+          const r = await runMdl(bin, args, dir, out, 300000);
+          out.appendLine(r.stdout + r.stderr);
+          if (r.code !== 0) {
+            out.show(true);
+            void vscode.window.showErrorMessage("Modelith: erwin import failed — see output.");
+            return;
+          }
+          // the CLI diverts on an existing model; read the actual written dir from the output
+          const diverted = /reversing into (.+?) instead/.exec(r.stdout);
+          const writtenRel = diverted ? diverted[1].trim() : res.target;
+          const writtenDir = path.isAbsolute(writtenRel)
+            ? writtenRel
+            : path.join(dir, writtenRel);
+          const notes = [...r.stdout.matchAll(/note: (.+)/g)].map((m) => m[1]);
+          await Promise.all([reverse.refresh(writtenDir), statusModel.refresh(writtenDir)]);
+          await canvas.open(writtenDir);
+          const summary = /imported (\d+) entities/.exec(r.stdout)?.[0] ?? "erwin model imported";
+          void vscode.window.showInformationMessage(
+            `Modelith: ${summary}.` + (notes.length ? ` ${notes.length} note(s) — see output.` : ""),
+          );
+        },
+      );
+    }),
+  );
+
   cmd("modelith.stopServer", () => canvas.stop());
 
   // Palette-discoverable one-click CLI install (also offered automatically when a
