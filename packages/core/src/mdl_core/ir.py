@@ -290,6 +290,9 @@ class CodeSet(_Base):
 class Attribute(_OntologyMixin, _Base):
     id: ULID
     name: str
+    # The physical column name when it differs from the logical `name` (erwin's
+    # Physical_Name). Optional; None means the physical name follows the logical one.
+    physical_name: str | None = None
     definition: str | None = None
     domain: str | None = None  # name-ref to a Domain object
     role: Literal["business_key", "surrogate_key", "attribute", "measure"] = "attribute"
@@ -304,6 +307,9 @@ class LogicalEntity(_Base):
     id: ULID
     kind: Literal[ObjectKind.logical_entity] = ObjectKind.logical_entity
     name: str
+    # The physical table name when it differs from the logical `name` (erwin's
+    # Physical_Name). Optional; None means the physical name follows the logical one.
+    physical_name: str | None = None
     realises: ULID | None = None  # conceptual entity ULID
     definition: str | None = None
     attributes: list[Attribute] = Field(default_factory=list)
@@ -336,6 +342,11 @@ class Relationship(_Base):
     cardinality: Cardinality = "many_to_one"
     identifying: bool = False
     optionality: Literal["mandatory", "optional"] = "mandatory"
+    # Readable role names (erwin's verb phrases): the parent-to-child phrase reads
+    # "<parent> <verb_phrase> <child>" (e.g. "places"), the inverse reads the other way
+    # ("is placed by"). Optional; carried through import/export, not required to model.
+    verb_phrase: str | None = None
+    inverse_verb_phrase: str | None = None
     enforce: RelationshipEnforce = Field(default_factory=RelationshipEnforce)
     udp: Udp | None = None  # user-defined properties (erwin UDPs)
 
