@@ -176,15 +176,22 @@ def _create_entity(repo: ModelRepo, p: dict) -> str:
 
 
 def _rename_entity(repo: ModelRepo, p: dict) -> None:
-    _require(p, "id", "name")
+    _require(p, "id")
     le = repo.model.logical_entities.get(p["id"])
     if le is None:
         raise CommandError(f"no logical entity {p['id']}")
-    new_name = _slug(p["name"])
     rel, node = _node_for(repo, le.id)
-    node["name"] = new_name
-    # keep the file name in step with the entity name (repo hygiene)
-    repo.rename_file(rel, f"logical/entities/{new_name}.yaml")
+    if p.get("name"):
+        new_name = _slug(p["name"])
+        node["name"] = new_name
+        # keep the file name in step with the entity name (repo hygiene)
+        repo.rename_file(rel, f"logical/entities/{new_name}.yaml")
+    # physical table name (erwin Physical_Name); empty clears the key
+    if "physical_name" in p:
+        if p["physical_name"]:
+            node["physical_name"] = p["physical_name"]
+        else:
+            node.pop("physical_name", None)
 
 
 def _delete_entity(repo: ModelRepo, p: dict) -> None:
@@ -361,6 +368,12 @@ def _update_attribute(repo: ModelRepo, p: dict) -> None:
                     attr[k] = _slug(p[k]) if k == "name" else p[k]
             if "nullable" in p and p["nullable"] is not None:
                 attr["nullable"] = bool(p["nullable"])
+            # physical column name (erwin Physical_Name); empty clears the key
+            if "physical_name" in p:
+                if p["physical_name"]:
+                    attr["physical_name"] = p["physical_name"]
+                else:
+                    attr.pop("physical_name", None)
             return
     raise CommandError(f"no attribute {p['attribute_id']}")
 
@@ -482,6 +495,14 @@ def _update_relationship(repo: ModelRepo, p: dict) -> None:
             node["definition"] = p["definition"]
         else:
             node.pop("definition", None)
+    # Verb phrases (erwin's readable role names): "<parent> <verb_phrase> <child>" and the
+    # inverse. Set from import, editable in the Inspector; empty clears the key.
+    for key in ("verb_phrase", "inverse_verb_phrase"):
+        if key in p:
+            if p[key]:
+                node[key] = p[key]
+            else:
+                node.pop(key, None)
 
 
 # --- ontology alignment -----------------------------------------------------------

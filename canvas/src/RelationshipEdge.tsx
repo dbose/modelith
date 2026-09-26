@@ -79,7 +79,8 @@ export const RelationshipEdge = memo(function RelationshipEdge({
       <EndGlyph x={targetX} y={targetY} side={targetPosition} many={tgtMany} optional={false} />
       {(selected || composite) && rel && (
         <text className="rel-label" x={(sourceX + targetX) / 2} y={(sourceY + targetY) / 2 - 8}>
-          {selected ? rel.name : ""}
+          {/* erwin verb phrase reads "<parent> <verb> <child>"; fall back to the name */}
+          {selected ? rel.verb_phrase || rel.name : ""}
           {composite ? `${selected ? " " : ""}(${data!.memberCount})` : ""}
         </text>
       )}

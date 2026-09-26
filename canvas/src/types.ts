@@ -55,6 +55,7 @@ export interface Conceptual {
 export interface AttributeRow {
   id: string;
   name: string;
+  physical_name?: string | null; // erwin physical column name, when it differs
   domain: string | null;
   role: "business_key" | "surrogate_key" | "attribute" | "measure";
   definition?: string | null;
@@ -77,6 +78,7 @@ export interface KeyGroupRow {
 export interface Entity {
   id: string;
   name: string;
+  physical_name?: string | null; // erwin physical table name, when it differs
   definition?: string | null;
   pattern: string | null;
   conceptual: Conceptual | null;
@@ -105,6 +107,8 @@ export interface Relationship {
   cardinality: "one_to_one" | "one_to_many" | "many_to_one" | "many_to_many";
   identifying: boolean;
   optionality: "mandatory" | "optional";
+  verb_phrase?: string | null; // erwin: "<parent> <verb_phrase> <child>"
+  inverse_verb_phrase?: string | null;
 }
 
 export interface PhysicalTable {

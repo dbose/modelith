@@ -2,7 +2,7 @@
   "name": "modelith-vscode",
   "displayName": "Modelith",
   "description": "Ontology-anchored, git-native data modeling for dbt — validate, generate, drift, and the Modelith canvas inside VS Code.",
-  "version": "0.3.13",
+  "version": "0.3.14",
   "publisher": "BosonResearch",
   "license": "Apache-2.0",
   "icon": "icon.png",

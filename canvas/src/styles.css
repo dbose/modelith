@@ -286,8 +286,17 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
 .h3-actions { float: right; display: inline-flex; gap: 6px; }
 .empty-hint { color: var(--text-dim); font-size: 12px; font-style: italic; }
 .add-attr { display: flex; gap: 6px; margin-top: 8px; }
-.rel-row { display: flex; gap: 6px; align-items: center; }
-.rel-row .rel-link { flex: 1; }
+.rel-row { display: flex; gap: 6px; align-items: flex-start; }
+.rel-row .rel-main { flex: 1; }
+.verb-phrases { display: flex; align-items: center; gap: 4px; margin-top: 2px; padding-left: 4px; }
+.verb-phrases .verb-input { font-size: 11px; font-style: italic; color: var(--text-dim); min-width: 40px; }
+.verb-phrases .verb-sep { color: var(--text-dim); font-size: 11px; }
+/* physical (erwin) names, shown secondary to the logical name */
+.physical-name-row { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+.physical-name-row .physical-label { font-size: 9px; text-transform: uppercase; color: var(--text-dim); letter-spacing: .04em; }
+.physical-name-input { font-size: 12px; color: var(--text-dim); }
+.physical-col { display: block; font-size: 10px; color: var(--text-dim); font-family: var(--mono, monospace); }
+.physical-col-input { display: block; font-size: 10px; color: var(--text-dim); }
 .tool-btn.primary { color: var(--accent); border-color: rgba(224,166,58,0.4); font-weight: 600; }
 .tool-btn.badged::after { content: "●"; color: var(--warn); margin-left: 4px; font-size: 8px; vertical-align: super; }
 .divider { width: 1px; background: var(--border); margin: 0 4px; align-self: stretch; }
