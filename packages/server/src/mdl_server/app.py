@@ -218,15 +218,29 @@ def create_app(
     @app.post("/api/import")
     def import_model(body: dict) -> JSONResponse:
         """Parse an interchange document into a change list the client can preview and
-        propose. Accepts {format: sql|mermaid|json-schema, content, dialect?}. Writes
+        propose. Accepts {format: sql|mermaid|json-schema|erwin, content, dialect?}. Writes
         nothing itself."""
         from mdl_emit_erd.imports import parse_json_schema, parse_mermaid, parse_sql_ddl
-        from mdl_emit_erd.imports.model import to_commands
+        from mdl_emit_erd.imports.model import model_to_commands, to_commands
 
         fmt = body.get("format", "")
         content = body.get("content", "")
         if not content:
             return JSONResponse({"ok": False, "error": "content is empty"}, status_code=422)
+        if fmt == "erwin":
+            # erwin produces a RICH Model (subject areas, categories, domains) → the
+            # model_to_commands bridge, not the thin table-oriented parsers.
+            from mdl_reverse.erwin import import_erwin
+
+            result = import_erwin(content)
+            return JSONResponse(
+                {
+                    "ok": True,
+                    "changes": model_to_commands(result.model),
+                    "tables": len(result.model.logical_entities),
+                    "warnings": result.warnings,
+                }
+            )
         if fmt == "sql":
             imported = parse_sql_ddl(content, dialect=body.get("dialect") or "postgres")
         elif fmt == "mermaid":
