@@ -118,13 +118,75 @@ attributes:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(content, encoding="utf-8")
 
-    # Empty state dirs the tool expects.
+    files.update(_scaffold_skeleton(root))
+    return files
+
+
+def _scaffold_skeleton(root: Path) -> dict[str, str]:
+    """The tool-owned skeleton every project needs, WITHOUT any seed model objects:
+    the .gitignore, the empty .mdl/state/ dir, and a pinned .mdl/lock.yaml. Shared by
+    `scaffold` (which adds a seed example) and `bootstrap_project` (which lets an import
+    supply the objects). Idempotent — safe to call on a dir that already has some of it."""
+    written: dict[str, str] = {}
+    root.mkdir(parents=True, exist_ok=True)
+
+    gi = root / ".gitignore"
+    if not gi.exists():
+        gi.write_text(_GITIGNORE, encoding="utf-8")
+    written[".gitignore"] = _GITIGNORE
+
+    # Empty state dir the tool expects.
     (root / ".mdl" / "state").mkdir(parents=True, exist_ok=True)
 
     # Pin spec versions (spec §2.2, §13.1). Import lazily so `core`/scaffold stay
     # free of an ontology dependency at module load.
     from mdl_ontology.lock import Lock
 
-    Lock().save(root)
-    files[".mdl/lock.yaml"] = (root / ".mdl" / "lock.yaml").read_text(encoding="utf-8")
-    return files
+    lock = root / ".mdl" / "lock.yaml"
+    if not lock.exists():
+        Lock().save(root)
+    written[".mdl/lock.yaml"] = lock.read_text(encoding="utf-8")
+    return written
+
+
+def bootstrap_project(
+    root: Path,
+    *,
+    project_name: str,
+    layout: str = "model",
+    dbt_target: str = "duckdb_dev",
+    existing: bool = False,
+) -> tuple[Path, list[str]]:
+    """Lay down the project skeleton an IMPORT (erwin, etc.) writes its objects into,
+    without any seed example objects. Returns (model_root, written_paths):
+
+    - ``model_root`` is where the importer should write its object YAMLs. For a
+      ``workspace`` layout that is ``root/model`` (the collab §2.1 sibling); otherwise
+      ``root``.
+    - ``existing`` True means the target already holds a Modelith project (an
+      ``mdl-project.yaml`` or a ``.mdl/`` dir): scaffold NOTHING structural and RESPECT
+      what is there — the caller merges objects and the writer preserves the user's
+      config. Returns (root, []).
+    - ``layout == "none"`` writes no skeleton (model objects only, the pre-scaffold
+      behaviour). Returns (root, []).
+    - ``layout == "model"`` writes the shared skeleton (.gitignore, .mdl/state,
+      .mdl/lock.yaml) at ``root``.
+    - ``layout == "workspace"`` also lays down the transform/warehouse dbt project,
+      CODEOWNERS, the .code-workspace and git merge drivers (collab §2.1), with the
+      model under ``root/model``.
+    """
+    if existing or layout == "none":
+        # An existing WORKSPACE keeps its model under model/; a plain project at root.
+        nested = existing and (root / "model" / "mdl-project.yaml").exists()
+        return (root / "model" if nested else root), []
+
+    if layout == "workspace":
+        from mdl_cli.collab import scaffold_workspace_skeleton
+
+        model_root = root / "model"
+        written = scaffold_workspace_skeleton(root, project_name, dbt_target=dbt_target)
+        written.extend(f"model/{p}" for p in _scaffold_skeleton(model_root))
+        return model_root, written
+
+    # layout == "model" (default): a plain model repo skeleton at root.
+    return root, list(_scaffold_skeleton(root))

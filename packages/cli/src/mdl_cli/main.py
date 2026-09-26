@@ -2730,6 +2730,21 @@ def import_erwin_cmd(
     file: Path = typer.Argument(..., help="erwin XML export (.xml)"),
     out: Path = typer.Option(Path("model"), "--out", "-o"),
     name: str = typer.Option(None, "--name"),
+    scaffold_layout: str = typer.Option(
+        "model",
+        "--scaffold",
+        help="When --out is EMPTY, bootstrap a full project around the import: "
+        "`model` (a runnable model repo — .gitignore, .mdl/lock.yaml, .mdl/state/), "
+        "`workspace` (also the transform/warehouse dbt project, CODEOWNERS, "
+        ".code-workspace — collab §2.1), or `none` (model objects only, no skeleton). "
+        "Ignored when --out already holds a project (that layout is respected).",
+    ),
+    dbt_target: str = typer.Option(
+        "duckdb_dev",
+        "--dbt-target",
+        help="dbt target/profile name written into the project config (and the workspace "
+        "profiles.yml). DuckDB by default so the generated warehouse builds with no setup.",
+    ),
     apply: bool = typer.Option(
         False,
         "--apply",
@@ -2744,9 +2759,12 @@ def import_erwin_cmd(
     """Import a real erwin XML export into a Modelith model (spec §6.4).
 
     Default: write a fresh model at --out (like `mdl reverse` — an erwin export is a whole
-    model). If --out already holds a model it diverts to a `-reversed-v<N>` sibling unless
-    --force. With --apply, merge the erwin objects into the existing model at --out through
-    the same validated mutation engine manual edits use."""
+    model). Into an EMPTY --out it also scaffolds a runnable project around the objects
+    (`--scaffold model|workspace|none`, persisted to mdl-project.yaml so a re-import
+    reproduces the layout). If --out already holds a project the existing structure is
+    RESPECTED — no re-scaffold, user config preserved — and it diverts to a `-reversed-v<N>`
+    sibling unless --force. With --apply, merge the erwin objects into the existing model at
+    --out through the same validated mutation engine manual edits use."""
     # streaming reader handles 7-10MB files; pass the PATH so it reads the file directly.
     result = import_erwin(file, project_name=name)
     for w in result.warnings:
@@ -2771,12 +2789,41 @@ def import_erwin_cmd(
         )
         return
 
+    # A project already here (an mdl-project.yaml or a .mdl/ dir, at --out or its model/
+    # subdir) is respected: no scaffold, and the writer preserves the user's config.
+    existing = (
+        (out / "mdl-project.yaml").exists()
+        or (out / ".mdl").exists()
+        or (out / "model" / "mdl-project.yaml").exists()
+    )
+
+    from mdl_cli.scaffold import bootstrap_project
+
+    write_target, scaffolded = bootstrap_project(
+        out,
+        project_name=name or _project_name_from_path(out),
+        layout=scaffold_layout,
+        dbt_target=dbt_target,
+        existing=existing,
+    )
+    for line in scaffolded:
+        typer.secho(f"  scaffolded {line}", fg=typer.colors.GREEN)
+
+    # Stamp the config so the layout persists (writer._USER_OWNED_CONFIG keeps it on a
+    # re-import). Only on a fresh scaffold — an existing project owns its own config.
+    if not existing and scaffold_layout != "none":
+        result.model.config.dbt_target = dbt_target
+        result.model.config.platform_targets = [dbt_target]
+        result.model.config.scaffold.layout = scaffold_layout
+        if scaffold_layout == "workspace":
+            result.model.config.scaffold.dbt_project_dir = "transform/warehouse"
+
     if not force:
-        out = _nonclobbering_out(out)
-    write_reversed(result.model, out)
+        write_target = _nonclobbering_out(write_target)
+    write_reversed(result.model, write_target)
     typer.secho(
         f"imported {len(result.model.logical_entities)} entities, "
-        f"{len(result.model.relationships)} relationships from erwin to {out}",
+        f"{len(result.model.relationships)} relationships from erwin to {write_target}",
         fg=typer.colors.GREEN,
     )
 

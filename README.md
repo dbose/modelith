@@ -467,15 +467,25 @@ foreign keys, relationships (with their verb phrases), subtype/supertype categor
 subject areas, and domains, keeping the physical names alongside the logical ones:
 
 ```bash
-mdl import erwin your-model.xml -o model     # writes a fresh model
-mdl import erwin your-model.xml -o model --apply   # or merge into an existing one
+mdl import erwin your-model.xml -o proj     # empty folder -> a full, runnable project
+mdl import erwin your-model.xml -o proj --scaffold workspace   # + a transform/warehouse dbt project
+mdl import erwin your-model.xml -o model --apply   # or merge into a model you already have
 ```
+
+Point it at an **empty folder** and it bootstraps a runnable project around the import — the
+`.gitignore`, the pinned `.mdl/lock.yaml`, a populated `mdl-project.yaml` — so there is no
+separate `mdl init` step. `--scaffold workspace` also lays down the `transform/warehouse`
+dbt project (with a zero-setup DuckDB `profiles.yml`), CODEOWNERS and a `.code-workspace`.
+The chosen layout is recorded in `mdl-project.yaml`, and if the folder **already** holds a
+Modelith project the existing structure and config are respected (no re-scaffold). Both the
+layout and the dbt target are configurable from the CLI (`--scaffold`, `--dbt-target`) and
+from VS Code settings (`modelith.import.scaffold`, `modelith.import.dbtTarget`).
 
 It parses the export by streaming, so 7-10MB files import without a memory spike, and it
 degrades gracefully: anything Modelith doesn't model (views, ER-diagram layout, physical
 transforms) is skipped with a note rather than a failure. In VS Code it's on the palette
 (**Modelith: Import Erwin XML**), a button in the Reverse Review panel, and a right-click
-on any `.xml` file.
+on any `.xml` file — and it now works in an empty workspace, offering to scaffold a project.
 
 ## Reverse engineering a real warehouse
 

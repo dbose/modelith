@@ -61,3 +61,73 @@ def test_import_erwin_diverts_on_existing_model(tmp_path):
     assert r.exit_code == 0, r.output
     # the original is untouched; a -reversed-v1 sibling was written
     assert (tmp_path / "model-reversed-v1" / "mdl-project.yaml").exists()
+
+
+def test_import_erwin_empty_folder_bootstraps_model(tmp_path):
+    # empty folder + default --scaffold model → a runnable project skeleton + objects
+    xml = tmp_path / "trading.xml"
+    xml.write_text(_erwin_xml())
+    out = tmp_path / "proj"
+    r = runner.invoke(app, ["import", "erwin", str(xml), "-o", str(out)])
+    assert r.exit_code == 0, r.output
+    assert (out / ".mdl" / "lock.yaml").exists()
+    assert (out / ".mdl" / "state").is_dir()
+    assert (out / ".gitignore").exists()
+    assert (out / "logical" / "entities" / "counterparty.yaml").exists()
+    # the layout + dbt target persist in the config
+    from mdl_core.yaml_io import load_file
+
+    cfg = load_file(out / "mdl-project.yaml")
+    assert dict(cfg["scaffold"])["layout"] == "model"
+    assert cfg["dbt_target"] == "duckdb_dev"
+    assert runner.invoke(app, ["validate", "-m", str(out)]).exit_code == 0
+
+
+def test_import_erwin_workspace_layout(tmp_path):
+    # --scaffold workspace → objects under model/, plus the transform/warehouse project
+    xml = tmp_path / "trading.xml"
+    xml.write_text(_erwin_xml())
+    out = tmp_path / "repo"
+    r = runner.invoke(
+        app, ["import", "erwin", str(xml), "-o", str(out), "--scaffold", "workspace"]
+    )
+    assert r.exit_code == 0, r.output
+    assert (out / "model" / "logical" / "entities" / "counterparty.yaml").exists()
+    assert (out / "model" / ".mdl" / "lock.yaml").exists()
+    assert (out / "transform" / "warehouse" / "dbt_project.yml").exists()
+    assert (out / "transform" / "warehouse" / "profiles.yml").exists()
+    assert (out / ".github" / "CODEOWNERS").exists()
+    from mdl_core.yaml_io import load_file
+
+    cfg = load_file(out / "model" / "mdl-project.yaml")
+    assert dict(cfg["scaffold"])["dbt_project_dir"] == "transform/warehouse"
+    assert runner.invoke(app, ["validate", "-m", str(out / "model")]).exit_code == 0
+
+
+def test_import_erwin_none_layout_no_skeleton(tmp_path):
+    # --scaffold none → model objects only, no .mdl skeleton (pre-scaffold behaviour)
+    xml = tmp_path / "trading.xml"
+    xml.write_text(_erwin_xml())
+    out = tmp_path / "bare"
+    r = runner.invoke(app, ["import", "erwin", str(xml), "-o", str(out), "--scaffold", "none"])
+    assert r.exit_code == 0, r.output
+    assert (out / "logical" / "entities" / "counterparty.yaml").exists()
+    assert not (out / ".mdl" / "lock.yaml").exists()
+
+
+def test_import_erwin_respects_existing_structure(tmp_path):
+    # a dir that already has a project keeps its config; the import merges, no re-scaffold
+    xml = tmp_path / "trading.xml"
+    xml.write_text(_erwin_xml())
+    out = tmp_path / "existing"
+    out.mkdir()
+    (out / "mdl-project.yaml").write_text(
+        "name: existing\ndbt_target: snowflake_prod\nplatform_targets: [snowflake_prod]\n"
+    )
+    r = runner.invoke(app, ["import", "erwin", str(xml), "-o", str(out), "--apply"])
+    assert r.exit_code == 0, r.output
+    # the user's target is preserved, not overwritten by the scaffold default
+    from mdl_core.yaml_io import load_file
+
+    cfg = load_file(out / "mdl-project.yaml")
+    assert cfg["dbt_target"] == "snowflake_prod"

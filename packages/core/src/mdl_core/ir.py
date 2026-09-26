@@ -550,6 +550,25 @@ class ReverseConfig(_Base):
         )
 
 
+class ScaffoldConfig(_Base):
+    """The `scaffold:` block of mdl-project.yaml — records HOW this project was
+    bootstrapped so a re-import, or other tooling, reproduces the same layout instead
+    of guessing. Written once on a fresh import/init; user-owned thereafter (a re-run
+    must never rewrite it — see writer._USER_OWNED_CONFIG).
+
+    - ``layout`` — ``model`` (a plain model repo), ``workspace`` (the collab topology:
+      model/ + transform/warehouse siblings, spec §2.1), or ``none`` (model objects only,
+      no surrounding skeleton).
+    - ``dbt_project_dir`` — where the generated dbt project lives, relative to the repo
+      root (e.g. ``transform/warehouse`` for a workspace layout); None for a plain model.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    layout: str = "model"
+    dbt_project_dir: str | None = None
+
+
 class ProjectConfig(_Base):
     model_config = ConfigDict(extra="allow")
 
@@ -568,6 +587,9 @@ class ProjectConfig(_Base):
     # How this warehouse's dbt models map to entities (drift name resolution). Empty by
     # default -> drift keeps the exact-name behaviour. See ReverseConfig.
     reverse: ReverseConfig = Field(default_factory=ReverseConfig)
+    # How this project was bootstrapped (import/init layout). Default `model`; recorded so
+    # a re-run reproduces the layout. See ScaffoldConfig.
+    scaffold: ScaffoldConfig = Field(default_factory=ScaffoldConfig)
 
 
 # --- The in-memory graph ---------------------------------------------------
