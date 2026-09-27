@@ -142,6 +142,31 @@ def test_ontology_commands_fail_with_install_hint(argv, tmp_path: Path):
     assert "modelith-dbt[ontology]" in combined, combined
 
 
+def test_init_scaffolds_without_rdflib(tmp_path: Path):
+    """`mdl init` writes .mdl/lock.yaml with no RDF backend. Regression: scaffolding
+    imports mdl_ontology.lock (for Lock), which must NOT drag in the pyoxigraph-backed
+    providers — a lazy mdl_ontology.__init__ keeps Lock reachable on a core install."""
+    with _blocked_backend():
+        mod = importlib.reload(importlib.import_module("mdl_cli.main"))
+        r = runner.invoke(mod.app, ["init", str(tmp_path / "proj")])
+    assert r.exit_code == 0, r.output
+    assert (tmp_path / "proj" / ".mdl" / "lock.yaml").exists()
+
+
+def test_import_erwin_without_rdflib(tmp_path: Path):
+    """`mdl import erwin` into an empty folder scaffolds a model with no RDF backend."""
+    fixture = Path(__file__).resolve().parents[2] / "reverse" / "tests" / "test_erwin.py"
+    xml = tmp_path / "m.xml"
+    xml.write_text(fixture.read_text().split('_ERWIN = """')[1].split('"""')[0])
+    out = tmp_path / "proj"
+    with _blocked_backend():
+        mod = importlib.reload(importlib.import_module("mdl_cli.main"))
+        r = runner.invoke(mod.app, ["import", "erwin", str(xml), "-o", str(out)])
+    assert r.exit_code == 0, r.output
+    assert (out / ".mdl" / "lock.yaml").exists()
+    assert (out / "logical" / "entities" / "counterparty.yaml").exists()
+
+
 def test_ontology_still_works_when_backend_present(tmp_path: Path):
     """Sanity: with the backend installed (the normal test env), an ontology command is
     NOT gated — it runs. Guards against the helper over-blocking."""
