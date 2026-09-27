@@ -110,6 +110,12 @@ def _ontology():
     try:
         import mdl_ontology
 
+        # mdl_ontology exports lazily (PEP 562), so `import mdl_ontology` alone no longer
+        # pulls the RDF backend — that is deliberate, so pyoxigraph-free members like Lock
+        # stay reachable on a core install. Force-resolve one backend-dependent export here
+        # so a missing backend fails INSIDE this guard (→ the install hint), not later as a
+        # raw ImportError in the command body.
+        _ = mdl_ontology.serialize  # rdf_export → _rdf → pyoxigraph
         return mdl_ontology
     except ImportError as e:
         typer.secho(

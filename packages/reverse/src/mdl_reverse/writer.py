@@ -8,6 +8,7 @@ subsequent `mdl validate` / `mdl generate` treats it like any authored repo.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from mdl_core.ir import Model
@@ -65,10 +66,26 @@ def _write_project_config(model: Model, root: Path) -> None:
 def write_model(model: Model, root: Path) -> list[str]:
     root = Path(root)
     written: list[str] = []
+    used: set[str] = set()  # rel paths already taken this write, for collision-avoidance
 
     # Collection fields that default to []: `exclude_none` does not drop an empty
     # list, so a reversed model would carry a noise `members: []` on every object.
     _EMPTY_OK = ("members", "synonyms", "subtypes", "ontology_refs", "values")
+
+    def _unique(rel: str) -> str:
+        """Disambiguate a filename collision. Slugging is lossy (two names can map to one
+        filename, e.g. 'Order Line' and 'Order/Line' -> 'order_line'), so a clash would
+        silently overwrite one object with another. Append -2, -3… on the stem instead."""
+        if rel not in used:
+            used.add(rel)
+            return rel
+        stem, dot, ext = rel.rpartition(".")
+        n = 2
+        while f"{stem}-{n}{dot}{ext}" in used:
+            n += 1
+        cand = f"{stem}-{n}{dot}{ext}"
+        used.add(cand)
+        return cand
 
     def dump(rel: str, obj) -> None:
         data = obj.model_dump(by_alias=True, exclude_none=True, mode="json")
@@ -76,6 +93,7 @@ def write_model(model: Model, root: Path) -> list[str]:
             if data.get(key) == []:
                 data.pop(key)
         # `kind` is an enum -> its value; pydantic mode="json" already handles it.
+        rel = _unique(rel)
         path = root / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(dump_str(data), encoding="utf-8")
@@ -87,25 +105,25 @@ def write_model(model: Model, root: Path) -> list[str]:
     written.append("mdl-project.yaml")
 
     for sa in model.subject_areas.values():
-        dump(f"conceptual/subject-areas/{sa.name.lower().replace(' ', '_')}.yaml", sa)
+        dump(f"conceptual/subject-areas/{_slug(sa.name)}.yaml", sa)
     for ce in model.conceptual_entities.values():
         dump(f"conceptual/entities/{_slug(ce.name)}.yaml", ce)
     for term in model.terms.values():
         dump(f"conceptual/terms/{_slug(term.name)}.yaml", term)
     for dom in model.domains.values():
-        dump(f"logical/domains/{dom.name}.yaml", dom)
+        dump(f"logical/domains/{_slug(dom.name)}.yaml", dom)
     for cs in model.code_sets.values():
         dump(f"logical/value-sets/{_slug(cs.name)}.yaml", cs)
     for le in model.logical_entities.values():
-        dump(f"logical/entities/{le.name}.yaml", le)
+        dump(f"logical/entities/{_slug(le.name)}.yaml", le)
     for rel in model.relationships.values():
-        dump(f"logical/relationships/{rel.name}.yaml", rel)
+        dump(f"logical/relationships/{_slug(rel.name)}.yaml", rel)
     for kg in model.key_groups.values():
         dump(f"logical/key-groups/{_slug(kg.name)}.yaml", kg)
     for cat in model.categories.values():
         dump(f"logical/categories/{_slug(cat.name)}.yaml", cat)
     for pt in model.physical_tables.values():
-        dump(f"physical/{pt.target}/tables/{pt.name.lower()}.yaml", pt)
+        dump(f"physical/{_slug(pt.target)}/tables/{_slug(pt.name)}.yaml", pt)
 
     # Prune stale object files from a PRIOR reverse into this dir: an entity that no
     # longer exists (e.g. now excluded by an edited reverse.exclude) would otherwise
@@ -145,5 +163,18 @@ def _prune_stale(root: Path, written: set[str]) -> None:
                     pass
 
 
+# Characters illegal in a Windows filename (< > : " / \ | ? *) plus control chars. A
+# reversed/imported object name is used verbatim as a filename, and an erwin export can
+# carry names like "<root>" or "Order:Line" that crash open() on Windows (OSError 22) and
+# make a portable git repo impossible. Map every unsafe run to a single underscore.
+_UNSAFE_FS = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
+
+
 def _slug(name: str) -> str:
-    return name.lower().replace(" ", "_")
+    """A filesystem-safe, portable slug for a filename: lowercased, spaces and any
+    Windows-illegal characters collapsed to underscores, and trailing dots/spaces (also
+    illegal on Windows) stripped. Never returns empty."""
+    s = _UNSAFE_FS.sub("_", name).lower().replace(" ", "_")
+    # Windows also forbids a name ending in a dot or space, and bare dots are confusing.
+    s = s.strip("._")
+    return s or "unnamed"
