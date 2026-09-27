@@ -274,3 +274,66 @@ def _resolve_subject_area_id(model: Model, ref: str) -> str | None:
         if sa.name.lower() == lref:
             return sa.id
     return None
+
+
+def model_tree(
+    model: Model,
+    *,
+    path_for=None,
+    subject_area: str | None = None,
+) -> dict:
+    """A navigable tree of the LOGICAL model for an editor's Model Explorer: every entity
+    with its attributes and each object's source file. Unlike `list_entities` (counts
+    only) and `entities_detail` (chat-sized, capped), this is the full, uncapped structure
+    a tree view drills into, and it carries the source file per entity so a click can open
+    the YAML. `path_for(ulid) -> rel path | None` is threaded in by the CLI (the file map
+    lives on ModelRepo, not on the pure Model); when absent, `file` is null.
+
+    Each entity: name, physical_name, subject_area, definition, pattern, file, and
+    attributes (name, physical_name, domain, role, nullable, is_pk). Attributes keep their
+    authored order. `is_pk` is true when the attribute is a member of a pk KeyGroup or,
+    failing a declared pk, carries the legacy `role: business_key`.
+    """
+    # A requested-but-unknown area resolves to None; scope to NOTHING rather than
+    # silently ignoring the filter (which would show the whole model).
+    want_scope = subject_area is not None
+    sa_id = _resolve_subject_area_id(model, subject_area) if want_scope else None
+    sa_name = {sa.id: sa.name for sa in model.subject_areas.values()}
+    ce_sa = {ce.id: ce.subject_area for ce in model.conceptual_entities.values()}
+
+    entities: list[dict] = []
+    for le in sorted(model.logical_entities.values(), key=lambda e: e.name):
+        area_id = ce_sa.get(le.realises) if le.realises else None
+        if want_scope and area_id != sa_id:
+            continue
+        # pk membership: declared pk KeyGroup members, else legacy business_key attrs
+        pk_ids: set[str] = set()
+        declared_pk = False
+        for kg in model.key_groups.values():
+            if kg.entity == le.id and kg.type == "pk":
+                declared_pk = True
+                pk_ids.update(kg.members)
+        attributes = [
+            {
+                "name": a.name,
+                "physical_name": a.physical_name,
+                "domain": a.domain,
+                "role": a.role,
+                "nullable": a.nullable,
+                "is_pk": (a.id in pk_ids) if declared_pk else (a.role == "business_key"),
+            }
+            for a in le.attributes
+        ]
+        entities.append(
+            {
+                "name": le.name,
+                "physical_name": le.physical_name,
+                "subject_area": sa_name.get(area_id) if area_id else None,
+                "definition": le.definition,
+                "pattern": le.pattern,
+                "file": path_for(le.id) if path_for else None,
+                "attributes": attributes,
+            }
+        )
+
+    return {"project": model.config.name, "entities": entities}

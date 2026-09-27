@@ -20,11 +20,12 @@ const VSCODE_STUB = `
 export const TreeItemCollapsibleState = { None: 0, Collapsed: 1, Expanded: 2 };
 export class ThemeIcon { constructor(id, color) { this.id = id; this.color = color; } }
 export class ThemeColor { constructor(id) { this.id = id; } }
-export class MarkdownString { constructor(v) { this.value = v; } }
+export class MarkdownString { constructor(v) { this.value = v ?? ""; } appendMarkdown(v) { this.value += v; return this; } }
 export class TreeItem {
   constructor(label, collapsibleState) { this.label = label; this.collapsibleState = collapsibleState; }
 }
 export class EventEmitter { constructor(){ this.event = () => ({ dispose(){} }); } fire(){} dispose(){} }
+export const Uri = { file: (p) => ({ fsPath: p, path: p, scheme: "file" }) };
 export const window = { createOutputChannel: () => ({ appendLine(){}, append(){}, show(){} }) };
 export const workspace = { getConfiguration: () => ({ get: () => undefined }) };
 // ./mdl exports the provider imports — never called here (we drive getChildren directly).
@@ -224,6 +225,71 @@ console.log("\nWarehouse Config — unclassified custom prefixes surface for ass
   // the classified dimension still appears in a normal role group, not the prefix group
   ok(items.some((i) => String(i.label).startsWith("Dimensions")), "classified models keep their role group");
   ok(!top.some((n) => n.kind === "prefixGroup" && n.prefix !== "pres_art_"), "only real unclassified prefixes group");
+}
+
+// --- Model frame: entity → attribute drill-down + click-to-open the YAML ------------
+const { ModelTreeProvider } = await load("modelView.ts");
+console.log("\nModel tree — entities expand to attributes; click opens the YAML");
+{
+  const p = new ModelTreeProvider({ appendLine() {}, append() {}, show() {} });
+  // inject the model dir + entities (bypass the CLI); getChildren renders from them
+  p.modelDir = "/tmp/proj/model";
+  p.entities = [
+    {
+      name: "counterparty",
+      physical_name: "COUNTERPARTY",
+      subject_area: "Trading",
+      definition: "A trading partner.",
+      pattern: null,
+      file: "logical/entities/counterparty.yaml",
+      attributes: [
+        { name: "counterparty_id", physical_name: null, domain: "id_bigint", role: "business_key", nullable: false, is_pk: true },
+        { name: "legal_name", physical_name: null, domain: "string", role: "attribute", nullable: true, is_pk: false },
+      ],
+    },
+    { name: "trade", physical_name: null, subject_area: "Trading", definition: null, pattern: null, file: "logical/entities/trade.yaml", attributes: [] },
+  ];
+
+  // top level = one row per entity, each collapsible when it has attributes
+  const top = p.getChildren();
+  const topItems = top.map((n) => p.getTreeItem(n));
+  ok(labels(topItems).join(",") === "counterparty,trade", `entities render as rows: ${labels(topItems)}`);
+  const cpItem = topItems[0];
+  ok(cpItem.collapsibleState === 1, "an entity with attributes is collapsible (drill-down)");
+  ok(String(cpItem.description).includes("2 attr"), `entity row shows an attribute count: ${cpItem.description}`);
+  ok(topItems[1].collapsibleState === 0, "an entity with no attributes is a leaf");
+
+  // clicking an entity opens its YAML (the openModelObject command with file + name)
+  ok(cpItem.command?.command === "modelith.openModelObject", "entity click opens the model object");
+  ok(String(cpItem.command.arguments[0].fsPath ?? cpItem.command.arguments[0].path).includes("counterparty.yaml"),
+    "entity click targets its own logical YAML");
+
+  // expanding the entity yields its attributes, PK first-classed
+  const cpNode = top[0];
+  const attrRows = p.getChildren(cpNode);
+  const attrItems = attrRows.map((n) => p.getTreeItem(n));
+  ok(labels(attrItems).join(",") === "counterparty_id,legal_name", `attributes render in order: ${labels(attrItems)}`);
+  ok(attrItems[0].iconPath?.id === "key", "the primary-key attribute gets the key icon");
+  ok(attrItems[1].iconPath?.id === "symbol-field", "a non-key attribute gets the field icon");
+  ok(String(attrItems[0].description).includes("pk"), `pk attribute is marked: ${attrItems[0].description}`);
+  // clicking an attribute opens the OWNING entity's YAML
+  ok(attrItems[0].command?.command === "modelith.openModelObject", "attribute click opens the model object");
+  ok(String(attrItems[0].command.arguments[0].fsPath ?? attrItems[0].command.arguments[0].path).includes("counterparty.yaml"),
+    "attribute click opens the owning entity's YAML");
+}
+
+console.log("\nModel tree — resting states");
+{
+  const p = new ModelTreeProvider({ appendLine() {}, append() {}, show() {} });
+  // no model dir -> explains itself
+  const rows = p.getChildren().map((n) => p.getTreeItem(n));
+  ok(String(rows[0].label).includes("No model"), "no-model state explains itself, not blank");
+
+  const p2 = new ModelTreeProvider({ appendLine() {}, append() {}, show() {} });
+  p2.modelDir = "/tmp/proj/model";
+  p2.entities = [];
+  const rows2 = p2.getChildren().map((n) => p2.getTreeItem(n));
+  ok(String(rows2[0].label).includes("No entities"), "empty model points at init/import, not blank");
 }
 
 rmSync(dir, { recursive: true, force: true });
