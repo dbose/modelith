@@ -36,3 +36,6 @@ demo/**/dbt_packages/
 # Container-generated YAML-schema settings (paths are machine-specific).
 .vscode/settings.json
 .claude/worktrees/
+
+# Vendored erwin XSD schemas — reference only, must NOT ship in a public repo.
+erwin/
