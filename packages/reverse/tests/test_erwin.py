@@ -22,10 +22,28 @@ _ERWIN = """<?xml version="1.0"?>
         <Name>id_type</Name><Logical_Data_Type>BIGINT</Logical_Data_Type>
       </DomainProps></Domain>
     </Domain_Groups>
+    <UDP_Definition_Groups>
+      <UDP_Definition id="U_STEWARD"><UDP_DefinitionProps>
+        <Name>Steward</Name><Type>Text</Type>
+      </UDP_DefinitionProps></UDP_Definition>
+    </UDP_Definition_Groups>
+    <Naming_Options_Groups>
+      <Naming_Options id="N_PHYS"><Naming_OptionsProps>
+        <Name>Physical</Name><Case_Conversion_Type>UPPER</Case_Conversion_Type>
+        <Is_Physical_Only>1</Is_Physical_Only>
+      </Naming_OptionsProps></Naming_Options>
+      <Naming_Options id="N_LOG"><Naming_OptionsProps>
+        <Name>Logical</Name><Case_Conversion_Type>LOWER</Case_Conversion_Type>
+        <Is_Logical_Only>1</Is_Logical_Only>
+      </Naming_OptionsProps></Naming_Options>
+    </Naming_Options_Groups>
     <Entity_Groups>
       <Entity id="E_CP"><EntityProps>
           <Name>Counterparty</Name><Physical_Name>COUNTERPARTY</Physical_Name>
           <Definition>A trading partner.</Definition>
+          <UDP_Instance_Groups>
+            <UDP_Instance name="Steward" id="U_STEWARD">Jane Doe</UDP_Instance>
+          </UDP_Instance_Groups>
         </EntityProps>
         <Attribute_Groups>
           <Attribute id="A_CP1"><AttributeProps>
@@ -34,6 +52,9 @@ _ERWIN = """<?xml version="1.0"?>
           </AttributeProps></Attribute>
           <Attribute id="A_CP2"><AttributeProps>
             <Name>legal_name</Name><Logical_Data_Type>VARCHAR(255)</Logical_Data_Type>
+            <UDP_Instance_Groups>
+              <UDP_Instance id="U_STEWARD">Bob</UDP_Instance>
+            </UDP_Instance_Groups>
           </AttributeProps></Attribute>
         </Attribute_Groups>
         <Key_Group_Groups>
@@ -170,6 +191,35 @@ def test_domain_imported():
     assert any(d.name == "id_type" for d in m.domains.values())
 
 
+def test_udp_on_entity_by_name():
+    # a UDP_Instance carrying the definition's Name attribute -> {name: value} on the entity
+    m = _import().model
+    cp = next(le for le in m.logical_entities.values() if le.name == "counterparty")
+    assert cp.udp == {"Steward": "Jane Doe"}
+
+
+def test_udp_on_attribute_resolved_by_def_id():
+    # a UDP_Instance with only the def GUID (no name attr) resolves via the UDP_Definition index
+    m = _import().model
+    cp = next(le for le in m.logical_entities.values() if le.name == "counterparty")
+    ln = next(a for a in cp.attributes if a.name == "legal_name")
+    assert ln.udp == {"Steward": "Bob"}
+
+
+def test_entities_without_udps_have_none():
+    # an object with no UDP instances keeps udp unset (no noise `udp: {}` on every object)
+    m = _import().model
+    trade = next(le for le in m.logical_entities.values() if le.name == "trade")
+    assert trade.udp is None
+
+
+def test_naming_options_applied():
+    # erwin Naming_Options -> the project's NamingStandards (physical UPPER, logical LOWER)
+    m = _import().model
+    assert m.config.naming.physical_case == "upper_snake"
+    assert m.config.naming.logical_case == "snake"
+
+
 def test_unknown_objects_warn_not_fail():
     r = _import()
     joined = " ".join(r.warnings).lower()
@@ -178,6 +228,9 @@ def test_unknown_objects_warn_not_fail():
     # nested Attribute/Key_Group are NOT reported as skipped Model-level objects
     assert "attribute" not in joined
     assert "key_group" not in joined
+    # the newly-mapped types no longer warn
+    assert "udp" not in joined
+    assert "naming_options" not in joined
 
 
 def test_imported_model_validates():

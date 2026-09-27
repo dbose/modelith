@@ -464,7 +464,10 @@ touches disk or git until you submit the proposal.
 Nobody adopts a modeling tool greenfield, so `mdl import erwin` reads a real erwin Data
 Modeler XML export and turns it into a committable Modelith model — entities, primary and
 foreign keys, relationships (with their verb phrases), subtype/supertype categories,
-subject areas, and domains, keeping the physical names alongside the logical ones:
+subject areas, and domains, keeping the physical names alongside the logical ones. It also
+carries your **user-defined properties** (erwin UDPs become `udp:` on each object, which flow
+to dbt `meta:`) and your **naming conventions** (erwin's case options become the project's
+`naming:` standards):
 
 ```bash
 mdl import erwin your-model.xml -o proj     # empty folder -> a runnable model-only project

@@ -113,6 +113,9 @@ class _Obj:
     refs: dict[str, str]  # single refs: prop-name -> target GUID
     ref_arrays: dict[str, list[str]]  # array refs: prop-name -> ordered target GUIDs
     children: list[_Obj] = field(default_factory=list)  # nested objects (attrs, key groups)
+    # erwin UDP instances carried inside this object's <XxxProps>: (name attr, def GUID, value).
+    # The name is resolved to the UDP_Definition's Name in a later pass (see _resolve_udp).
+    udp_raw: list[tuple[str | None, str, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -148,10 +151,21 @@ def _extract(el: ET.Element) -> _Obj:
 
 
 def _read_props(props_el: ET.Element, obj: _Obj) -> None:
-    """Read a `<XxxProps>` element's children into the object's props/refs/ref_arrays."""
+    """Read a `<XxxProps>` element's children into the object's props/refs/ref_arrays.
+
+    UDP instances are carried as a `<UDP_Instance_Groups>` child of the Props element (each
+    `<UDP_Instance name=".." id="<def GUID>">value</UDP_Instance>`); they are collected into
+    `obj.udp_raw` and resolved to `{udp name: value}` later (see _resolve_udp)."""
     for p in props_el:
         name = _local(p.tag)
-        if name.endswith("_Ref_Array"):
+        if name == "UDP_Instance_Groups":
+            for inst in p:
+                if _local(inst.tag) != "UDP_Instance":
+                    continue
+                value = (inst.text or "").strip()
+                if value:  # an empty UDP instance carries nothing to keep
+                    obj.udp_raw.append((inst.get("name"), inst.get("id") or "", value))
+        elif name.endswith("_Ref_Array"):
             key = name[: -len("_Array")]  # Foo_Ref_Array -> Foo_Ref
             items: list[tuple[int, str]] = []
             for ref in p:
@@ -176,7 +190,18 @@ def _read_props(props_el: ET.Element, obj: _Obj) -> None:
 # Top-level object element names we index (inside their *_Groups). Nested objects
 # (Attribute, Key_Group, Key_Group_Member) are captured via _extract recursion.
 _TOP_OBJECTS = frozenset(
-    {"Entity", "Relationship", "Subject_Area", "Domain", "View", "ER_Diagram"}
+    {
+        "Entity",
+        "Relationship",
+        "Subject_Area",
+        "Domain",
+        "View",
+        "ER_Diagram",
+        # Model-level: UDP definitions (id -> name, for resolving instances) and the
+        # naming-convention options that map onto the project's NamingStandards.
+        "UDP_Definition",
+        "Naming_Options",
+    }
 )
 
 # Object names that appear NESTED inside a mapped object (consumed by _extract, not at the
@@ -195,6 +220,9 @@ _NESTED_OBJECTS = frozenset(
         "Extended_Notes",
         "History_Information",
         "Display_Style_Sheet",
+        # UDP instances live inside an object's <XxxProps> (read by _read_props); listed
+        # here so a UDP_Instance_Groups that ever surfaces standalone isn't flagged skipped.
+        "UDP_Instance",
     }
 )
 
@@ -242,6 +270,26 @@ def _index(obj: _Obj, index: dict[str, _Obj]) -> None:
 
 def _name_of(obj: _Obj, fallback: str | None = None) -> str | None:
     return obj.props.get("Name") or fallback
+
+
+def _resolve_udp(obj: _Obj, udp_name_by_def_id: dict[str, str]) -> dict[str, str] | None:
+    """Resolve an object's raw UDP instances to `{udp name: value}`. Each instance carries a
+    `name` attribute (the UDP definition's Name) and a def GUID; prefer the name, fall back to
+    the definition index, then to the raw GUID so a value is never lost. Last write wins on a
+    duplicate key. Returns None when the object has no UDPs (so `udp` stays unset)."""
+    if not obj.udp_raw:
+        return None
+    out: dict[str, str] = {}
+    for name_attr, def_id, value in obj.udp_raw:
+        key = name_attr or udp_name_by_def_id.get(def_id) or def_id
+        if key:
+            out[key] = value
+    return out or None
+
+
+def _truthy(v: str | None) -> bool:
+    """erwin boolean-ish props are text; treat 1/true/yes/y as True, else False."""
+    return (v or "").strip().lower() in {"1", "true", "yes", "y"}
 
 
 def _is_key_group_pk(kg: _Obj) -> bool:
@@ -301,11 +349,16 @@ def import_erwin(source: str | Path, *, project_name: str | None = None) -> Erwi
 
     # pass 1: entities (+ conceptual), attributes, key groups, domains, subject areas.
     domain_name_by_id: dict[str, str] = {}
+    udp_name_by_def_id: dict[str, str] = {}  # UDP_Definition GUID -> its Name (for instances)
     for obj in ordered:
         if obj.kind == "Domain":
             dname = _name_of(obj)
             if dname:
                 domain_name_by_id[obj.id] = dname
+        elif obj.kind == "UDP_Definition":
+            un = _name_of(obj)
+            if un:
+                udp_name_by_def_id[obj.id] = un
 
     ce_id_by_entity: dict[str, str] = {}  # erwin entity id -> Modelith conceptual id
     le_by_erwin_id: dict[str, LogicalEntity] = {}  # erwin entity id -> LogicalEntity
@@ -327,6 +380,7 @@ def import_erwin(source: str | Path, *, project_name: str | None = None) -> Erwi
                     obj.props.get("Logical_Data_Type") or obj.props.get("Physical_Data_Type")
                 ),
                 definition=obj.props.get("Definition"),
+                udp=_resolve_udp(obj, udp_name_by_def_id),
             )
         )
 
@@ -366,6 +420,7 @@ def import_erwin(source: str | Path, *, project_name: str | None = None) -> Erwi
                 domain=domain,
                 role="business_key" if is_key else "attribute",
                 nullable=_nullable(a.props.get("Null_Option_Type"), is_key),
+                udp=_resolve_udp(a, udp_name_by_def_id),
             )
             attrs.append(attr)
             attr_le_by_erwin_id[a.id] = attr.id
@@ -385,6 +440,7 @@ def import_erwin(source: str | Path, *, project_name: str | None = None) -> Erwi
             realises=ce.id,
             definition=obj.props.get("Definition"),
             attributes=attrs,
+            udp=_resolve_udp(obj, udp_name_by_def_id),
         )
         model.add(le)
         le_by_erwin_id[obj.id] = le
@@ -407,6 +463,7 @@ def import_erwin(source: str | Path, *, project_name: str | None = None) -> Erwi
                     name=_name_of(kg) or f"{_key_group_ir_type(kg)}_{ename}",
                     type=_key_group_ir_type(kg),
                     members=members,
+                    udp=_resolve_udp(kg, udp_name_by_def_id),
                 )
             )
 
@@ -423,9 +480,19 @@ def import_erwin(source: str | Path, *, project_name: str | None = None) -> Erwi
 
     # pass 2: relationships (+ detect subtype -> Category) and subject-area membership.
     _build_relationships(
-        ordered, index, model, le_by_erwin_id, attr_le_by_erwin_id, ce_id_by_entity, warnings
+        ordered,
+        index,
+        model,
+        le_by_erwin_id,
+        attr_le_by_erwin_id,
+        ce_id_by_entity,
+        udp_name_by_def_id,
+        warnings,
     )
     _build_subject_areas(ordered, model, ce_id_by_entity, warnings)
+
+    # naming conventions -> the project's NamingStandards (physical/logical case).
+    _apply_naming_options(ordered, model)
 
     # notes for what erwin had that we dropped
     if any(o.kind == "ER_Diagram" for o in ordered):
@@ -443,7 +510,14 @@ def import_erwin(source: str | Path, *, project_name: str | None = None) -> Erwi
 
 
 def _build_relationships(
-    ordered, index, model, le_by_erwin_id, attr_le_by_erwin_id, ce_id_by_entity, warnings
+    ordered,
+    index,
+    model,
+    le_by_erwin_id,
+    attr_le_by_erwin_id,
+    ce_id_by_entity,
+    udp_name_by_def_id,
+    warnings,
 ) -> None:
     subtype_children_by_parent: dict[str, list[str]] = {}
     subtype_discriminator_by_parent: dict[str, str] = {}  # parent erwin id -> attr erwin id
@@ -488,6 +562,7 @@ def _build_relationships(
                 identifying="identifying" in rtype,
                 verb_phrase=obj.props.get("Parent_To_Child_Verb_Phrase"),
                 inverse_verb_phrase=obj.props.get("Child_To_Parent_Verb_Phrase"),
+                udp=_resolve_udp(obj, udp_name_by_def_id),
             )
         )
 
@@ -552,6 +627,36 @@ def _build_subject_areas(ordered, model, ce_id_by_entity, warnings) -> None:
                 members=members,
             )
         )
+
+
+# erwin Case_Conversion_Type (a free string) -> Modelith NamingStandards case values. Only
+# the shapes NamingStandards allows are produced; anything else degrades to "any".
+def _physical_case(cc: str) -> str:
+    return {"UPPER": "upper_snake", "LOWER": "snake"}.get(cc, "any")
+
+
+def _logical_case(cc: str) -> str:
+    return {"LOWER": "snake"}.get(cc, "any")
+
+
+def _apply_naming_options(ordered, model) -> None:
+    """Map erwin Naming_Options onto the project's NamingStandards. An options object flagged
+    Is_Physical_Only sets physical_case; Is_Logical_Only sets logical_case; an unflagged one
+    sets both. erwin often ships one of each — iterating applies them independently. Missing or
+    unknown values degrade to "any" and never raise."""
+    for obj in ordered:
+        if obj.kind != "Naming_Options":
+            continue
+        cc = (obj.props.get("Case_Conversion_Type") or "").strip().upper()
+        physical_only = _truthy(obj.props.get("Is_Physical_Only"))
+        logical_only = _truthy(obj.props.get("Is_Logical_Only"))
+        if physical_only and not logical_only:
+            model.config.naming.physical_case = _physical_case(cc)
+        elif logical_only and not physical_only:
+            model.config.naming.logical_case = _logical_case(cc)
+        else:  # an unscoped options object governs both
+            model.config.naming.physical_case = _physical_case(cc)
+            model.config.naming.logical_case = _logical_case(cc)
 
 
 def _open(source: str | Path):
