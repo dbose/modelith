@@ -1,49 +1,111 @@
 import { useMemo, useState } from "react";
 import type { FieldChangeDoc, ModelDiffDoc, ObjectChangeDoc } from "../types";
+import {
+  type ObjectSelectionState,
+  type ReviewFilter,
+  REVIEW_FILTERS,
+  fieldKey,
+  filterCounts,
+  filterObjects,
+  objectSelectionState,
+} from "./reviewModel";
 
-/** The changed-object list and detail pane (plan §M1/M2).
+/** The changed-object list and detail pane (plan §M1/M2), Phase 1: display FILTERS +
+ * per-FIELD selection.
  *
  * One list of only what changed, grouped by object, each change a plain-language
- * sentence produced server-side (mdl_core.diff builds the label and detail, so
- * the CLI, the PR body and this screen never drift). */
+ * sentence produced server-side (mdl_core.diff builds the label and detail, so the CLI,
+ * the PR body and this screen never drift). Filters are a VIEW concern — they change what
+ * is visible, never what is selected (a hidden change is never silently dropped).
+ *
+ * Selection has two modes, chosen by which callback the host passes:
+ *  - per-FIELD (`onToggleField` / field-keyed `selected`): the new Phase 1 model — each
+ *    change is independently checkable and the object header shows a tri-state.
+ *  - per-OBJECT (`onToggle` / ulid-keyed `selected`): the original propose flow, kept so
+ *    existing callers work unchanged. */
 export function DiffView({
   diff,
   selectable,
   selected,
   onToggle,
+  onToggleField,
 }: {
   diff: ModelDiffDoc;
-  /** per-object checkboxes for selective proposal; off when a create_* is staged */
+  /** show selection checkboxes; off when a create_* is staged */
   selectable?: boolean;
+  /** the selected set — object ULIDs (per-object mode) or field keys (per-field mode) */
   selected?: Set<string>;
+  /** per-OBJECT toggle (original mode). When set, checkboxes are whole-object. */
   onToggle?: (ulid: string) => void;
+  /** per-FIELD toggle (Phase 1). When set, checkboxes are per-field with an object
+   *  tri-state header; takes precedence over onToggle. */
+  onToggleField?: (ulid: string, field: string) => void;
 }) {
+  const [filter, setFilter] = useState<ReviewFilter>("all");
+  const visible = useMemo(() => filterObjects(diff, filter), [diff, filter]);
+  const counts = useMemo(() => filterCounts(diff), [diff]);
   const [focus, setFocus] = useState<string | null>(diff.objects[0]?.ulid ?? null);
   const obj = useMemo(
-    () => diff.objects.find((o) => o.ulid === focus) ?? diff.objects[0] ?? null,
-    [diff, focus],
+    () => visible.find((o) => o.ulid === focus) ?? visible[0] ?? diff.objects[0] ?? null,
+    [visible, diff, focus],
   );
+  const perField = !!onToggleField;
 
   if (!diff.objects.length) {
     return <p className="sme-placeholder">No model changes against {diff.base.label}.</p>;
   }
 
   return (
-    <div className="rv-body">
-      <div className="rv-list">
-        {diff.objects.map((o) => (
-          <ObjectRow
-            key={o.ulid}
-            obj={o}
-            active={o.ulid === (obj?.ulid ?? "")}
-            checked={selected?.has(o.ulid) ?? true}
-            selectable={selectable}
-            onSelect={() => setFocus(o.ulid)}
-            onToggle={() => onToggle?.(o.ulid)}
-          />
-        ))}
+    <div className="rv-wrap">
+      {selectable !== undefined && (
+        <div className="rv-filters" role="tablist" aria-label="Filter changes">
+          {REVIEW_FILTERS.filter((f) => f.id === "all" || counts[f.id] > 0).map((f) => (
+            <button
+              key={f.id}
+              role="tab"
+              aria-selected={filter === f.id}
+              className={"rv-filter" + (filter === f.id ? " active" : "")}
+              onClick={() => setFilter(f.id)}
+            >
+              {f.label}
+              <span className="rv-filter-count">{counts[f.id]}</span>
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="rv-body">
+        <div className="rv-list">
+          {visible.length === 0 ? (
+            <p className="sme-placeholder">No changes match this filter.</p>
+          ) : (
+            visible.map((o) => (
+              <ObjectRow
+                key={o.ulid}
+                obj={o}
+                active={o.ulid === (obj?.ulid ?? "")}
+                selectable={selectable}
+                perField={perField}
+                objState={perField ? objectSelectionState(o, selected ?? new Set()) : undefined}
+                checkedObject={selected?.has(o.ulid) ?? true}
+                onSelect={() => setFocus(o.ulid)}
+                onToggleObject={() => onToggle?.(o.ulid)}
+                onToggleField={onToggleField}
+              />
+            ))
+          )}
+        </div>
+        <div className="rv-detail">
+          {obj && (
+            <Detail
+              obj={obj}
+              selectable={selectable}
+              perField={perField}
+              selected={selected}
+              onToggleField={onToggleField}
+            />
+          )}
+        </div>
       </div>
-      <div className="rv-detail">{obj && <Detail obj={obj} />}</div>
     </div>
   );
 }
@@ -57,27 +119,50 @@ function badge(o: ObjectChangeDoc): string {
 function ObjectRow({
   obj,
   active,
-  checked,
   selectable,
+  perField,
+  objState,
+  checkedObject,
   onSelect,
-  onToggle,
+  onToggleObject,
+  onToggleField,
 }: {
   obj: ObjectChangeDoc;
   active: boolean;
-  checked: boolean;
   selectable?: boolean;
+  perField: boolean;
+  /** the object's tri-state in per-field mode */
+  objState?: ObjectSelectionState;
+  /** whole-object checked, in per-object mode */
+  checkedObject: boolean;
   onSelect: () => void;
-  onToggle: () => void;
+  onToggleObject: () => void;
+  onToggleField?: (ulid: string, field: string) => void;
 }) {
+  // In per-field mode the header checkbox toggles ALL of the object's fields at once, and
+  // shows indeterminate when only some are selected.
+  const setIndeterminate = (el: HTMLInputElement | null) => {
+    if (el && perField) el.indeterminate = objState === "some";
+  };
+  const headerChecked = perField ? objState !== "none" : checkedObject;
+  const toggleHeader = () => {
+    if (!perField) return onToggleObject();
+    // toggle every field key of this object via the field callback
+    for (const f of obj.fields) onToggleField?.(obj.ulid, f.field);
+    for (const c of obj.children) for (const f of c.fields) onToggleField?.(obj.ulid, `${c.ulid}.${f.field}`);
+    if (!obj.fields.length && !obj.children.length) onToggleField?.(obj.ulid, "*");
+  };
+
   return (
     <div className={"rv-obj" + (active ? " active" : "")} onClick={onSelect}>
       <div className="rv-obj-head">
         {selectable && (
           <input
             type="checkbox"
-            checked={checked}
+            ref={setIndeterminate}
+            checked={headerChecked}
             onClick={(e) => e.stopPropagation()}
-            onChange={onToggle}
+            onChange={toggleHeader}
             aria-label={`include ${obj.name_before ?? obj.name_after}`}
           />
         )}
@@ -104,10 +189,38 @@ function ObjectRow({
   );
 }
 
-function Detail({ obj }: { obj: ObjectChangeDoc }) {
+function Detail({
+  obj,
+  selectable,
+  perField,
+  selected,
+  onToggleField,
+}: {
+  obj: ObjectChangeDoc;
+  selectable?: boolean;
+  perField?: boolean;
+  selected?: Set<string>;
+  onToggleField?: (ulid: string, field: string) => void;
+}) {
   const children = obj.children.flatMap((c) =>
-    c.fields.map((f) => ({ field: f, on: c.name_before ?? c.name_after ?? "" })),
+    c.fields.map((f) => ({ field: f, on: c.name_before ?? c.name_after ?? "", key: `${c.ulid}.${f.field}` })),
   );
+  // one selectable row per field, only when the host wired per-field selection
+  const pick = (field: string, node: React.ReactNode) => {
+    if (!selectable || !perField) return node;
+    const key = fieldKey(obj.ulid, field);
+    return (
+      <div className="rv-field-pick">
+        <input
+          type="checkbox"
+          checked={selected?.has(key) ?? true}
+          onChange={() => onToggleField?.(obj.ulid, field)}
+          aria-label={`include change: ${field}`}
+        />
+        <div className="rv-field-body">{node}</div>
+      </div>
+    );
+  };
   return (
     <>
       <h2>
@@ -119,10 +232,10 @@ function Detail({ obj }: { obj: ObjectChangeDoc }) {
         {obj.path && <span className="rv-src"> · {obj.path}</span>}
       </div>
       {obj.fields.map((f, i) => (
-        <FieldDiff key={f.field + i} f={f} />
+        <div key={f.field + i}>{pick(f.field, <FieldDiff f={f} />)}</div>
       ))}
-      {children.map(({ field, on }, i) => (
-        <FieldDiff key={"c" + i} f={field} on={on} />
+      {children.map(({ field, on, key }, i) => (
+        <div key={"c" + i}>{pick(key, <FieldDiff f={field} on={on} />)}</div>
       ))}
       {obj.severity === "breaking" && (
         <div className="rv-note">
