@@ -26,6 +26,7 @@ import { ModelWorkspace } from "./ModelWorkspace";
 import { SubjectAreaEditor } from "./SubjectAreaEditor";
 import { ProposalsList } from "./ProposalsList";
 import { ProposeDialog } from "./ProposeDialog";
+import { fieldKey } from "./reviewModel";
 import { ReviewScreen } from "./ReviewScreen";
 import { TermCard } from "./TermCard";
 import { TermEditor } from "./TermEditor";
@@ -360,11 +361,12 @@ export function SmeApp() {
           user={user}
           selectable={selectable}
           excluded={excluded}
-          onToggleObject={(u) =>
+          onToggleField={(ulid, field) =>
             setExcluded((prev) => {
               const next = new Set(prev);
-              if (next.has(u)) next.delete(u);
-              else next.add(u);
+              const key = fieldKey(ulid, field);
+              if (next.has(key)) next.delete(key);
+              else next.add(key);
               return next;
             })
           }

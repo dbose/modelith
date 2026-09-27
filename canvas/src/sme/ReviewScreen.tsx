@@ -2,6 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useState } from "react";
 import { fetchClassification, fetchConflicts, fetchGitContext, fetchModelDiff } from "../api";
 import type { ClassificationDoc, ConflictDoc, GitContext, ModelDiffDoc } from "../types";
 import { DiffView } from "./DiffView";
+import { allFieldKeys } from "./reviewModel";
 
 const ModelDiagram = lazy(() =>
   import("./ModelDiagram").then((m) => ({ default: m.ModelDiagram })),
@@ -19,9 +20,9 @@ export function ReviewScreen({
   user,
   onBack,
   onSubmit,
-  /** ULIDs the SME has excluded from this proposal (selective proposal) */
+  /** field keys the SME has excluded from this proposal (per-field selective review) */
   excluded,
-  onToggleObject,
+  onToggleField,
   selectable,
 }: {
   stagedDiff?: ModelDiffDoc | null;
@@ -31,8 +32,9 @@ export function ReviewScreen({
   user: string;
   onBack: () => void;
   onSubmit: (cl: ClassificationDoc | null) => void;
+  /** excluded (ulid, field) keys; a field not in the set is included */
   excluded: Set<string>;
-  onToggleObject: (ulid: string) => void;
+  onToggleField: (ulid: string, field: string) => void;
   selectable: boolean;
 }) {
   const [diff, setDiff] = useState<ModelDiffDoc | null>(null);
@@ -82,7 +84,8 @@ export function ReviewScreen({
   }
   if (!diff) return <div className="sme-splash">◮ reading your changes…</div>;
 
-  const selected = new Set(diff.objects.map((o) => o.ulid).filter((u) => !excluded.has(u)));
+  // selected = every field key EXCEPT the ones the SME unticked (default: all included)
+  const selected = new Set([...allFieldKeys(diff)].filter((k) => !excluded.has(k)));
 
   return (
     <div className="rv-shell">
@@ -92,7 +95,7 @@ export function ReviewScreen({
           diff={diff}
           selectable={selectable}
           selected={selected}
-          onToggle={onToggleObject}
+          onToggleField={onToggleField}
         />
       ) : (
         <Suspense fallback={<div className="sme-splash">◮ drawing the model…</div>}>
