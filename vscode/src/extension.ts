@@ -651,20 +651,37 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
       }
       const file = fileUri.fsPath;
 
-      // No model here yet → confirm we're bootstrapping a fresh project, and honour the
-      // configured scaffold layout / dbt target.
+      // No model here yet → let the user pick what to scaffold around the import (the
+      // configured modelith.import.scaffold seeds the default pick), honouring dbt target.
       const cfg = vscode.workspace.getConfiguration("modelith");
-      const scaffold = cfg.get<string>("import.scaffold") || "model";
       const dbtTarget = cfg.get<string>("import.dbtTarget") || "duckdb_dev";
+      let scaffold = cfg.get<string>("import.scaffold") || "model";
       if (!existingModel) {
-        const GO = scaffold === "workspace" ? "Scaffold workspace & import" : "Scaffold & import";
-        const choice = await vscode.window.showInformationMessage(
-          "No Modelith project here yet. Import the erwin model and scaffold a new " +
-            `project (layout: ${scaffold})?`,
-          { modal: true },
-          GO,
-        );
-        if (choice !== GO) return;
+        const items: (vscode.QuickPickItem & { value: string })[] = [
+          {
+            label: "Model only",
+            value: "model",
+            description: "a runnable model repo — generate dbt separately with `mdl generate`",
+          },
+          {
+            label: "Workspace",
+            value: "workspace",
+            description: "also a dbt project (or reuse one here), CODEOWNERS, .code-workspace",
+          },
+          {
+            label: "Objects only",
+            value: "none",
+            description: "just the model YAMLs, no project skeleton",
+          },
+        ];
+        // Float the configured default to the top so Enter accepts it.
+        items.sort((a, b) => (a.value === scaffold ? -1 : b.value === scaffold ? 1 : 0));
+        const pick = await vscode.window.showQuickPick(items, {
+          title: "No Modelith project here — what should the erwin import scaffold?",
+          placeHolder: `Default: ${scaffold} (from modelith.import.scaffold)`,
+        });
+        if (!pick) return;
+        scaffold = pick.value;
       }
 
       // Default the target at the workspace's model dir; the picker confirms/redirects

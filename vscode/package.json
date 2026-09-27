@@ -2,7 +2,7 @@
   "name": "modelith-vscode",
   "displayName": "Modelith",
   "description": "Ontology-anchored, git-native data modeling for dbt — validate, generate, drift, and the Modelith canvas inside VS Code.",
-  "version": "0.3.15",
+  "version": "0.3.16",
   "publisher": "BosonResearch",
   "license": "Apache-2.0",
   "icon": "icon.png",
@@ -391,7 +391,7 @@
             "Also the transform/warehouse dbt project, CODEOWNERS and .code-workspace (collaboration topology).",
             "Model objects only, no surrounding skeleton."
           ],
-          "markdownDescription": "When importing an erwin XML into an EMPTY workspace, what to scaffold around the model. Ignored when a Modelith project already exists (its layout is respected). Persisted to `mdl-project.yaml` so a re-import reproduces it."
+          "markdownDescription": "Default selection in the layout picker shown when you import an erwin XML into an EMPTY workspace. `model` scaffolds a model-only project (generate dbt separately with `mdl generate`); `workspace` also lays a dbt project (or reuses one already in the folder); `none` writes just the model YAMLs. Ignored when a Modelith project already exists (its layout is respected). Persisted to `mdl-project.yaml` so a re-import reproduces it."
         },
         "modelith.import.dbtTarget": {
           "type": "string",

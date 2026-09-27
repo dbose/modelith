@@ -104,6 +104,33 @@ def test_import_erwin_workspace_layout(tmp_path):
     assert runner.invoke(app, ["validate", "-m", str(out / "model")]).exit_code == 0
 
 
+def test_import_erwin_workspace_reuses_existing_dbt_project(tmp_path):
+    # a workspace that already has a dbt project must NOT get a second dumb DuckDB one
+    xml = tmp_path / "trading.xml"
+    xml.write_text(_erwin_xml())
+    out = tmp_path / "repo"
+    out.mkdir()
+    # the user's real dbt project lives at dbt/ with a Snowflake-ish profile
+    (out / "dbt").mkdir()
+    (out / "dbt" / "dbt_project.yml").write_text(
+        "name: analytics\nversion: '1.0.0'\nprofile: analytics\n"
+    )
+    r = runner.invoke(
+        app, ["import", "erwin", str(xml), "-o", str(out), "--scaffold", "workspace"]
+    )
+    assert r.exit_code == 0, r.output
+    # NO throwaway transform/warehouse project/profiles was scaffolded
+    assert not (out / "transform" / "warehouse" / "dbt_project.yml").exists()
+    assert not (out / "transform" / "warehouse" / "profiles.yml").exists()
+    # the model is wired to the real dbt project, not a phantom DuckDB one
+    from mdl_core.yaml_io import load_file
+
+    cfg = load_file(out / "model" / "mdl-project.yaml")
+    assert dict(cfg["scaffold"])["dbt_project_dir"] == "dbt"
+    assert "existing dbt project" in r.output
+    assert runner.invoke(app, ["validate", "-m", str(out / "model")]).exit_code == 0
+
+
 def test_import_erwin_none_layout_no_skeleton(tmp_path):
     # --scaffold none → model objects only, no .mdl skeleton (pre-scaffold behaviour)
     xml = tmp_path / "trading.xml"

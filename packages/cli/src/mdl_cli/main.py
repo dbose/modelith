@@ -296,7 +296,13 @@ def lint(
 def generate(
     model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
     target: str = typer.Option(None, "--target", "-t", help="Physical target"),
-    out: Path = typer.Option(Path("target/dbt"), "--out", "-o", help="dbt project output dir"),
+    out: Path = typer.Option(
+        None,
+        "--out",
+        "-o",
+        help="dbt project output dir. Defaults to the project's scaffold.dbt_project_dir "
+        "when set (so it follows where the project was scaffolded), else target/dbt.",
+    ),
     inline: bool = typer.Option(False, "--inline", help="Inline pattern SQL instead of macros"),
     emit_contract: bool = typer.Option(
         False, "--emit-contract", help="Also write an ODCS datacontract.yaml at the model root"
@@ -321,6 +327,12 @@ def generate(
     """
     repo = _load(model_dir)
     tgt = target or repo.model.config.dbt_target or "duckdb_dev"
+    # Where to write: an explicit -o wins; otherwise follow where the project was
+    # scaffolded (scaffold.dbt_project_dir, recorded RELATIVE to the model dir), else the
+    # historical target/dbt default (relative to CWD, as before).
+    if out is None:
+        scaffold_dir = repo.model.config.scaffold.dbt_project_dir
+        out = (model_dir / scaffold_dir) if scaffold_dir else Path("target/dbt")
     emitter = DbtEmitter(repo.model, tgt, inline=inline)
     result = emitter.generate(out, write=not dry_run)
 
@@ -2534,6 +2546,111 @@ def reverse_config_import(
     typer.secho(f"imported reverse: config from {src}", fg=typer.colors.GREEN)
 
 
+# --- project config: read/write mdl-project.yaml keys from the CLI -----------------
+# The general config doorway (the `reverse:` block has its own richer `reverse-config`
+# surface above; this handles the rest — dbt_target, platform_targets, the scaffold
+# block, etc.). Comment-preserving, and the whole doc is re-validated through
+# ProjectConfig before writing so a bad set is rejected, not half-applied.
+config_app = typer.Typer(help="Read and write mdl-project.yaml config keys.")
+app.add_typer(config_app, name="config")
+
+# Known keys and how a CLI string value coerces onto them. Anything not listed is set
+# as a plain string (still validated against ProjectConfig, so a wrong type is caught).
+_CONFIG_LIST_KEYS = {"platform_targets"}
+
+
+def _coerce_config_value(dotted: str, raw: str):
+    """Turn a CLI string into the right shape for a known key: a comma-split list for
+    list-valued keys, an empty string clears (None) for the scaffold's optional dir."""
+    if dotted in _CONFIG_LIST_KEYS:
+        return [v.strip() for v in raw.split(",") if v.strip()]
+    if dotted == "scaffold.dbt_project_dir" and raw == "":
+        return None
+    return raw
+
+
+def _dig(doc, dotted: str):
+    """Read a dotted key from a loaded doc, or None if any segment is missing."""
+    cur = doc
+    for part in dotted.split("."):
+        if not hasattr(cur, "get") or part not in cur:
+            return None
+        cur = cur[part]
+    return cur
+
+
+def _set_config_key(doc, dotted: str, value) -> None:
+    """Set a dotted key on a loaded (comment-preserving) doc, creating intermediate maps."""
+    parts = dotted.split(".")
+    cur = doc
+    for part in parts[:-1]:
+        if part not in cur or not hasattr(cur[part], "get"):
+            cur[part] = {}
+        cur = cur[part]
+    cur[parts[-1]] = value
+
+
+@config_app.command("get")
+def config_get(
+    key: str = typer.Argument(
+        None, help="Dotted key, e.g. scaffold.dbt_project_dir. Omit to print the whole config."
+    ),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+) -> None:
+    """Print the project config, or a single dotted key (scaffold.dbt_project_dir, dbt_target…)."""
+    from mdl_core.yaml_io import dump_str, load_file
+
+    proj_path = model_dir / "mdl-project.yaml"
+    if not proj_path.exists():
+        typer.secho(f"no mdl-project.yaml in {model_dir}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+    doc = load_file(proj_path)
+    if key is None:
+        typer.echo(dump_str(doc).rstrip())
+        return
+    val = _dig(doc, key)
+    if val is None:
+        typer.secho(f"{key} is not set", fg=typer.colors.YELLOW)
+        return
+    typer.echo(dump_str(val).rstrip() if hasattr(val, "get") or isinstance(val, list) else str(val))
+
+
+@config_app.command("set")
+def config_set(
+    key: str = typer.Argument(..., help="Dotted key, e.g. scaffold.dbt_project_dir"),
+    value: str = typer.Argument(..., help="New value. Comma-separated for list keys; '' clears."),
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+) -> None:
+    """Set an mdl-project.yaml config key (comment-preserving). The whole config is
+    re-validated through ProjectConfig before writing, so a bad key or wrong type is
+    rejected rather than half-applied.
+
+    Examples:
+      mdl config set scaffold.dbt_project_dir transform/warehouse
+      mdl config set dbt_target snowflake_prod
+      mdl config set platform_targets duckdb_dev,snowflake_prod
+    """
+    from mdl_core.ir import ProjectConfig
+    from mdl_core.yaml_io import dump_file, load_file
+
+    proj_path = model_dir / "mdl-project.yaml"
+    if not proj_path.exists():
+        typer.secho(f"no mdl-project.yaml in {model_dir}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(1)
+    doc = load_file(proj_path)
+    _set_config_key(doc, key, _coerce_config_value(key, value))
+    # validate the resulting doc before writing — reject a bad set wholesale.
+    try:
+        ProjectConfig.model_validate(dict(doc))
+    except Exception as e:  # noqa: BLE001 - surface the validation error, don't half-write
+        typer.secho(
+            f"resulting config is invalid — not written ({e})", fg=typer.colors.RED, err=True
+        )
+        raise typer.Exit(1) from e
+    dump_file(proj_path, doc)
+    typer.secho(f"set {key} = {value!r}", fg=typer.colors.GREEN)
+
+
 @emit_app.command("semantic")
 def emit_semantic(
     fmt: str = typer.Option("metricflow", "--format", help="metricflow|osi"),
@@ -2733,10 +2850,12 @@ def import_erwin_cmd(
     scaffold_layout: str = typer.Option(
         "model",
         "--scaffold",
-        help="When --out is EMPTY, bootstrap a full project around the import: "
-        "`model` (a runnable model repo — .gitignore, .mdl/lock.yaml, .mdl/state/), "
-        "`workspace` (also the transform/warehouse dbt project, CODEOWNERS, "
-        ".code-workspace — collab §2.1), or `none` (model objects only, no skeleton). "
+        help="When --out is EMPTY, what to bootstrap around the imported model. "
+        "`model` (DEFAULT) — a runnable model repo only (.gitignore, .mdl/lock.yaml, "
+        ".mdl/state/); generate the dbt project separately with `mdl generate`. "
+        "`workspace` — also lay a dbt project (transform/warehouse, or reuse one already "
+        "in the folder), CODEOWNERS and a .code-workspace (collab §2.1). "
+        "`none` — model object YAMLs only, no skeleton. "
         "Ignored when --out already holds a project (that layout is respected).",
     ),
     dbt_target: str = typer.Option(
@@ -2758,13 +2877,14 @@ def import_erwin_cmd(
 ) -> None:
     """Import a real erwin XML export into a Modelith model (spec §6.4).
 
-    Default: write a fresh model at --out (like `mdl reverse` — an erwin export is a whole
-    model). Into an EMPTY --out it also scaffolds a runnable project around the objects
-    (`--scaffold model|workspace|none`, persisted to mdl-project.yaml so a re-import
-    reproduces the layout). If --out already holds a project the existing structure is
-    RESPECTED — no re-scaffold, user config preserved — and it diverts to a `-reversed-v<N>`
-    sibling unless --force. With --apply, merge the erwin objects into the existing model at
-    --out through the same validated mutation engine manual edits use."""
+    Default: write a fresh, model-only project at --out (like `mdl reverse` — an erwin export
+    is a whole model). Producing the dbt project is a SEPARATE step (`mdl generate`, or
+    `--scaffold workspace` to lay the dbt shell here at import time). The chosen layout is
+    persisted to mdl-project.yaml (scaffold:) so `mdl generate` and a re-import follow it. If
+    --out already holds a project the existing structure is RESPECTED — no re-scaffold, user
+    config preserved — and it diverts to a `-reversed-v<N>` sibling unless --force. With
+    --apply, merge the erwin objects into the existing model at --out through the same
+    validated mutation engine manual edits use."""
     # streaming reader handles 7-10MB files; pass the PATH so it reads the file directly.
     result = import_erwin(file, project_name=name)
     for w in result.warnings:
@@ -2799,15 +2919,27 @@ def import_erwin_cmd(
 
     from mdl_cli.scaffold import bootstrap_project
 
-    write_target, scaffolded = bootstrap_project(
+    boot = bootstrap_project(
         out,
         project_name=name or _project_name_from_path(out),
         layout=scaffold_layout,
         dbt_target=dbt_target,
         existing=existing,
     )
-    for line in scaffolded:
+    write_target = boot.model_root
+    for line in boot.written:
         typer.secho(f"  scaffolded {line}", fg=typer.colors.GREEN)
+    reused_dbt = (
+        not existing
+        and scaffold_layout == "workspace"
+        and boot.dbt_project_dir not in (None, "transform/warehouse")
+    )
+    if reused_dbt:
+        typer.secho(
+            f"  found an existing dbt project at {boot.dbt_project_dir}; wiring the model "
+            "to it instead of scaffolding a DuckDB one",
+            fg=typer.colors.CYAN,
+        )
 
     # Stamp the config so the layout persists (writer._USER_OWNED_CONFIG keeps it on a
     # re-import). Only on a fresh scaffold — an existing project owns its own config.
@@ -2815,8 +2947,9 @@ def import_erwin_cmd(
         result.model.config.dbt_target = dbt_target
         result.model.config.platform_targets = [dbt_target]
         result.model.config.scaffold.layout = scaffold_layout
-        if scaffold_layout == "workspace":
-            result.model.config.scaffold.dbt_project_dir = "transform/warehouse"
+        # Point the config at the real dbt project (a discovered one, else the scaffolded
+        # transform/warehouse) so we never wire to a phantom DuckDB.
+        result.model.config.scaffold.dbt_project_dir = boot.dbt_project_dir
 
     if not force:
         write_target = _nonclobbering_out(write_target)
