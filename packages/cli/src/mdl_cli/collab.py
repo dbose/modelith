@@ -151,12 +151,12 @@ _WORKSPACE = """\
 {{
   "folders": [
     {{ "name": "model", "path": "{model}" }},
-    {{ "name": "transform", "path": "transform/warehouse" }},
+    {{ "name": "transform", "path": "{dbt}" }},
     {{ "name": "repo", "path": "." }}
   ],
   "settings": {{
     "modelith.modelDir": "{model}",
-    "modelith.dbtProjectDir": "transform/warehouse"
+    "modelith.dbtProjectDir": "{dbt}"
   }}
 }}
 """
@@ -170,6 +170,23 @@ macro-paths: ["macros"]
 target-path: target
 """
 
+# A zero-setup, credential-free local profile (DuckDB, file-based) so the generated
+# warehouse can `dbt build` immediately. The profile name matches `profile:` in the
+# dbt_project stub. Point it at your real warehouse (and set env vars) when ready —
+# Modelith never writes a credential. `{target}` names the output the model config uses.
+_PROFILES_STUB = """\
+# Local dbt profile — DuckDB, file-based, zero setup. Swap for your warehouse when ready
+# (`mdl reverse --init-profile <adapter>` scaffolds a credential-free template). The
+# profile name must match `profile:` in dbt_project.yml (warehouse).
+warehouse:
+  target: {target}
+  outputs:
+    {target}:
+      type: duckdb
+      path: warehouse.duckdb   # created on first run, relative to this dir
+      threads: 4
+"""
+
 
 def scaffold_workspace(root: Path, project_name: str, scaffold_model) -> list[str]:
     """One repo, two sibling roots (§2.1): model/ + transform/warehouse/, with
@@ -181,12 +198,41 @@ def scaffold_workspace(root: Path, project_name: str, scaffold_model) -> list[st
     scaffold_model(root / model_root, project_name=project_name)
     written.append(f"{model_root}/ (model repo)")
 
-    tw = root / "transform" / "warehouse"
-    (tw / "models" / "staging").mkdir(parents=True, exist_ok=True)
-    (tw / "macros").mkdir(parents=True, exist_ok=True)
-    if not (tw / "dbt_project.yml").exists():
-        (tw / "dbt_project.yml").write_text(_DBT_PROJECT_STUB)
-    written.append("transform/warehouse/ (dbt project)")
+    written += scaffold_workspace_skeleton(root, project_name)
+    return written
+
+
+def scaffold_workspace_skeleton(
+    root: Path,
+    project_name: str,
+    *,
+    dbt_target: str = "duckdb_dev",
+    existing_dbt: bool = False,
+    dbt_project_dir: str = "transform/warehouse",
+) -> list[str]:
+    """The collaboration topology WITHOUT scaffolding a seed model under model/ (§2.1):
+    the transform/warehouse dbt project, ontologies/, CODEOWNERS, the .code-workspace and
+    the git merge drivers. Used by an import that supplies its own model objects, so it
+    lays down the plumbing and leaves model/ for the importer to write into. Idempotent.
+
+    ``existing_dbt`` True means the workspace ALREADY has a dbt project (found elsewhere),
+    so we do NOT scaffold a throwaway transform/warehouse DuckDB project or a profiles.yml
+    on top of it — the model is wired to the real project instead."""
+    written: list[str] = []
+    model_root = "model"
+
+    if not existing_dbt:
+        tw = root / "transform" / "warehouse"
+        (tw / "models" / "staging").mkdir(parents=True, exist_ok=True)
+        (tw / "macros").mkdir(parents=True, exist_ok=True)
+        if not (tw / "dbt_project.yml").exists():
+            (tw / "dbt_project.yml").write_text(_DBT_PROJECT_STUB)
+        written.append("transform/warehouse/ (dbt project)")
+        if not (tw / "profiles.yml").exists():
+            (tw / "profiles.yml").write_text(_PROFILES_STUB.format(target=dbt_target))
+        written.append("transform/warehouse/profiles.yml")
+    else:
+        written.append("(reusing the existing dbt project — no DuckDB project scaffolded)")
 
     (root / "ontologies" / "industry").mkdir(parents=True, exist_ok=True)
 
@@ -198,7 +244,7 @@ def scaffold_workspace(root: Path, project_name: str, scaffold_model) -> list[st
 
     ws = root / f"{project_name}.code-workspace"
     if not ws.exists():
-        ws.write_text(_WORKSPACE.format(model=model_root))
+        ws.write_text(_WORKSPACE.format(model=model_root, dbt=dbt_project_dir))
         written.append(ws.name)
 
     written += ensure_git_hooks(root, model_root)

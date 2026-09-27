@@ -467,15 +467,28 @@ foreign keys, relationships (with their verb phrases), subtype/supertype categor
 subject areas, and domains, keeping the physical names alongside the logical ones:
 
 ```bash
-mdl import erwin your-model.xml -o model     # writes a fresh model
-mdl import erwin your-model.xml -o model --apply   # or merge into an existing one
+mdl import erwin your-model.xml -o proj     # empty folder -> a runnable model-only project
+mdl import erwin your-model.xml -o proj --scaffold workspace   # also lay a dbt project
+mdl import erwin your-model.xml -o model --apply   # or merge into a model you already have
 ```
+
+Point it at an **empty folder** and it bootstraps a model project around the import — the
+`.gitignore`, the pinned `.mdl/lock.yaml`, a populated `mdl-project.yaml` — so there is no
+separate `mdl init` step. Import owns the **logical model**; producing the dbt project is a
+separate step (`mdl generate`), matching the rest of the tool. `--scaffold workspace` lays
+the dbt project at import time too — `transform/warehouse` with a zero-setup DuckDB
+`profiles.yml`, or, if the folder **already** has a dbt project, it reuses that one instead of
+scaffolding a throwaway. The chosen layout and the dbt project location are recorded in
+`mdl-project.yaml` (under `scaffold:`); `mdl generate` then defaults its output there, and you
+can change it any time with `mdl config set scaffold.dbt_project_dir <dir>`. If the folder
+already holds a Modelith project the existing structure and config are respected (no
+re-scaffold).
 
 It parses the export by streaming, so 7-10MB files import without a memory spike, and it
 degrades gracefully: anything Modelith doesn't model (views, ER-diagram layout, physical
 transforms) is skipped with a note rather than a failure. In VS Code it's on the palette
 (**Modelith: Import Erwin XML**), a button in the Reverse Review panel, and a right-click
-on any `.xml` file.
+on any `.xml` file — and in an empty workspace it offers a layout picker before scaffolding.
 
 ## Reverse engineering a real warehouse
 

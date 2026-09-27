@@ -623,8 +623,21 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
   // model (like a reverse), so this WRITES a model dir via the CLI (10MB-safe, server-
   // free) and opens it — not a canvas paste. Reachable from the palette, the Reverse
   // Review title bar, and an .xml right-click (which passes the clicked URI).
-  cmd("modelith.importErwin", (arg: unknown) =>
-    withModelDir(async (dir) => {
+  cmd("modelith.importErwin", async (arg: unknown) => {
+    // Unlike the other CLI commands, erwin import does NOT require an existing model:
+    // importing into an empty workspace is the migration on-ramp. When a model exists
+    // we use it as the working dir; otherwise we bootstrap a new project at the
+    // workspace root (the CLI scaffolds the skeleton — see `--scaffold`).
+    const existingModel = await findModelDir();
+    const wsRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const dir = existingModel ?? wsRoot;
+    if (!dir) {
+      void vscode.window.showWarningMessage(
+        "Modelith: open a folder in VS Code first, then import the erwin XML into it.",
+      );
+      return;
+    }
+    {
       let fileUri = arg instanceof vscode.Uri ? arg : undefined;
       if (!fileUri) {
         const picked = await vscode.window.showOpenDialog({
@@ -637,12 +650,47 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
         fileUri = picked[0];
       }
       const file = fileUri.fsPath;
+
+      // No model here yet → let the user pick what to scaffold around the import (the
+      // configured modelith.import.scaffold seeds the default pick), honouring dbt target.
+      const cfg = vscode.workspace.getConfiguration("modelith");
+      const dbtTarget = cfg.get<string>("import.dbtTarget") || "duckdb_dev";
+      let scaffold = cfg.get<string>("import.scaffold") || "model";
+      if (!existingModel) {
+        const items: (vscode.QuickPickItem & { value: string })[] = [
+          {
+            label: "Model only",
+            value: "model",
+            description: "a runnable model repo — generate dbt separately with `mdl generate`",
+          },
+          {
+            label: "Workspace",
+            value: "workspace",
+            description: "also a dbt project (or reuse one here), CODEOWNERS, .code-workspace",
+          },
+          {
+            label: "Objects only",
+            value: "none",
+            description: "just the model YAMLs, no project skeleton",
+          },
+        ];
+        // Float the configured default to the top so Enter accepts it.
+        items.sort((a, b) => (a.value === scaffold ? -1 : b.value === scaffold ? 1 : 0));
+        const pick = await vscode.window.showQuickPick(items, {
+          title: "No Modelith project here — what should the erwin import scaffold?",
+          placeHolder: `Default: ${scaffold} (from modelith.import.scaffold)`,
+        });
+        if (!pick) return;
+        scaffold = pick.value;
+      }
+
       // Default the target at the workspace's model dir; the picker confirms/redirects
       // (reusing the reverse no-clobber "update in place vs new folder" flow).
       const res = await resolveReverseTarget(await bestDefaultTarget(dir), undefined);
       if (!res) return;
       const bin = await findMdl(dir);
       const args = ["import", "erwin", file, "-o", res.target];
+      if (!existingModel) args.push("--scaffold", scaffold, "--dbt-target", dbtTarget);
       if (res.force) args.push("--force");
       await vscode.window.withProgress(
         { location: vscode.ProgressLocation.Notification, title: "Modelith: importing erwin XML…" },
@@ -657,9 +705,22 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
           // the CLI diverts on an existing model; read the actual written dir from the output
           const diverted = /reversing into (.+?) instead/.exec(r.stdout);
           const writtenRel = diverted ? diverted[1].trim() : res.target;
-          const writtenDir = path.isAbsolute(writtenRel)
+          let writtenDir = path.isAbsolute(writtenRel)
             ? writtenRel
             : path.join(dir, writtenRel);
+          // A workspace scaffold puts the model under model/; the mdl-project.yaml lives
+          // there, so point the panels (and modelith.modelDir) at it, not the repo root.
+          if (!existingModel && scaffold === "workspace") {
+            writtenDir = path.join(writtenDir, "model");
+          }
+          // A fresh scaffold with no prior active model: record it so findModelDir and the
+          // panels resolve it everywhere (mirrors modelith.setActiveModel).
+          if (!existingModel && wsRoot) {
+            const rel = path.relative(wsRoot, writtenDir);
+            await vscode.workspace
+              .getConfiguration("modelith")
+              .update("modelDir", rel || ".", vscode.ConfigurationTarget.Workspace);
+          }
           const notes = [...r.stdout.matchAll(/note: (.+)/g)].map((m) => m[1]);
           await Promise.all([reverse.refresh(writtenDir), statusModel.refresh(writtenDir)]);
           await canvas.open(writtenDir);
@@ -669,8 +730,8 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
           );
         },
       );
-    }),
-  );
+    }
+  });
 
   cmd("modelith.stopServer", () => canvas.stop());
 

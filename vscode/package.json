@@ -2,7 +2,7 @@
   "name": "modelith-vscode",
   "displayName": "Modelith",
   "description": "Ontology-anchored, git-native data modeling for dbt — validate, generate, drift, and the Modelith canvas inside VS Code.",
-  "version": "0.3.14",
+  "version": "0.3.16",
   "publisher": "BosonResearch",
   "license": "Apache-2.0",
   "icon": "icon.png",
@@ -377,6 +377,26 @@
           "type": "boolean",
           "default": true,
           "description": "Run `mdl validate` when a model YAML file is saved and surface MDL-* diagnostics in Problems."
+        },
+        "modelith.import.scaffold": {
+          "type": "string",
+          "enum": [
+            "model",
+            "workspace",
+            "none"
+          ],
+          "default": "model",
+          "enumDescriptions": [
+            "A runnable model repo (.gitignore, .mdl/lock.yaml, .mdl/state/) around the imported objects.",
+            "Also the transform/warehouse dbt project, CODEOWNERS and .code-workspace (collaboration topology).",
+            "Model objects only, no surrounding skeleton."
+          ],
+          "markdownDescription": "Default selection in the layout picker shown when you import an erwin XML into an EMPTY workspace. `model` scaffolds a model-only project (generate dbt separately with `mdl generate`); `workspace` also lays a dbt project (or reuses one already in the folder); `none` writes just the model YAMLs. Ignored when a Modelith project already exists (its layout is respected). Persisted to `mdl-project.yaml` so a re-import reproduces it."
+        },
+        "modelith.import.dbtTarget": {
+          "type": "string",
+          "default": "duckdb_dev",
+          "description": "dbt target/profile name written into a freshly scaffolded project's config (and the workspace profiles.yml). DuckDB by default so the generated warehouse builds with no setup."
         }
       }
     },

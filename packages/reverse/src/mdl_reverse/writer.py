@@ -24,6 +24,9 @@ _USER_OWNED_CONFIG = (
     "ontology_stack",
     "platform_targets",
     "kg_base_iri",
+    # How the project was bootstrapped (import/init layout). Recorded once; a re-import
+    # must reproduce, not rewrite, it.
+    "scaffold",
 )
 
 
