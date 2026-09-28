@@ -93,7 +93,9 @@ def write_model(model: Model, root: Path) -> list[str]:
             if data.get(key) == []:
                 data.pop(key)
         # `kind` is an enum -> its value; pydantic mode="json" already handles it.
-        rel = _unique(rel)
+        # Keep `rel` POSIX-style so it matches _prune_stale's as_posix() comparison on
+        # every OS (a backslash rel on Windows would look stale and be deleted).
+        rel = _unique(rel).replace("\\", "/")
         path = root / rel
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(dump_str(data), encoding="utf-8")
@@ -148,7 +150,12 @@ def _prune_stale(root: Path, written: set[str]) -> None:
         if not base.is_dir():
             continue
         for path in base.rglob("*.yaml"):
-            rel = str(path.relative_to(root))
+            # Compare with forward slashes: `written` holds POSIX-style rel paths (the
+            # dump() keys), but path.relative_to(root) stringifies with the OS separator —
+            # backslash on Windows. Without normalising, EVERY just-written file looked
+            # stale on Windows and was deleted (import reported N entities, disk ended up
+            # empty). as_posix() makes the comparison separator-agnostic.
+            rel = path.relative_to(root).as_posix()
             if rel not in written:
                 try:
                     path.unlink()
