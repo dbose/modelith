@@ -8,9 +8,9 @@ subsequent `mdl validate` / `mdl generate` treats it like any authored repo.
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
+from mdl_core.fsnames import fs_slug, unique_namer
 from mdl_core.ir import Model
 from mdl_core.yaml_io import dump_str, load_file
 
@@ -66,26 +66,12 @@ def _write_project_config(model: Model, root: Path) -> None:
 def write_model(model: Model, root: Path) -> list[str]:
     root = Path(root)
     written: list[str] = []
-    used: set[str] = set()  # rel paths already taken this write, for collision-avoidance
+    # collision-avoidance across this write (case-insensitive, POSIX-normalised)
+    _unique = unique_namer()
 
     # Collection fields that default to []: `exclude_none` does not drop an empty
     # list, so a reversed model would carry a noise `members: []` on every object.
     _EMPTY_OK = ("members", "synonyms", "subtypes", "ontology_refs", "values")
-
-    def _unique(rel: str) -> str:
-        """Disambiguate a filename collision. Slugging is lossy (two names can map to one
-        filename, e.g. 'Order Line' and 'Order/Line' -> 'order_line'), so a clash would
-        silently overwrite one object with another. Append -2, -3… on the stem instead."""
-        if rel not in used:
-            used.add(rel)
-            return rel
-        stem, dot, ext = rel.rpartition(".")
-        n = 2
-        while f"{stem}-{n}{dot}{ext}" in used:
-            n += 1
-        cand = f"{stem}-{n}{dot}{ext}"
-        used.add(cand)
-        return cand
 
     def dump(rel: str, obj) -> None:
         data = obj.model_dump(by_alias=True, exclude_none=True, mode="json")
@@ -170,18 +156,7 @@ def _prune_stale(root: Path, written: set[str]) -> None:
                     pass
 
 
-# Characters illegal in a Windows filename (< > : " / \ | ? *) plus control chars. A
-# reversed/imported object name is used verbatim as a filename, and an erwin export can
-# carry names like "<root>" or "Order:Line" that crash open() on Windows (OSError 22) and
-# make a portable git repo impossible. Map every unsafe run to a single underscore.
-_UNSAFE_FS = re.compile(r'[<>:"/\\|?*\x00-\x1f]+')
-
-
-def _slug(name: str) -> str:
-    """A filesystem-safe, portable slug for a filename: lowercased, spaces and any
-    Windows-illegal characters collapsed to underscores, and trailing dots/spaces (also
-    illegal on Windows) stripped. Never returns empty."""
-    s = _UNSAFE_FS.sub("_", name).lower().replace(" ", "_")
-    # Windows also forbids a name ending in a dot or space, and bare dots are confusing.
-    s = s.strip("._")
-    return s or "unnamed"
+# The filesystem-safe slug (Windows-illegal chars, reserved names, trailing dot/space)
+# lives in mdl_core.fsnames so the writer, the command engine and the dbt emitter all
+# share ONE hardened implementation. `_slug` is kept as a thin local alias.
+_slug = fs_slug

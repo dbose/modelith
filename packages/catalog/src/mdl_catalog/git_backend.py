@@ -46,7 +46,12 @@ class RealGitRunner:
 
     def run(self, args: list[str], cwd: Path) -> tuple[int, str]:
         proc = subprocess.run(  # noqa: S603,S607 - trusted git argv, no shell
-            ["git", *args], cwd=str(cwd), capture_output=True, text=True
+            ["git", *args],
+            cwd=str(cwd),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         return proc.returncode, (proc.stdout or "") + (proc.stderr or "")
 

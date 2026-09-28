@@ -168,7 +168,7 @@ def _from_git_config(model_dir: Path) -> Identity | None:
             proc = subprocess.run(
                 ["git", "-C", str(model_dir), "config", key],
                 capture_output=True,
-                text=True,
+                text=True, encoding="utf-8", errors="replace",
                 timeout=5,
             )
         except (subprocess.SubprocessError, OSError):

@@ -1385,7 +1385,7 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
       title: "Reverse Engineer — target folder",
       prompt: "Where to write the reversed model (relative to the workspace)",
       value: rel,
-      valueSelection: [Math.max(0, rel.lastIndexOf("/") + 1), rel.length],
+      valueSelection: [Math.max(0, rel.lastIndexOf(path.sep) + 1), rel.length],
       validateInput: (v) => {
         const t = v.trim();
         if (!t) return "Enter a folder path.";

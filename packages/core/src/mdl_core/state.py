@@ -90,9 +90,13 @@ class GenerationState:
                 encoding="utf-8",
             )
 
-        # prune shards for artifacts that no longer exist + the legacy file
+        # prune shards for artifacts that no longer exist + the legacy file. Compare with
+        # as_posix(): `wanted` holds forward-slash _shard_rel() keys, but relative_to()
+        # stringifies with the OS separator (backslash on Windows) — without normalising,
+        # NO shard matched on Windows and the whole generation-state store was wiped on
+        # every save (destroying the 3-way-merge base). Same class as writer._prune_stale.
         for shard in state_dir.glob("*/*.json"):
-            if str(shard.relative_to(state_dir)) not in wanted:
+            if shard.relative_to(state_dir).as_posix() not in wanted:
                 shard.unlink()
         legacy = state_dir / _LEGACY_FILE
         if legacy.exists():

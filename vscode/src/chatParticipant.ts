@@ -1,3 +1,4 @@
+import * as path from "node:path";
 import * as vscode from "vscode";
 import type { DriftItem, DriftReport } from "./driftDiagnostics";
 import { findManifestPath, findMdl, findModelDir, runMdl } from "./mdl";
@@ -418,7 +419,7 @@ async function driftCommand(
   }
   const files = [...new Set(items.map((i) => i.file).filter((f): f is string => !!f))];
   for (const f of files) {
-    stream.reference(vscode.Uri.file(`${dir}/${f}`));
+    stream.reference(vscode.Uri.file(path.join(dir, f)));
   }
   if (report.breaking_count > 0) {
     stream.markdown(
