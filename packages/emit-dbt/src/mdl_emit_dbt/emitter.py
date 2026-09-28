@@ -117,8 +117,22 @@ class DbtEmitter:
         entities = self._entities_for_target()
 
         schema_entries = []
+        seen: dict[str, str] = {}  # lowercased model name -> the entity that claimed it
         for le, pt in entities:
             name = pt.name.lower() if pt else le.name
+            # A dbt model name IS the file stem AND the ref() key, so two entities mapping
+            # to the same name (or one that only differs in case — the same file on a
+            # Windows/macOS filesystem) is a real modelling error, not something to
+            # silently rename: fail loudly instead of overwriting one model with another.
+            key = name.lower()
+            if key in seen:
+                raise ValueError(
+                    f"two entities map to the same dbt model name {name!r} "
+                    f"({seen[key]} and {le.name}); rename one — a colliding model file "
+                    "would overwrite the other and break ref() on a case-insensitive "
+                    "filesystem"
+                )
+            seen[key] = le.name
             sql, ulids, fp = self._emit_model_sql(le, pt)
             planned[f"models/{name}.sql"] = {
                 "content": sql,

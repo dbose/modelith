@@ -35,7 +35,7 @@ def _git(model_dir: Path, *args: str, timeout: int = 30) -> tuple[int, str]:
     try:
         p = subprocess.run(
             ["git", "-C", str(model_dir), *args],
-            capture_output=True, text=True, timeout=timeout,
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout,
         )
     except (OSError, subprocess.SubprocessError) as e:  # pragma: no cover - env dependent
         return 1, str(e)

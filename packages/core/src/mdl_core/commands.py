@@ -17,10 +17,12 @@ user's act (see git_api.py).
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from mdl_core.diagnostics import Severity
+from mdl_core.fsnames import fs_slug
 from mdl_core.ids import is_ulid, new_ulid
 from mdl_core.repo import PROJECT_FILE, ModelRepo, find_project_root
 from mdl_core.validate import validate
@@ -29,15 +31,26 @@ from mdl_core.validate import validate
 
 
 def dir_fingerprint(model_dir: Path) -> str:
-    """Cheap change detector over model YAML files (count/mtime/size), string-
-    encoded so it can round-trip through JSON."""
-    n, mtime, size = 0, 0.0, 0
-    for p in Path(model_dir).rglob("*.yaml"):
-        st = p.stat()
-        n += 1
-        mtime = max(mtime, st.st_mtime)
-        size += st.st_size
-    return f"{n}:{mtime}:{size}"
+    """A change detector over model YAML files, NEWLINE-INSENSITIVE so it is identical on
+    a repo checked out with LF (POSIX) or CRLF (Git-for-Windows' autocrlf default).
+
+    The previous version summed raw `st.st_size`; CRLF adds a byte per line, so the
+    on-disk size differed from the LF size the client computed and the staleness check
+    fired on EVERY edit on Windows — the canvas/LSP was effectively read-only. We now hash
+    each file's content read in text mode (universal-newline normalises CRLF->LF), sorted
+    by relative path for determinism, so the fingerprint depends on content, not on how
+    git happened to translate line endings."""
+    h = hashlib.sha256()
+    for p in sorted(Path(model_dir).rglob("*.yaml"), key=lambda q: q.as_posix()):
+        try:
+            text = p.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            continue
+        h.update(p.relative_to(model_dir).as_posix().encode("utf-8"))
+        h.update(b"\0")
+        h.update(text.encode("utf-8"))
+        h.update(b"\0")
+    return h.hexdigest()
 
 
 class StaleModelError(Exception):
@@ -94,8 +107,12 @@ def apply_command(
 # --- helpers ----------------------------------------------------------------
 
 
-def _slug(name: str) -> str:
-    return name.strip().lower().replace(" ", "_")
+# The command engine slugs a user-supplied name into BOTH the object's identifier and its
+# YAML filename, so the slug must be filesystem-safe on every OS. The old version only
+# lowercased + replaced spaces, so a name with `/ : * ?`, a trailing dot, or a reserved
+# device word (CON, NUL…) injected a path separator or crashed open() on Windows. Reuse
+# the one hardened slug from mdl_core.fsnames.
+_slug = fs_slug
 
 
 def _id_from(p: dict, key: str = "id") -> str:

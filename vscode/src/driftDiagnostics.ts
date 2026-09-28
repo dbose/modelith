@@ -156,9 +156,13 @@ export class DriftCodeActionProvider implements vscode.CodeActionProvider {
     let offeredReconcileAll = false;
     for (const diag of context.diagnostics) {
       if (diag.source !== "modelith-drift") continue;
-      // Match the diagnostic back to a report item by kind + this file.
+      // Match the diagnostic back to a report item by kind + this file. document.fileName
+      // uses the OS separator (backslash on Windows) but the CLI report's `i.file` is a
+      // POSIX rel path — without normalising, endsWith() never matched on Windows and the
+      // drift quick-fixes silently disappeared. Compare with forward slashes on both sides.
+      const docPosix = document.fileName.split(path.sep).join("/");
       const item = report.items.find(
-        (i) => i.kind === diag.code && document.fileName.endsWith(i.file ?? "mdl-project.yaml"),
+        (i) => i.kind === diag.code && docPosix.endsWith(i.file ?? "mdl-project.yaml"),
       );
       if (!item) continue;
       if (item.reconcilable && !offeredReconcileAll) {
