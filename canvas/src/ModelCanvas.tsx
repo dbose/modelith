@@ -145,6 +145,27 @@ export function ModelCanvas({
     return m;
   }, [doc]);
 
+  // entity id -> its subject area {id, name}, for BOTH node coloring and the clustered/grid
+  // layouts. A reversed or erwin model carries membership only on the area
+  // (subject_areas[].members lists conceptual ULIDs), leaving entity.conceptual.subject_area
+  // null — so resolve from BOTH: the inverted members list (via the entity's conceptual id),
+  // then the direct pointer. Without this, every card falls back to NO_SA_COLOR and the whole
+  // model reads as one undifferentiated grey blob.
+  const areaByEntity = useMemo(() => {
+    const m = new Map<string, { id: string; name: string }>();
+    const byConceptual = new Map<string, { id: string; name: string }>(); // conceptual id -> area
+    doc.subject_areas.forEach((sa) => {
+      (sa.members ?? []).forEach((cid) => byConceptual.set(cid, { id: sa.id, name: sa.name }));
+    });
+    doc.entities.forEach((e) => {
+      const viaMembers = e.conceptual?.id ? byConceptual.get(e.conceptual.id) : undefined;
+      const direct = e.conceptual?.subject_area;
+      const area = viaMembers ?? (direct ? { id: direct.id, name: direct.name ?? direct.id } : undefined);
+      if (area) m.set(e.id, area);
+    });
+    return m;
+  }, [doc]);
+
   // entity id -> the set of its attribute ULIDs that are an endpoint of some
   // relationship, for pinning them near the header (issue #5). Built once per model.
   const endpointAttrsByEntity = useMemo(() => {
@@ -200,9 +221,10 @@ export function ModelCanvas({
         position: { x: 0, y: 0 },
         data: {
           entity: e,
-          color: e.conceptual?.subject_area
-            ? saColors.get(e.conceptual.subject_area.id) ?? NO_SA_COLOR
-            : NO_SA_COLOR,
+          color: (() => {
+            const area = areaByEntity.get(e.id);
+            return area ? saColors.get(area.id) ?? NO_SA_COLOR : NO_SA_COLOR;
+          })(),
           dimmed: searchDim || neighbourDim,
           highlighted: q !== "" && matches.has(e.id),
           showTypes,
@@ -245,7 +267,7 @@ export function ModelCanvas({
         return newNodes.map((n) => ({ ...n, position: posById.get(n.id) ?? n.position }));
       }
       // new entity (or first load): layout, keeping existing positions where known
-      const laid = layoutGraph(newNodes, newEdges, entityIndex);
+      const laid = layoutGraph(newNodes, newEdges, entityIndex, "auto", areaByEntity);
       const merged = laid.map((n) =>
         posById.has(n.id) && layoutedRef.current ? { ...n, position: posById.get(n.id)! } : n,
       );
@@ -264,6 +286,7 @@ export function ModelCanvas({
     onToggleExpand,
     saColors,
     entityIndex,
+    areaByEntity,
     endpointAttrsByEntity,
     fitView,
   ]);
@@ -399,10 +422,10 @@ export function ModelCanvas({
 
   const relayout = useCallback(
     (mode: LayoutMode = "auto") => {
-      setNodes((prev) => layoutGraph(prev, edges, entityIndex, mode));
+      setNodes((prev) => layoutGraph(prev, edges, entityIndex, mode, areaByEntity));
       requestAnimationFrame(() => fitView({ padding: 0.15, duration: 300 }));
     },
-    [edges, entityIndex, fitView],
+    [edges, entityIndex, areaByEntity, fitView],
   );
 
   const focusEntity = useCallback(

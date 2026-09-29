@@ -203,6 +203,7 @@ function LayoutPicker({ onRelayout }: { onRelayout: (mode?: LayoutMode) => void 
         <div className="layout-menu" role="menu">
           <button onClick={() => pick("auto")}>Auto (by size)</button>
           <button onClick={() => pick("hierarchical")}>Hierarchical</button>
+          <button onClick={() => pick("clustered")}>Clustered (by area)</button>
           <button onClick={() => pick("grid")}>Grid</button>
         </div>
       )}
