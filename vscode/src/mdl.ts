@@ -65,7 +65,15 @@ const REAL_FSX: Fsx = {
  * Runs in the extension host, which in a devcontainer is *inside* the container
  * (extensionKind: workspace), so detection sees the container's toolchain. */
 export async function findMdl(root: string): Promise<MdlBin> {
-  if (cached) return cached;
+  // Trust the cache only if it still points at a real file. An absolute path can go
+  // stale when the CLI is upgraded/reinstalled elsewhere (the Windows AppData→new-path
+  // case); a bare PATH name or `<python> -m mdl_cli` can't be existence-checked, so it
+  // is trusted as before (spawn ENOENT there resets the cache — see runMdl).
+  if (cached) {
+    const abs = cached.args.length === 0 && path.isAbsolute(cached.cmd);
+    if (!abs || fs.existsSync(cached.cmd)) return cached;
+    resetMdlCache();
+  }
   const cfg = vscode.workspace.getConfiguration("modelith");
   const explicit = cfg.get<string>("mdlPath")?.trim();
   const candidates: MdlBin[] = [];
@@ -293,7 +301,30 @@ export interface RunResult {
   stderr: string;
 }
 
-export function runMdl(
+/** One spawn attempt. Resolves with the result, or with `enoent: true` when the command
+ *  could not be launched (the binary is missing/unspawnable — a broken Windows console
+ *  shim raises this even though the .exe exists and runs from a shell). */
+function spawnOnce(
+  bin: MdlBin,
+  args: string[],
+  cwd: string,
+  timeoutMs: number,
+): Promise<RunResult & { enoent?: boolean }> {
+  return new Promise((res) => {
+    const p = cp.spawn(bin.cmd, [...bin.args, ...args], { cwd, timeout: timeoutMs });
+    let stdout = "";
+    let stderr = "";
+    p.stdout.on("data", (d) => (stdout += d));
+    p.stderr.on("data", (d) => (stderr += d));
+    p.on("error", (e) => {
+      const enoent = (e as NodeJS.ErrnoException).code === "ENOENT";
+      res({ code: -1, stdout, stderr: String(e), enoent });
+    });
+    p.on("exit", (code) => res({ code: code ?? -1, stdout, stderr }));
+  });
+}
+
+export async function runMdl(
   bin: MdlBin,
   args: string[],
   cwd: string,
@@ -303,17 +334,24 @@ export function runMdl(
   // Echo the exact CLI invocation before running, so every model UI action is
   // transparent in the Modelith output (matching the `[canvas] mdl serve …` line).
   out?.appendLine(`[run] ${bin.label} ${args.join(" ")} (cwd ${cwd})`);
-  return new Promise((res) => {
-    // Default 120s; a live-DB reverse (`--connect` runs dbt debug + introspection over a
-    // possibly-cold warehouse) passes a longer timeout.
-    const p = cp.spawn(bin.cmd, [...bin.args, ...args], { cwd, timeout: timeoutMs });
-    let stdout = "";
-    let stderr = "";
-    p.stdout.on("data", (d) => (stdout += d));
-    p.stderr.on("data", (d) => (stderr += d));
-    p.on("error", (e) => res({ code: -1, stdout, stderr: String(e) }));
-    p.on("exit", (code) => res({ code: code ?? -1, stdout, stderr }));
-  });
+  // Default 120s; a live-DB reverse (`--connect` runs dbt debug + introspection over a
+  // possibly-cold warehouse) passes a longer timeout.
+  const first = await spawnOnce(bin, args, cwd, timeoutMs);
+  if (!first.enoent) return first;
+
+  // The resolved command could not be launched. On Windows this is the classic broken
+  // console-shim case: `pip install --upgrade` can leave an mdl.exe whose embedded
+  // interpreter path no longer resolves under spawn (it still runs from a shell, which
+  // is why `where mdl` / a manual `mdl --version` work, but the extension gets ENOENT).
+  // `<python> -m mdl_cli` needs no shim, so retry through the interpreter; and drop the
+  // cache so the next findMdl re-resolves.
+  resetMdlCache();
+  const fresh = await findMdl(cwd).catch(() => null);
+  if (fresh && (fresh.cmd !== bin.cmd || fresh.args.join(" ") !== bin.args.join(" "))) {
+    out?.appendLine(`[run] retry via ${fresh.label} (the previous binary would not launch)`);
+    return spawnOnce(fresh, args, cwd, timeoutMs);
+  }
+  return first;
 }
 
 // --- CLI capability handshake (version skew) -----------------------------------
