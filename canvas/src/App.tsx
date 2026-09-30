@@ -11,6 +11,7 @@ import {
   sendCommand,
 } from "./api";
 import { directCapabilities } from "./exec";
+import { CanvasDrawer } from "./CanvasDrawer";
 import { ModelCanvas, PALETTE, type ModelCanvasHandle } from "./ModelCanvas";
 import { SidePanel, type PanelTab } from "./SidePanel";
 import { TopBar } from "./TopBar";
@@ -31,6 +32,11 @@ function Canvas() {
   const [expandedEntities, setExpandedEntities] = useState<Set<string>>(() => new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [panelTab, setPanelTab] = useState<PanelTab | null>(null);
+  // Left subject-area / layout drawer, and the active subject-area filter it drives. An empty
+  // `activeAreas` means "show all"; a non-empty set shows ONLY those domains (canvas hides the
+  // rest and fits to the visible set).
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [activeAreas, setActiveAreas] = useState<Set<string>>(() => new Set());
   const [dirty, setDirty] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   // The graph, the inspector and the modals now live in <ModelCanvas>; the shell
@@ -55,6 +61,32 @@ function Canvas() {
     doc?.subject_areas.forEach((sa, i) => m.set(sa.id, PALETTE[i % PALETTE.length]));
     return m;
   }, [doc]);
+
+  // entity id -> subject-area id, and per-area entity counts, for the drawer filter. Resolved
+  // the same dual-sourced way ModelCanvas builds `areaByEntity`: the inverted subject_areas[]
+  // .members (conceptual ULIDs) first, then the direct entity.conceptual.subject_area pointer.
+  // "" keys the unassigned bucket. Shared with the canvas so the drawer counts and the hide
+  // filter agree.
+  const entityArea = useMemo(() => {
+    const m = new Map<string, string>();
+    if (!doc) return m;
+    const byConceptual = new Map<string, string>();
+    doc.subject_areas.forEach((sa) => {
+      (sa.members ?? []).forEach((cid) => byConceptual.set(cid, sa.id));
+    });
+    doc.entities.forEach((e) => {
+      const viaMembers = e.conceptual?.id ? byConceptual.get(e.conceptual.id) : undefined;
+      const id = viaMembers ?? e.conceptual?.subject_area?.id ?? "";
+      m.set(e.id, id);
+    });
+    return m;
+  }, [doc]);
+
+  const countByArea = useMemo(() => {
+    const m = new Map<string, number>();
+    entityArea.forEach((areaId) => m.set(areaId, (m.get(areaId) ?? 0) + 1));
+    return m;
+  }, [entityArea]);
 
   const readOnly = doc?.read_only ?? true;
   // The architect canvas writes straight to disk; its capabilities follow the
@@ -236,7 +268,6 @@ function Canvas() {
         onFitView={() => canvasRef.current?.fitView()}
         onRelayout={(mode, dir) => canvasRef.current?.relayout(mode, dir)}
         onRefresh={refresh}
-        saColors={saColors}
         readOnly={readOnly}
         dirty={dirty}
         panelTab={panelTab}
@@ -246,6 +277,9 @@ function Canvas() {
         onImported={refresh}
         onImportBatch={applyImportBatch}
         openImport={openImport}
+        onToggleDrawer={() => setDrawerOpen((v) => !v)}
+        drawerOpen={drawerOpen}
+        filterCount={activeAreas.size}
       />
       )}
       <div className="canvas-wrap">
@@ -260,9 +294,21 @@ function Canvas() {
           collapseDetail={collapseDetail}
           expandedEntities={expandedEntities}
           onToggleExpand={onToggleExpand}
+          activeAreas={activeAreas}
           onError={setToast}
           handleRef={canvasRef}
         />
+        {!minimal && (
+          <CanvasDrawer
+            doc={doc}
+            saColors={saColors}
+            countByArea={countByArea}
+            activeAreas={activeAreas}
+            onSetActive={setActiveAreas}
+            open={drawerOpen}
+            onClose={() => setDrawerOpen(false)}
+          />
+        )}
         {panelTab && (
           <SidePanel
             tab={panelTab}

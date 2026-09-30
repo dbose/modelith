@@ -29,40 +29,84 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
 
 /* ---------- top bar ---------- */
 .topbar {
-  display: flex; align-items: center; gap: 16px;
-  padding: 10px 16px; background: var(--bg-raised);
+  display: flex; flex-direction: column;
+  padding: 8px 16px 0; background: var(--bg-raised);
   border-bottom: 1px solid var(--border);
   z-index: 10;
 }
+/* Row 1 (identity + search + status) and Row 2 (grouped actions). Splitting the two
+   stops the brand, search, status, and 10 controls from fighting for one flex row. */
+.topbar-row { display: flex; align-items: center; gap: 14px; }
+.topbar-row.context { padding-bottom: 8px; }
+.topbar-row.actions { gap: 10px; padding-bottom: 8px; flex-wrap: wrap; }
 .brand { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; }
 .logo { color: var(--accent); font-size: 18px; }
 .brand-name { font-weight: 700; letter-spacing: 0.02em; }
 .project-name { color: var(--text-dim); font-size: 13px; }
 .search {
-  flex: 0 1 340px; padding: 7px 12px; border-radius: 8px;
+  flex: 0 1 300px; margin-left: auto; padding: 7px 12px; border-radius: 8px;
   border: 1px solid var(--border); background: var(--bg-card); color: var(--text);
   font-size: 13px; outline: none;
 }
 .search:focus { border-color: var(--accent); }
-.legend { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12px; color: var(--text-dim); }
-.legend-item { display: inline-flex; align-items: center; gap: 5px; }
-.swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
-.stats { margin-left: auto; display: flex; gap: 12px; font-size: 12px; color: var(--text-dim); }
-.diag-chip { padding: 2px 8px; border-radius: 99px; font-weight: 600; }
+.stats { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--text-dim); }
+.stat-item { display: inline-flex; align-items: center; gap: 5px; }
+.stat-item svg { color: var(--text-dim); }
+.diag-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 99px; font-weight: 600; }
 .diag-chip.ok { background: rgba(52, 211, 153, 0.15); color: var(--ok); }
 .diag-chip.warn { background: rgba(251, 191, 36, 0.15); color: var(--warn); }
 .diag-chip.err { background: rgba(248, 113, 113, 0.15); color: var(--err); }
-.actions { display: flex; gap: 6px; }
+
+/* Hamburger — opens the left subject-area / layout drawer. Sits at the far left of row 1. */
+.hamburger {
+  position: relative; display: inline-flex; align-items: center; justify-content: center;
+  padding: 6px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--bg-card); color: var(--text-dim); cursor: pointer;
+}
+.hamburger:hover { color: var(--text); border-color: var(--border-strong); }
+.hamburger.active { color: var(--accent); border-color: var(--accent); }
+.hamburger-badge {
+  position: absolute; top: -6px; right: -6px; min-width: 15px; height: 15px; padding: 0 3px;
+  border-radius: 99px; background: var(--accent); color: var(--accent-ink);
+  font-size: 10px; font-weight: 700; line-height: 15px; text-align: center;
+}
+
+/* Grouped action segments — a bordered container with a quiet tag, so a panel-opener
+   never looks like a view action. Each group's buttons sit flush inside it. */
+.btn-group {
+  display: inline-flex; align-items: center; gap: 2px;
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 9px; padding: 2px;
+}
+.grp-tag {
+  font-size: 10px; color: var(--text-dim); opacity: 0.75;
+  padding: 0 6px 0 4px; letter-spacing: 0.03em; text-transform: none; white-space: nowrap;
+}
+.grp-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 9px; border-radius: 6px; border: none; background: transparent;
+  color: var(--text-dim); cursor: pointer; font-size: 12px; white-space: nowrap;
+}
+.grp-btn.icon-only { padding: 5px 7px; }
+.grp-btn:hover { color: var(--text); background: rgba(255,255,255,0.05); }
+.grp-btn.active { color: var(--accent); }
+.grp-btn.active svg { color: var(--accent); }
+.grp-badge { width: 6px; height: 6px; border-radius: 50%; background: var(--warn); display: inline-block; margin-left: 1px; }
+/* the flow-direction arrow rotates to point the layout's flow way */
+.dir-arrow { display: inline-flex; transition: transform 0.15s ease; }
+
+/* The primary "New entity" button stands apart from the groups. */
 .tool-btn {
-  padding: 6px 10px; border-radius: 8px; border: 1px solid var(--border);
-  background: var(--bg-card); color: var(--text-dim); cursor: pointer; font-size: 13px;
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 6px 11px; border-radius: 8px; border: 1px solid var(--border);
+  background: var(--bg-card); color: var(--text-dim); cursor: pointer; font-size: 12px;
 }
 .tool-btn:hover { color: var(--text); border-color: var(--border-strong); }
 .tool-btn.active { color: var(--accent); border-color: var(--accent); }
+.tool-btn.primary { color: var(--accent); border-color: rgba(224,166,58,0.4); font-weight: 600; }
 
-/* layout style picker (split button: icon + caret + menu) */
+/* layout style picker (split button: icon + caret + direction + menu) */
 .layout-picker { position: relative; display: inline-flex; gap: 2px; }
-.layout-picker .caret { padding: 6px 6px; font-size: 10px; }
+.layout-picker .caret { font-size: 10px; }
 .layout-menu {
   position: absolute; top: calc(100% + 6px); right: 0; z-index: 20;
   background: var(--bg-raised); border: 1px solid var(--border-strong);
@@ -75,6 +119,51 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
   cursor: pointer; font-size: 13px;
 }
 .layout-menu button:hover { background: var(--bg-card); color: var(--text); }
+
+/* ---------- left subject-area / layout drawer ---------- */
+/* Mirrors the .side-panel card convention but anchored LEFT and animated. It stays mounted so
+   it can slide; `.open` drives the transform. The first slide transition in the app. */
+.canvas-drawer {
+  position: absolute; top: 12px; left: 12px; bottom: 12px; width: 300px;
+  background: var(--bg-raised); border: 1px solid var(--border); border-radius: 14px;
+  padding: 16px; overflow-y: auto; z-index: 9; box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+  display: flex; flex-direction: column; gap: 10px;
+  transform: translateX(calc(-100% - 16px)); opacity: 0; pointer-events: none;
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+.canvas-drawer.open { transform: translateX(0); opacity: 1; pointer-events: auto; }
+.drawer-header { display: flex; align-items: center; justify-content: space-between; }
+.drawer-header h2 {
+  margin: 0; font-size: 15px; display: inline-flex; align-items: center; gap: 7px;
+}
+.drawer-header h2 svg { color: var(--accent); }
+.drawer-hint { font-size: 11px; color: var(--text-dim); line-height: 1.4; }
+.sa-all {
+  align-self: flex-start; padding: 4px 10px; border-radius: 7px;
+  border: 1px solid var(--border); background: var(--bg-card); color: var(--text-dim);
+  cursor: pointer; font-size: 12px;
+}
+.sa-all:hover:not(:disabled) { color: var(--text); border-color: var(--border-strong); }
+.sa-all.active { color: var(--accent); border-color: var(--accent); }
+.sa-all:disabled { opacity: 0.5; cursor: default; }
+.sa-list { display: flex; flex-direction: column; gap: 3px; margin-top: 2px; }
+.sa-row {
+  display: flex; align-items: center; gap: 9px; padding: 7px 8px; border-radius: 8px;
+  cursor: pointer; border: 1px solid transparent; user-select: none;
+}
+.sa-row:hover { background: var(--bg-card); }
+.sa-row.active { background: var(--accent-soft); border-color: rgba(224,166,58,0.4); }
+.sa-row.muted { cursor: default; opacity: 0.7; }
+.sa-row.muted:hover { background: transparent; }
+.sa-row input[type="checkbox"] { accent-color: var(--accent); cursor: pointer; }
+.sa-chip { width: 12px; height: 12px; border-radius: 3px; flex: 0 0 auto; }
+.sa-chip.none { background: repeating-linear-gradient(45deg, #4a3c2c, #4a3c2c 2px, transparent 2px, transparent 4px); }
+.sa-name { flex: 1; font-size: 13px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sa-row.muted .sa-name { color: var(--text-dim); }
+.sa-count {
+  font-size: 11px; color: var(--text-dim); background: var(--bg-card);
+  padding: 1px 7px; border-radius: 99px; flex: 0 0 auto;
+}
 
 /* ---------- entity node (erwin-style card) ---------- */
 .entity-node {
@@ -297,9 +386,6 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
 .physical-name-input { font-size: 12px; color: var(--text-dim); }
 .physical-col { display: block; font-size: 10px; color: var(--text-dim); font-family: var(--mono, monospace); }
 .physical-col-input { display: block; font-size: 10px; color: var(--text-dim); }
-.tool-btn.primary { color: var(--accent); border-color: rgba(224,166,58,0.4); font-weight: 600; }
-.tool-btn.badged::after { content: "●"; color: var(--warn); margin-left: 4px; font-size: 8px; vertical-align: super; }
-.divider { width: 1px; background: var(--border); margin: 0 4px; align-self: stretch; }
 
 /* modals */
 .modal-backdrop {

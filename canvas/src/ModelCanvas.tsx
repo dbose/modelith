@@ -84,6 +84,9 @@ export interface ModelCanvasProps {
   /** per-entity overrides of the global collapse */
   expandedEntities?: Set<string>;
   onToggleExpand?: (entityId: string) => void;
+  /** Subject-area filter: when non-empty, show ONLY entities in these area ids (hide the rest)
+   *  and fit to the visible set. Empty = show all. Driven by the left drawer. */
+  activeAreas?: Set<string>;
   /** Surfaced by the shell however it likes (a toast, a banner). */
   onError?: (message: string) => void;
   handleRef?: React.Ref<ModelCanvasHandle>;
@@ -108,6 +111,7 @@ export function ModelCanvas({
   collapseDetail = false,
   expandedEntities,
   onToggleExpand,
+  activeAreas,
   onError,
   handleRef,
 }: ModelCanvasProps) {
@@ -166,6 +170,19 @@ export function ModelCanvas({
     return m;
   }, [doc]);
 
+  // The subject-area filter predicate, shared by BOTH the heavy derivation and the lightweight
+  // hover effect. An entity is hidden when a filter is active and its area is not selected —
+  // an unassigned entity (no area) is hidden whenever any filter is on. Both effects MUST agree
+  // on this, or lifting a hover would un-hide filtered nodes.
+  const hiddenByArea = useCallback(
+    (id: string) => {
+      if (!activeAreas || activeAreas.size === 0) return false;
+      const areaId = areaByEntity.get(id)?.id;
+      return !(areaId && activeAreas.has(areaId));
+    },
+    [activeAreas, areaByEntity],
+  );
+
   // entity id -> the set of its attribute ULIDs that are an endpoint of some
   // relationship, for pinning them near the header (issue #5). Built once per model.
   const endpointAttrsByEntity = useMemo(() => {
@@ -219,6 +236,7 @@ export function ModelCanvas({
         id: e.id,
         type: "entity",
         position: { x: 0, y: 0 },
+        hidden: hiddenByArea(e.id),
         data: {
           entity: e,
           color: (() => {
@@ -263,14 +281,21 @@ export function ModelCanvas({
     setNodes((prev) => {
       const posById = new Map(prev.map((n) => [n.id, n.position]));
       const known = newNodes.every((n) => posById.has(n.id));
-      if (layoutedRef.current && known && prev.length >= newNodes.length) {
+      // When a subject-area filter is active, lay out ONLY the visible nodes so the focused
+      // domain fills the canvas (a stale full-model layout would leave it in a far corner).
+      // Otherwise keep known positions so a re-derivation (search, selection) doesn't reflow.
+      const filtering = (activeAreas?.size ?? 0) > 0;
+      if (layoutedRef.current && known && prev.length >= newNodes.length && !filtering) {
         return newNodes.map((n) => ({ ...n, position: posById.get(n.id) ?? n.position }));
       }
-      // new entity (or first load): layout, keeping existing positions where known
-      const laid = layoutGraph(newNodes, newEdges, entityIndex, "auto", areaByEntity);
-      const merged = laid.map((n) =>
-        posById.has(n.id) && layoutedRef.current ? { ...n, position: posById.get(n.id)! } : n,
-      );
+      const toLay = filtering ? newNodes.filter((n) => !n.hidden) : newNodes;
+      const laid = layoutGraph(toLay, newEdges, entityIndex, "auto", areaByEntity);
+      const laidPos = new Map(laid.map((n) => [n.id, n.position]));
+      const merged = newNodes.map((n) => {
+        if (laidPos.has(n.id)) return { ...n, position: laidPos.get(n.id)! };
+        // a hidden node keeps its prior position (it isn't shown, so it doesn't matter)
+        return posById.has(n.id) && layoutedRef.current ? { ...n, position: posById.get(n.id)! } : n;
+      });
       layoutedRef.current = true;
       requestAnimationFrame(() => fitView({ padding: 0.15, duration: 300 }));
       return merged;
@@ -287,6 +312,8 @@ export function ModelCanvas({
     saColors,
     entityIndex,
     areaByEntity,
+    hiddenByArea,
+    activeAreas,
     endpointAttrsByEntity,
     fitView,
   ]);
