@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Exec } from "./exec";
-import type { LayoutMode } from "./layout";
+import type { LayoutDir, LayoutMode } from "./layout";
 import type { PanelTab } from "./SidePanel";
 import { ImportExportMenu } from "./sme/ImportExportMenu";
 import type { DiagnosticsDoc, ModelDoc } from "./types";
@@ -39,7 +39,7 @@ export function TopBar({
   collapseDetail: boolean;
   onToggleCollapse: () => void;
   onFitView: () => void;
-  onRelayout: (mode?: LayoutMode) => void;
+  onRelayout: (mode?: LayoutMode, dir?: LayoutDir) => void;
   onRefresh: () => void;
   saColors: Map<string, string>;
   readOnly: boolean;
@@ -166,12 +166,29 @@ export function TopBar({
   );
 }
 
-/** Auto-layout as a small picker. The icon button re-lays out in "auto" (dagre for
- *  small models, grid past the entity threshold — no regression for existing models).
- *  The caret opens a menu to force Hierarchical or Grid, so a large model can be
- *  arranged either way. */
-function LayoutPicker({ onRelayout }: { onRelayout: (mode?: LayoutMode) => void }) {
+// The flow-direction cycle for the dagre-based layouts. Grouped with the layout picker so
+// the arrow toggle reads as part of one layout control. Grid ignores direction (a no-op),
+// which is fine — flipping it while on Grid just does nothing visible.
+const DIR_CYCLE: LayoutDir[] = ["LR", "TB", "RL", "BT"];
+const DIR_GLYPH: Record<LayoutDir, string> = { LR: "→", TB: "↓", RL: "←", BT: "↑" };
+const DIR_LABEL: Record<LayoutDir, string> = {
+  LR: "left → right",
+  TB: "top → bottom",
+  RL: "right → left",
+  BT: "bottom → top",
+};
+
+/** Auto-layout as a small picker plus a flow-direction toggle. The icon button re-lays out
+ *  in "auto" (dagre for small models, grid past the entity threshold — no regression). The
+ *  caret opens a menu to force Hierarchical / Clustered / Grid. The arrow button cycles the
+ *  dagre flow direction (→ ↓ ← ↑) and re-applies the current layout, so a large model can be
+ *  arranged either way and flowed in any direction. Direction persists across relayouts. */
+function LayoutPicker({ onRelayout }: { onRelayout: (mode?: LayoutMode, dir?: LayoutDir) => void }) {
   const [open, setOpen] = useState(false);
+  const [dir, setDir] = useState<LayoutDir>("LR");
+  // Remember the last chosen layout so cycling the direction re-applies THAT layout, not a
+  // reset to auto. Starts at auto (the on-load default).
+  const [mode, setMode] = useState<LayoutMode>("auto");
   const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!open) return;
@@ -182,14 +199,23 @@ function LayoutPicker({ onRelayout }: { onRelayout: (mode?: LayoutMode) => void 
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
-  const pick = (mode: LayoutMode) => {
-    onRelayout(mode);
+  const apply = (m: LayoutMode) => {
+    setMode(m);
+    onRelayout(m, dir);
+  };
+  const pick = (m: LayoutMode) => {
+    apply(m);
     setOpen(false);
+  };
+  const cycleDir = () => {
+    const next = DIR_CYCLE[(DIR_CYCLE.indexOf(dir) + 1) % DIR_CYCLE.length];
+    setDir(next);
+    onRelayout(mode, next);
   };
 
   return (
     <div className="layout-picker" ref={ref}>
-      <button className="tool-btn" onClick={() => onRelayout("auto")} title="Auto-layout">
+      <button className="tool-btn" onClick={() => apply("auto")} title="Auto-layout">
         {"⌗"}
       </button>
       <button
@@ -198,6 +224,13 @@ function LayoutPicker({ onRelayout }: { onRelayout: (mode?: LayoutMode) => void 
         title="Layout style"
       >
         {"▾"}
+      </button>
+      <button
+        className="tool-btn"
+        onClick={cycleDir}
+        title={`Flow direction: ${DIR_LABEL[dir]} (click to rotate)`}
+      >
+        {DIR_GLYPH[dir]}
       </button>
       {open && (
         <div className="layout-menu" role="menu">

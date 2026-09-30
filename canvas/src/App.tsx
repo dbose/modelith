@@ -234,7 +234,7 @@ function Canvas() {
         collapseDetail={collapseDetail}
         onToggleCollapse={() => setCollapseDetail((v) => !v)}
         onFitView={() => canvasRef.current?.fitView()}
-        onRelayout={(mode) => canvasRef.current?.relayout(mode)}
+        onRelayout={(mode, dir) => canvasRef.current?.relayout(mode, dir)}
         onRefresh={refresh}
         saColors={saColors}
         readOnly={readOnly}

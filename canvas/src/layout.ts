@@ -22,6 +22,12 @@ export function nodeHeight(entity: Entity): number {
  *  whether the model actually has subject areas. */
 export type LayoutMode = "auto" | "hierarchical" | "clustered" | "grid";
 
+/** Flow direction for the dagre-based layouts (hierarchical + clustered): which way ranks
+ *  advance. LR = left→right (default), TB = top→bottom, RL = right→left, BT = bottom→top.
+ *  The grid packer and grid-packed clusters have no meaningful direction — the toggle is a
+ *  no-op there. */
+export type LayoutDir = "LR" | "TB" | "RL" | "BT";
+
 // Above this many entities, "auto" leaves the plain dagre layout — a single layered pass
 // stops paying its way (a constellation stacks into a tall column). With subject areas it
 // switches to clustered; without them, to the grid packer.
@@ -42,17 +48,18 @@ export function layoutGraph(
   entities: Map<string, Entity>,
   mode: LayoutMode = "auto",
   areaByEntity?: AreaByEntity,
+  dir: LayoutDir = "LR",
 ): Node[] {
   const areaOf = makeAreaOf(entities, areaByEntity);
   if (mode === "grid") return gridLayout(nodes, entities, areaOf);
-  if (mode === "clustered") return clusteredLayout(nodes, edges, entities, areaOf);
-  if (mode === "hierarchical") return hierarchicalLayout(nodes, edges, entities);
+  if (mode === "clustered") return clusteredLayout(nodes, edges, entities, areaOf, dir);
+  if (mode === "hierarchical") return hierarchicalLayout(nodes, edges, entities, dir);
   // auto
-  if (nodes.length <= LARGE_THRESHOLD) return hierarchicalLayout(nodes, edges, entities);
+  if (nodes.length <= LARGE_THRESHOLD) return hierarchicalLayout(nodes, edges, entities, dir);
   const areas = new Set(nodes.map((n) => areaOf(n.id)).filter(Boolean));
   // clustering only helps when there is real domain structure (>1 area); otherwise grid.
   return areas.size > 1
-    ? clusteredLayout(nodes, edges, entities, areaOf)
+    ? clusteredLayout(nodes, edges, entities, areaOf, dir)
     : gridLayout(nodes, entities, areaOf);
 }
 
@@ -81,10 +88,11 @@ function dagrePass(
   edges: Edge[],
   entities: Map<string, Entity>,
   compact = false,
+  dir: LayoutDir = "LR",
 ): { nodes: Node[]; width: number; height: number } {
   const g = new dagre.graphlib.Graph();
   g.setGraph({
-    rankdir: "LR",
+    rankdir: dir,
     nodesep: compact ? 45 : 70,
     ranksep: compact ? 110 : 150,
     edgesep: compact ? 20 : 30,
@@ -121,8 +129,13 @@ function dagrePass(
   return { nodes: out, width: maxX, height: maxY };
 }
 
-function hierarchicalLayout(nodes: Node[], edges: Edge[], entities: Map<string, Entity>): Node[] {
-  return dagrePass(nodes, edges, entities).nodes;
+function hierarchicalLayout(
+  nodes: Node[],
+  edges: Edge[],
+  entities: Map<string, Entity>,
+  dir: LayoutDir = "LR",
+): Node[] {
+  return dagrePass(nodes, edges, entities, false, dir).nodes;
 }
 
 /** Pack a set of nodes into a compact grid (rows of ~sqrt columns), returning the nodes at
@@ -165,6 +178,7 @@ function clusteredLayout(
   edges: Edge[],
   entities: Map<string, Entity>,
   areaOf: (id: string) => string,
+  dir: LayoutDir = "LR",
 ): Node[] {
   // bucket nodes by area name (empty string = unassigned, sorted last)
   const byArea = new Map<string, Node[]>();
@@ -190,7 +204,7 @@ function clusteredLayout(
     for (const e of edges) if (ids.has(e.source) && ids.has(e.target)) internal++;
     const dagreWorthwhile = members.length <= 8 && internal >= members.length - 1;
     const laid = dagreWorthwhile
-      ? dagrePass(members, edges, entities, true)
+      ? dagrePass(members, edges, entities, true, dir)
       : gridPass(members, entities);
     return { name, ...laid };
   });
