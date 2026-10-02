@@ -1,0 +1,63 @@
+/* REAL design tokens + entity-card CSS, extracted verbatim from the Modelith Studio canvas
+   (canvas/src/styles.css). Use these EXACT values in the animation so the ER diagram matches
+   the real product. The screenshot canvas-reference.jpg shows how these render live. */
+
+:root {
+  --bg: #14110f;          /* warm charcoal background */
+  --bg-raised: #1c1815;   /* panels, toolbar */
+  --bg-card: #221d19;     /* entity cards, inputs */
+  --border: #33291f;
+  --border-strong: #4a3c2c;
+  --text: #ece6dd;
+  --text-dim: #a89a86;
+  --accent: #e0a63a;      /* brand amber */
+  --accent-soft: rgba(224, 166, 58, 0.15);
+  --accent-ink: #241a08;
+  --pk: #f2c14e;          /* primary-key gold */
+  --err: #f0857a;
+  --warn: #e6a94a;
+  --ok: #6cbf73;          /* success green */
+  --font: "Inter", -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: "JetBrains Mono", ui-monospace, "Cascadia Code", Menlo, monospace;
+}
+
+/* --- the real entity card (ER node) --- */
+.entity-node {
+  width: 264px; background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-top: 3px solid var(--accent);   /* amber top edge — the signature */
+  border-radius: 10px; overflow: hidden;
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+  font-size: 12px;
+}
+.entity-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 12px; background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--border);
+}
+.entity-name { font-weight: 700; font-size: 13px; letter-spacing: 0.01em; color: var(--text); }
+.entity-badges { display: flex; gap: 4px; }
+/* pattern badge: SCD2 / HUB / LINK / SAT tags (amber pill). ontology badge is blue. */
+.badge {
+  font-size: 10px; padding: 1px 6px; border-radius: 99px;
+  background: var(--accent-soft); color: var(--accent);
+  text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;
+}
+.badge.ontology { background: rgba(147, 197, 253, 0.12); color: #93c5fd; }
+
+/* the PK/FK key rows sit in their own faintly-gold section at the top of the card body */
+.attr-section.keys { border-bottom: 1px solid var(--border); background: rgba(252, 211, 77, 0.04); }
+.attr-section { padding: 4px 0; }
+.attr-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 3px 12px; height: 26px; line-height: 20px;
+}
+.attr-icon { width: 14px; text-align: center; font-size: 10px; flex: none; }  /* role glyph, e.g. a key for PK */
+.attr-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.attr-name.pk { color: var(--pk); font-weight: 600; }   /* primary key rows render in gold */
+.attr-type { color: var(--text-dim); font-family: var(--mono); font-size: 10px; flex: none; }  /* type, right-aligned, mono, dim */
+
+/* relationship lines between cards: thin, dim, dashed; crow's-foot at the "many" end */
+.rel-path { stroke: var(--border-strong); stroke-width: 1.6; }  /* in the live canvas these are dashed amber-grey */
+
+/* the canvas background is var(--bg) with a faint dot grid (#33291f dots, ~22px gap) */

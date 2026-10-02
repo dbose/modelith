@@ -1,0 +1,6 @@
+dbt: '1.9'
+osi:
+  tag: osi-0.1.1-rc1
+  version: 0.1.1
+vocabularies: {}
+profiles: {}

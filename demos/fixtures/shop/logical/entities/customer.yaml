@@ -1,0 +1,25 @@
+id: 01M3WS6GDGEEH1Y8WHQ6MV3V3F
+kind: logical_entity
+name: customer
+realises: 01M3WS6GDGNDJSQ8J69WPTEC02
+attributes:
+- id: 01NHT44FHT243W0EC7NYE7XT5G
+  name: customer_id
+  domain: identifier_bigint
+  role: business_key
+  nullable: false
+- id: 019KNST7XJ2DKXTC87G0EA3HKH
+  name: email
+  domain: string
+  role: attribute
+  nullable: false
+- id: 019GDP66FGFQKT68CFVR3ZM8FQ
+  name: full_name
+  domain: string
+  role: attribute
+  nullable: false
+- id: 01QP2BSPBXG463YDY605ZJ69J9
+  name: created_at
+  domain: timestamp
+  role: attribute
+  nullable: false

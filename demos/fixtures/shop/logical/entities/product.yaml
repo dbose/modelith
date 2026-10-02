@@ -1,0 +1,25 @@
+id: 01M3WS6JBQXS2JC5461EEYEZJD
+kind: logical_entity
+name: product
+realises: 01M3WS6JBQ4NRR17WNYA2N7527
+attributes:
+- id: 01A3Y3VYBXYFQKQP4CBWFG7NY9
+  name: product_id
+  domain: identifier_bigint
+  role: business_key
+  nullable: false
+- id: 0146BZKSG0FJ1T646003JCC9NK
+  name: sku
+  domain: string
+  role: attribute
+  nullable: false
+- id: 01KG5MDJ2A5Y3RDSHQZNGFRBXT
+  name: name
+  domain: string
+  role: attribute
+  nullable: false
+- id: 0121ZQHKJC7J9SQKXPA9SQY3ME
+  name: unit_price
+  domain: decimal
+  role: attribute
+  nullable: false

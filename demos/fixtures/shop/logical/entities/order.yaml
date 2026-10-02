@@ -1,0 +1,25 @@
+id: 01M3WS6MYM4WC27B98H8N0FMEE
+kind: logical_entity
+name: order
+realises: 01M3WS6MYM4HWTS7Z022BFS98T
+attributes:
+- id: 01FRDRCCE2C2AE7XW43T7G043M
+  name: order_id
+  domain: identifier_bigint
+  role: business_key
+  nullable: false
+- id: 014BKSP4BRDZZSKSTC1T5T3SVK
+  name: customer_id
+  domain: identifier_bigint
+  role: attribute
+  nullable: false
+- id: 01A7ZKYFT9P1Y63R1W01RC442D
+  name: order_date
+  domain: date
+  role: attribute
+  nullable: false
+- id: 010BHNZSXXY1G3J01ZSR27NP9R
+  name: status
+  domain: string
+  role: attribute
+  nullable: false

@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920">
+<title>Adopt a warehouse</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+html,body{margin:0;background:#14110f}
+
+:root{
+  --bg:#14110f; --raised:#1c1815; --card:#221d19; --border:#33291f; --border2:#4a3c2c;
+  --text:#ece6dd; --dim:#a89a86; --accent:#e0a63a; --soft:rgba(224,166,58,0.15);
+  --pk:#f2c14e; --ok:#6cbf73; --blue:#93c5fd; --warn:#e6a94a;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,monospace; --sans:"Inter",-apple-system,sans-serif;
+}
+body{margin:0}
+.ter-row{opacity:0;transform:translateY(5px);transition:opacity .4s ease,transform .4s ease}
+.ter-row.on{opacity:1;transform:none}
+.enode{background:var(--card);border:1px solid var(--border);border-top:3px solid var(--accent);border-radius:10px;overflow:hidden;box-shadow:0 4px 18px rgba(0,0,0,.35);
+  opacity:0;transform:translateY(14px) scale(.98);transition:opacity .55s ease,transform .55s ease}
+.enode.on{opacity:1;transform:none}
+.ehead{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;background:rgba(255,255,255,.03);border-bottom:1px solid var(--border)}
+.ename{font-weight:700;font-size:16px}
+.badge{font-size:12px;padding:1px 7px;border-radius:99px;background:var(--soft);color:var(--accent);text-transform:uppercase;letter-spacing:.05em;font-weight:700}
+.arow{display:flex;align-items:center;gap:6px;padding:4px 14px;height:30px;line-height:22px}
+.aname{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px}
+.aname.pk{color:var(--pk);font-weight:600}
+.fk{font-size:11px;padding:0 6px;border-radius:99px;background:var(--soft);color:var(--accent);margin-left:6px}
+.atype{color:var(--dim);font-family:var(--mono);font-size:13px}
+.ln{stroke:var(--border2);stroke-width:2;fill:none;stroke-dasharray:6 6;opacity:0;transition:opacity .6s ease}
+.ln.on{opacity:1}
+.blink{animation:blink 1s steps(2,start) infinite}
+@keyframes blink{to{opacity:0}}
+.sqlchip{position:absolute;padding:8px 12px;border-radius:7px;background:#1a1613;border:1px solid var(--border);font-family:var(--mono);font-size:13px;color:var(--dim);transition:opacity .6s ease,transform .6s ease}
+.sqlchip.gone{opacity:0;transform:scale(.8)}
+
+</style>
+</head>
+<body>
+<div id="root"><div style="width:1920px;height:1080px;box-sizing:border-box;background:var(--bg);color:var(--text);font-family:var(--sans);display:flex;flex-direction:column;overflow:hidden">
+
+  <div style="padding:34px 56px 0 56px;display:flex;align-items:baseline;gap:18px">
+    <span style="font-size:30px;color:var(--accent)">◮</span>
+    <span style="font-size:30px;font-weight:700;letter-spacing:.01em">Modelith</span>
+    <span style="font-size:20px;color:var(--dim);font-family:var(--mono)">reverse</span>
+    <span style="margin-left:auto;font-size:22px;color:var(--dim)">Point it at a legacy warehouse. Get a clean model back.</span>
+  </div>
+
+  <div style="flex:1;display:flex;gap:40px;padding:28px 56px 48px 56px;min-height:0">
+
+    <!-- TERMINAL -->
+    <div style="width:1040px;flex:none;background:#100d0b;border:1px solid var(--border);border-radius:14px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,.5)">
+      <div style="height:40px;flex:none;display:flex;align-items:center;gap:8px;padding:0 16px;border-bottom:1px solid var(--border);background:var(--raised)">
+        <span style="width:12px;height:12px;border-radius:50%;background:#50433a"></span>
+        <span style="width:12px;height:12px;border-radius:50%;background:#50433a"></span>
+        <span style="width:12px;height:12px;border-radius:50%;background:#50433a"></span>
+        <span style="margin-left:10px;font-family:var(--mono);font-size:13px;color:var(--dim)">mdl — legacy-warehouse</span>
+      </div>
+      <div style="flex:1;padding:22px 26px;font-family:var(--mono);font-size:17px;line-height:1.6;overflow:hidden">
+        <div class="ter-row" data-cls="s1" data-clsbase="ter-row"><span style="color:var(--accent)">$</span> ls models/staging models/marts models/vault</div>
+        <div class="ter-row" data-cls="s1" data-clsbase="ter-row" style="color:var(--dim)">stg_customers.sql  dim_customer.sql  hub_customer.sql</div>
+        <div class="ter-row" data-cls="s1" data-clsbase="ter-row" style="color:var(--dim)">stg_orders.sql  fct_orders.sql  link_order.sql  sat_customer_details.sql</div>
+        <div style="height:12px"></div>
+        <div class="ter-row" data-cls="s2" data-clsbase="ter-row"><span style="color:var(--accent)">$</span> mdl reverse --project target/manifest.json --out owned</div>
+        <div class="ter-row" data-cls="s2" data-clsbase="ter-row">reversed 6 entities <span style="color:var(--dim)">(4 staging/intermediate excluded)</span></div>
+        <div class="ter-row" data-cls="s3" data-clsbase="ter-row" style="margin-top:8px;color:var(--ok);font-weight:600">kept as business entities (4)</div>
+        <div class="ter-row" data-cls="s3" data-clsbase="ter-row" style="color:var(--dim);padding-left:16px">dim_customer, dim_product, fct_orders, hub_customer</div>
+        <div class="ter-row" data-cls="s3" data-clsbase="ter-row" style="margin-top:6px;color:#8ab6e0;font-weight:600">excluded as staging/intermediate (4)</div>
+        <div class="ter-row" data-cls="s3" data-clsbase="ter-row" style="color:var(--dim);padding-left:16px">stg_customers, stg_orders, int_order_enriched, …</div>
+        <div class="ter-row" data-cls="s4" data-clsbase="ter-row" style="margin-top:6px;color:#8ab6e0;font-weight:600">SCD2 pattern detected (2)</div>
+        <div class="ter-row" data-cls="s4" data-clsbase="ter-row" style="color:var(--dim);padding-left:16px">dim_customer, dim_product</div>
+        <div class="ter-row" data-cls="s4" data-clsbase="ter-row" style="margin-top:6px;color:#8ab6e0;font-weight:600">Data Vault detected (3)</div>
+        <div class="ter-row" data-cls="s4" data-clsbase="ter-row" style="color:var(--dim);padding-left:16px">hub_customer, link_order, sat_customer_details</div>
+        <div class="ter-row" data-cls="s4" data-clsbase="ter-row" style="margin-top:6px;color:#8ab6e0;font-weight:600">surrogate keys stripped (7)</div>
+        <div style="height:10px"></div>
+        <div class="ter-row" data-cls="s5" data-clsbase="ter-row"><span style="color:var(--accent)">$</span> mdl validate -m owned</div>
+        <div class="ter-row" data-cls="s5" data-clsbase="ter-row" style="color:var(--ok)">validation passed</div>
+        <div style="margin-top:10px"><span style="color:var(--accent)">$</span> <span class="blink" style="display:inline-block;width:10px;height:18px;background:var(--accent);vertical-align:-3px"></span></div>
+      </div>
+    </div>
+
+    <!-- ER DIAGRAM -->
+    <div style="flex:1;position:relative;min-width:0">
+      <div style="position:relative;width:700px;height:860px;margin:0 auto">
+
+        <!-- messy SQL chips (fade out on reverse) -->
+        <div class="sqlchip" data-cls="m1" data-clsbase="sqlchip" style="left:40px;top:30px">stg_customers.sql</div>
+        <div class="sqlchip" data-cls="m1" data-clsbase="sqlchip" style="left:230px;top:70px">stg_orders.sql</div>
+        <div class="sqlchip" data-cls="m1" data-clsbase="sqlchip" style="left:430px;top:40px">int_order_enriched.sql</div>
+        <div class="sqlchip" data-cls="m1" data-clsbase="sqlchip" style="left:120px;top:150px">dim_customer.sql</div>
+        <div class="sqlchip" data-cls="m1" data-clsbase="sqlchip" style="left:360px;top:180px">fct_orders.sql</div>
+        <div class="sqlchip" data-cls="m1" data-clsbase="sqlchip" style="left:60px;top:250px">hub_customer.sql</div>
+        <div class="sqlchip" data-cls="m1" data-clsbase="sqlchip" style="left:300px;top:290px">link_order.sql</div>
+        <div class="sqlchip" data-cls="m1" data-clsbase="sqlchip" style="left:430px;top:360px">sat_customer_details.sql</div>
+
+        <!-- clean ER cards (snap in) -->
+        <svg style="position:absolute;left:0;top:0;width:700px;height:860px;overflow:visible" viewBox="0 0 700 860" preserveAspectRatio="none">
+          <path class="ln" data-cls="l1" data-clsbase="ln" d="M 170 230 L 170 470"></path>
+          <path class="ln" data-cls="l2" data-clsbase="ln" d="M 530 230 L 530 470"></path>
+        </svg>
+
+        <div class="enode" data-cls="c1" data-clsbase="enode" style="position:absolute;left:20px;top:40px;width:300px">
+          <div class="ehead"><span class="ename">dim_customer</span><span class="badge">SCD2</span></div>
+          <div style="padding:5px 0">
+            <div class="arow"><span class="aname pk">🔑 customer_id</span><span class="atype">integer</span></div>
+            <div class="arow"><span class="aname">name</span><span class="atype">string</span></div>
+            <div class="arow"><span class="aname">tier</span><span class="atype">string</span></div>
+          </div>
+        </div>
+
+        <div class="enode" data-cls="c2" data-clsbase="enode" style="position:absolute;left:380px;top:40px;width:300px">
+          <div class="ehead"><span class="ename">dim_product</span><span class="badge">SCD2</span></div>
+          <div style="padding:5px 0">
+            <div class="arow"><span class="aname pk">🔑 product_id</span><span class="atype">integer</span></div>
+            <div class="arow"><span class="aname">sku</span><span class="atype">string</span></div>
+            <div class="arow"><span class="aname">category</span><span class="atype">string</span></div>
+            <div class="arow"><span class="aname">list_price</span><span class="atype">decimal</span></div>
+          </div>
+        </div>
+
+        <div class="enode" data-cls="c3" data-clsbase="enode" style="position:absolute;left:200px;top:480px;width:300px">
+          <div class="ehead"><span class="ename">fct_orders</span></div>
+          <div style="padding:5px 0">
+            <div class="arow"><span class="aname pk">🔑 order_id</span><span class="atype">integer</span></div>
+            <div class="arow"><span class="aname">customer_id <span class="fk">FK</span></span><span class="atype">integer</span></div>
+            <div class="arow"><span class="aname">product_id <span class="fk">FK</span></span><span class="atype">integer</span></div>
+            <div class="arow"><span class="aname">amount</span><span class="atype">decimal</span></div>
+          </div>
+        </div>
+
+        <div class="enode" data-cls="c4" data-clsbase="enode" style="position:absolute;left:20px;top:680px;width:300px">
+          <div class="ehead"><span class="ename">hub_customer</span><span class="badge">HUB</span></div>
+          <div style="padding:5px 0">
+            <div class="arow"><span class="aname pk">🔑 customer_id</span><span class="atype">integer</span></div>
+            <div class="arow"><span class="aname">load_dts</span><span class="atype">date</span></div>
+          </div>
+        </div>
+
+        <div class="enode" data-cls="c5" data-clsbase="enode" style="position:absolute;left:380px;top:680px;width:300px">
+          <div class="ehead"><span class="ename">link_order</span><span class="badge">LINK</span></div>
+          <div style="padding:5px 0">
+            <div class="arow"><span class="aname">order_hashkey</span><span class="atype">string</span></div>
+            <div class="arow"><span class="aname">load_dts</span><span class="atype">date</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div></div>
+<script>
+
+class Component {
+  constructor(){ this.state = { step: 0 }; }
+  componentDidMount(){
+    this._t = setInterval(() => {
+      this.setState(s => ({ step: (s.step + 1) % 11 }));
+    }, 1700);
+  }
+    renderVals(){
+    const st = this.state.step;
+    const on = (n) => st >= n ? 'on' : '';
+    return {
+      s1: on(1), s2: on(2), s3: on(3), s4: on(4), s5: on(6),
+      m1: st >= 3 ? 'gone' : '',
+      c1: on(3), c2: on(3), c3: on(4), c4: on(5), c5: on(5),
+      l1: on(4), l2: on(4)
+    };
+  }
+}
+
+const comp = new Component();
+const root = document.getElementById('root');
+function apply(){
+  const v = comp.renderVals();
+  root.querySelectorAll('[data-cls]').forEach(el=>{
+    const k = el.getAttribute('data-cls'); const base = el.getAttribute('data-clsbase')||'';
+    el.className = (base + ' ' + (v[k]||'')).trim();
+  });
+  root.querySelectorAll('*').forEach(el=>{
+    for (const a of el.attributes){
+      if (a.name.startsWith('data-style-')){
+        const prop = a.name.slice('data-style-'.length);
+        el.style.setProperty(prop, v[a.value] != null ? v[a.value] : '');
+      }
+    }
+  });
+  root.querySelectorAll('[data-text]').forEach(el=>{
+    const k = el.getAttribute('data-text'); el.textContent = v[k] != null ? v[k] : '';
+  });
+}
+comp.setState = function(fn){ comp.state = Object.assign({}, comp.state, typeof fn==='function'?fn(comp.state):fn); apply(); };
+apply();
+comp.componentDidMount && comp.componentDidMount();
+</script>
+</body>
+</html>
