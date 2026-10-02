@@ -26,6 +26,14 @@ demo/**/target/
 demo/**/logs/
 demo/**/dbt_packages/
 
+# demo recorder toolchain (tapes/pages are committed; the recorder's deps + rendered
+# media are regenerable — `demos/standalone/build.mjs` + `record.mjs` rebuild them).
+# The committed copies live where they're used: README GIFs in docs/assets/demos/,
+# landing videos in demos/landing/media/.
+demos/standalone/node_modules/
+demos/standalone/package-lock.json
+demos/standalone/out/
+
 # duckdb build artifacts
 *.duckdb
 *.duckdb.wal
@@ -39,3 +47,6 @@ demo/**/dbt_packages/
 
 # Vendored erwin XSD schemas — reference only, must NOT ship in a public repo.
 erwin/
+
+# Modelith CLI demo renders (regenerable via demos/render.sh)
+demos/out/

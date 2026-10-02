@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920">
+<title>One model, many targets</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+html,body{margin:0;background:#14110f}
+
+:root{
+  --bg:#14110f; --raised:#1c1815; --card:#221d19; --border:#33291f; --border2:#4a3c2c;
+  --text:#ece6dd; --dim:#a89a86; --accent:#e0a63a; --soft:rgba(224,166,58,0.15);
+  --pk:#f2c14e; --ok:#6cbf73; --blue:#93c5fd;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,monospace; --sans:"Inter",-apple-system,sans-serif;
+}
+body{margin:0}
+.ter-row{opacity:0;transform:translateY(5px);transition:opacity .4s ease,transform .4s ease}
+.ter-row.on{opacity:1;transform:none}
+.enode{background:var(--card);border:1px solid var(--border);border-top:3px solid var(--accent);border-radius:10px;overflow:hidden;box-shadow:0 8px 30px rgba(0,0,0,.45)}
+.ehead{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;background:rgba(255,255,255,.03);border-bottom:1px solid var(--border)}
+.ename{font-weight:700;font-size:16px}
+.arow{display:flex;align-items:center;gap:6px;padding:4px 14px;height:28px;line-height:20px}
+.aname{flex:1;font-size:14px}
+.aname.pk{color:var(--pk);font-weight:600}
+.atype{color:var(--dim);font-family:var(--mono);font-size:12px}
+.target{opacity:0;transform:scale(.8);transition:opacity .5s ease,transform .5s ease}
+.target.on{opacity:1;transform:scale(1)}
+.ray{stroke:var(--border2);stroke-width:2;fill:none;opacity:0;transition:opacity .5s ease}
+.ray.on{opacity:.6}
+.blink{animation:blink 1s steps(2,start) infinite}
+@keyframes blink{to{opacity:0}}
+
+</style>
+</head>
+<body>
+<div id="root"><div style="width:1920px;height:1080px;box-sizing:border-box;background:var(--bg);color:var(--text);font-family:var(--sans);display:flex;flex-direction:column;overflow:hidden">
+
+  <div style="padding:34px 56px 0 56px;display:flex;align-items:baseline;gap:18px">
+    <span style="font-size:30px;color:var(--accent)">◮</span>
+    <span style="font-size:30px;font-weight:700">Modelith</span>
+    <span style="font-size:20px;color:var(--dim);font-family:var(--mono)">compile</span>
+    <span style="margin-left:auto;font-size:22px;color:var(--dim)">One model. Compiled to every target it needs.</span>
+  </div>
+
+  <div style="flex:1;display:flex;gap:40px;padding:28px 56px 48px 56px;min-height:0">
+
+    <!-- TERMINAL -->
+    <div style="width:760px;flex:none;background:#100d0b;border:1px solid var(--border);border-radius:14px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,.5)">
+      <div style="height:40px;flex:none;display:flex;align-items:center;gap:8px;padding:0 16px;border-bottom:1px solid var(--border);background:var(--raised)">
+        <span style="width:12px;height:12px;border-radius:50%;background:#50433a"></span>
+        <span style="width:12px;height:12px;border-radius:50%;background:#50433a"></span>
+        <span style="width:12px;height:12px;border-radius:50%;background:#50433a"></span>
+        <span style="margin-left:10px;font-family:var(--mono);font-size:13px;color:var(--dim)">mdl — ibor</span>
+      </div>
+      <div style="flex:1;padding:22px 26px;font-family:var(--mono);font-size:16px;line-height:1.75;overflow:hidden">
+        <div class="ter-row" data-cls="s1" data-clsbase="ter-row"><span style="color:var(--accent)">$</span> mdl generate</div>
+        <div class="ter-row" data-cls="s1" data-clsbase="ter-row" style="color:var(--dim)">wrote 11 files to target/dbt</div>
+        <div class="ter-row" data-cls="s2" data-clsbase="ter-row"><span style="color:var(--accent)">$</span> mdl export contract</div>
+        <div class="ter-row" data-cls="s2" data-clsbase="ter-row" style="color:var(--dim)">wrote contract to datacontract.yaml</div>
+        <div class="ter-row" data-cls="s3" data-clsbase="ter-row"><span style="color:var(--accent)">$</span> mdl emit pydantic</div>
+        <div class="ter-row" data-cls="s3" data-clsbase="ter-row" style="color:var(--dim)">wrote pydantic to models.py</div>
+        <div class="ter-row" data-cls="s4" data-clsbase="ter-row"><span style="color:var(--accent)">$</span> mdl export sql --dialect postgres</div>
+        <div class="ter-row" data-cls="s4" data-clsbase="ter-row" style="color:var(--dim)">-- SQL DDL (postgres)</div>
+        <div class="ter-row" data-cls="s5" data-clsbase="ter-row"><span style="color:var(--accent)">$</span> mdl export mermaid</div>
+        <div class="ter-row" data-cls="s5" data-clsbase="ter-row" style="color:var(--dim)">erDiagram …</div>
+        <div class="ter-row" data-cls="s6" data-clsbase="ter-row"><span style="color:var(--accent)">$</span> mdl export dbml</div>
+        <div class="ter-row" data-cls="s6" data-clsbase="ter-row" style="color:var(--dim)">// DBML …</div>
+        <div style="margin-top:12px"><span style="color:var(--accent)">$</span> <span class="blink" style="display:inline-block;width:10px;height:18px;background:var(--accent);vertical-align:-3px"></span></div>
+      </div>
+    </div>
+
+    <!-- RIGHT: model at center, targets fanning out -->
+    <div style="flex:1;position:relative;min-width:0">
+      <div style="position:relative;width:960px;height:860px;margin:0 auto">
+
+        <!-- rays -->
+        <svg style="position:absolute;left:0;top:0;width:960px;height:860px;overflow:visible" viewBox="0 0 960 860" preserveAspectRatio="none">
+          <path class="ray" data-cls="r1" data-clsbase="ray" d="M 480 430 L 760 150"></path>
+          <path class="ray" data-cls="r2" data-clsbase="ray" d="M 480 430 L 820 350"></path>
+          <path class="ray" data-cls="r3" data-clsbase="ray" d="M 480 430 L 820 540"></path>
+          <path class="ray" data-cls="r4" data-clsbase="ray" d="M 480 430 L 700 720"></path>
+          <path class="ray" data-cls="r5" data-clsbase="ray" d="M 480 430 L 230 150"></path>
+          <path class="ray" data-cls="r6" data-clsbase="ray" d="M 480 430 L 160 540"></path>
+        </svg>
+
+        <!-- center model card -->
+        <div class="enode" style="position:absolute;left:360px;top:330px;width:240px;border-top-width:4px">
+          <div class="ehead"><span class="ename">model</span><span style="font-size:12px;color:var(--dim);font-family:var(--mono)">one source of truth</span></div>
+          <div style="padding:5px 0">
+            <div class="arow"><span class="aname">entities</span><span class="atype">7</span></div>
+            <div class="arow"><span class="aname">relationships</span><span class="atype">8</span></div>
+            <div class="arow"><span class="aname">contracts</span><span class="atype">enforced</span></div>
+          </div>
+        </div>
+
+        <!-- target chips -->
+        <div class="target" data-cls="t1" data-clsbase="target" style="position:absolute;left:700px;top:110px;padding:16px 20px;border-radius:12px;background:var(--card);border:1px solid var(--border);border-left:3px solid var(--accent)">
+          <div style="font-size:18px;font-weight:700">dbt-core</div>
+          <div style="color:var(--dim);font-size:13px">contract-enforced models</div>
+        </div>
+        <div class="target" data-cls="t2" data-clsbase="target" style="position:absolute;left:760px;top:320px;padding:16px 20px;border-radius:12px;background:var(--card);border:1px solid var(--border);border-left:3px solid var(--blue)">
+          <div style="font-size:18px;font-weight:700">ODCS contract</div>
+          <div style="color:var(--dim);font-size:13px">datacontract.yaml</div>
+        </div>
+        <div class="target" data-cls="t3" data-clsbase="target" style="position:absolute;left:760px;top:510px;padding:16px 20px;border-radius:12px;background:var(--card);border:1px solid var(--border);border-left:3px solid #c4a3e0">
+          <div style="font-size:18px;font-weight:700">Pydantic</div>
+          <div style="color:var(--dim);font-size:13px">models.py</div>
+        </div>
+        <div class="target" data-cls="t4" data-clsbase="target" style="position:absolute;left:580px;top:700px;padding:16px 20px;border-radius:12px;background:var(--card);border:1px solid var(--border);border-left:3px solid var(--ok)">
+          <div style="font-size:18px;font-weight:700">SQL DDL</div>
+          <div style="color:var(--dim);font-size:13px">CREATE TABLE · any dialect</div>
+        </div>
+        <div class="target" data-cls="t5" data-clsbase="target" style="position:absolute;left:70px;top:110px;padding:16px 20px;border-radius:12px;background:var(--card);border:1px solid var(--border);border-left:3px solid #7fb0d8">
+          <div style="font-size:18px;font-weight:700">Mermaid ERD</div>
+          <div style="color:var(--dim);font-size:13px">renders in GitHub</div>
+        </div>
+        <div class="target" data-cls="t6" data-clsbase="target" style="position:absolute;left:20px;top:510px;padding:16px 20px;border-radius:12px;background:var(--card);border:1px solid var(--border);border-left:3px solid #d98ba8">
+          <div style="font-size:18px;font-weight:700">DBML</div>
+          <div style="color:var(--dim);font-size:13px">dbdiagram.io</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div></div>
+<script>
+
+class Component {
+  constructor(){ this.state = { step: 0 }; }
+  componentDidMount(){ this._t = setInterval(() => this.setState(s => ({ step: (s.step + 1) % 10 })), 1500); }
+    renderVals(){
+    const st = this.state.step;
+    const on = (n) => st >= n ? 'on' : '';
+    return {
+      s1: on(1), s2: on(2), s3: on(3), s4: on(4), s5: on(5), s6: on(6),
+      t1: on(1), r1: on(1),
+      t2: on(2), r2: on(2),
+      t3: on(3), r3: on(3),
+      t4: on(4), r4: on(4),
+      t5: on(5), r5: on(5),
+      t6: on(6), r6: on(6)
+    };
+  }
+}
+
+const comp = new Component();
+const root = document.getElementById('root');
+function apply(){
+  const v = comp.renderVals();
+  root.querySelectorAll('[data-cls]').forEach(el=>{
+    const k = el.getAttribute('data-cls'); const base = el.getAttribute('data-clsbase')||'';
+    el.className = (base + ' ' + (v[k]||'')).trim();
+  });
+  root.querySelectorAll('*').forEach(el=>{
+    for (const a of el.attributes){
+      if (a.name.startsWith('data-style-')){
+        const prop = a.name.slice('data-style-'.length);
+        el.style.setProperty(prop, v[a.value] != null ? v[a.value] : '');
+      }
+    }
+  });
+  root.querySelectorAll('[data-text]').forEach(el=>{
+    const k = el.getAttribute('data-text'); el.textContent = v[k] != null ? v[k] : '';
+  });
+}
+comp.setState = function(fn){ comp.state = Object.assign({}, comp.state, typeof fn==='function'?fn(comp.state):fn); apply(); };
+apply();
+comp.componentDidMount && comp.componentDidMount();
+</script>
+</body>
+</html>

@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Modelith — the modeling layer dbt-core is missing</title>
+<meta name="description" content="Design entities and relationships in git, generate contract-enforced dbt, and catch drift before it ships. Ontology-anchored, git-native data modeling.">
+<meta property="og:title" content="Modelith — model in git, generate dbt, catch drift">
+<meta property="og:description" content="Design your model as an ER diagram, generate dbt from it, reverse an existing warehouse, and get told exactly what drifted.">
+<meta property="og:type" content="website">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#14110f; --raised:#1c1815; --card:#221d19; --border:#33291f; --border2:#4a3c2c;
+  --text:#ece6dd; --dim:#a89a86; --accent:#e0a63a; --soft:rgba(224,166,58,0.12);
+  --pk:#f2c14e; --ok:#6cbf73; --blue:#93c5fd;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,monospace; --sans:"Inter",-apple-system,"Segoe UI",sans-serif;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.5;
+  background-image:radial-gradient(circle at 1px 1px,#241d16 1px,transparent 0);background-size:26px 26px}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+.wrap{max-width:1120px;margin:0 auto;padding:0 24px}
+code,.mono{font-family:var(--mono)}
+
+/* nav */
+nav{position:sticky;top:0;z-index:20;backdrop-filter:blur(10px);background:rgba(20,17,15,.82);border-bottom:1px solid var(--border)}
+.nav{display:flex;align-items:center;gap:16px;height:64px}
+.logo{font-size:22px;font-weight:800;letter-spacing:.01em;display:flex;align-items:center;gap:10px}
+.logo .mark{color:var(--accent);font-size:24px}
+.nav .sp{flex:1}
+.nav a.navlink{color:var(--dim);font-size:15px;font-weight:500}
+.nav a.navlink:hover{color:var(--text);text-decoration:none}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:10px;font-weight:600;font-size:15px;border:1px solid var(--border2);background:var(--card);color:var(--text);cursor:pointer}
+.btn:hover{border-color:var(--accent);text-decoration:none}
+.btn.primary{background:var(--accent);color:#241a08;border-color:var(--accent)}
+.btn.primary:hover{filter:brightness(1.07)}
+
+/* hero */
+.hero{padding:88px 0 56px;text-align:center}
+.pill{display:inline-block;padding:6px 14px;border-radius:99px;background:var(--soft);color:var(--accent);font-size:13px;font-weight:600;border:1px solid rgba(224,166,58,.3);margin-bottom:26px}
+h1{font-size:clamp(34px,5.4vw,60px);line-height:1.08;font-weight:800;letter-spacing:-.02em;margin:0 auto 22px;max-width:17ch}
+h1 .hl{color:var(--accent)}
+.sub{font-size:clamp(17px,2.2vw,21px);color:var(--dim);max-width:60ch;margin:0 auto 34px}
+.cta{display:flex;gap:14px;justify-content:center;flex-wrap:wrap}
+.install{margin:34px auto 0;max-width:620px;background:#100d0b;border:1px solid var(--border);border-radius:12px;
+  font-family:var(--mono);font-size:15px;text-align:left;padding:16px 20px;color:var(--text);overflow-x:auto}
+.install .c{color:var(--dim)}
+.install .p{color:var(--accent)}
+
+/* section */
+section{padding:66px 0}
+.eyebrow{color:var(--accent);font-weight:600;font-size:14px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:12px}
+h2{font-size:clamp(26px,3.6vw,38px);font-weight:800;letter-spacing:-.01em;margin:0 0 14px}
+.lead{color:var(--dim);font-size:18px;max-width:62ch;margin:0 0 40px}
+
+/* demo gallery */
+.demos{display:grid;grid-template-columns:1fr;gap:40px}
+.demo{display:grid;grid-template-columns:1fr;gap:18px;align-items:center}
+@media(min-width:860px){.demo{grid-template-columns:1.35fr 1fr}.demo.flip .vid{order:2}.demo.flip .txt{order:1}}
+.vid{border:1px solid var(--border);border-radius:14px;overflow:hidden;background:#000;box-shadow:0 14px 48px rgba(0,0,0,.5)}
+.vid video{display:block;width:100%;height:auto}
+.txt h3{font-size:22px;margin:0 0 10px;font-weight:700}
+.txt .n{color:var(--accent);font-family:var(--mono);font-size:14px;font-weight:600;margin-bottom:8px}
+.txt p{color:var(--dim);margin:0 0 10px;font-size:16px}
+.txt .cmd{font-family:var(--mono);font-size:13px;color:var(--text);background:var(--card);border:1px solid var(--border);border-left:3px solid var(--accent);padding:8px 12px;border-radius:8px;display:inline-block}
+
+/* feature grid */
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:18px}
+.feat{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:24px;border-top:3px solid var(--accent)}
+.feat h3{margin:0 0 8px;font-size:18px}
+.feat p{margin:0;color:var(--dim);font-size:15px}
+
+/* targets */
+.targets{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px}
+.tgt{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:16px 18px;border-left:3px solid var(--accent)}
+.tgt b{font-size:16px}
+.tgt code{display:block;color:var(--dim);font-size:13px;margin-top:6px}
+
+/* final cta */
+.final{text-align:center;background:linear-gradient(180deg,transparent,rgba(224,166,58,.04));border-top:1px solid var(--border)}
+
+footer{border-top:1px solid var(--border);padding:34px 0;color:var(--dim);font-size:14px}
+.footrow{display:flex;gap:20px;align-items:center;flex-wrap:wrap}
+.footrow .sp{flex:1}
+</style>
+</head>
+<body>
+
+<nav><div class="wrap nav">
+  <span class="logo"><span class="mark">◮</span> Modelith</span>
+  <span class="sp"></span>
+  <a class="navlink" href="#demos">Demos</a>
+  <a class="navlink" href="#features">Features</a>
+  <a class="navlink" href="#targets">Compile targets</a>
+  <a class="btn" href="https://github.com/dbose/modelith">GitHub</a>
+</div></nav>
+
+<header class="hero"><div class="wrap">
+  <span class="pill">git-native · ontology-anchored · dbt-core</span>
+  <h1>The modeling layer <span class="hl">dbt-core is missing</span></h1>
+  <p class="sub">Design entities and relationships in git, generate contract-enforced dbt, and
+    catch drift before it ships. One model every tool reads and writes — the CLI, the canvas,
+    VS Code, and CI.</p>
+  <div class="cta">
+    <a class="btn primary" href="#demos">Watch it work ↓</a>
+    <a class="btn" href="https://github.com/dbose/modelith">Star on GitHub</a>
+  </div>
+  <div class="install">
+    <div><span class="c"># no cloud warehouse needed — the demo builds on a bundled DuckDB</span></div>
+    <div><span class="p">$</span> uv tool install 'modelith-dbt[ontology]'</div>
+    <div><span class="p">$</span> mdl init my-model</div>
+    <div><span class="p">$</span> mdl generate   <span class="c"># → contract-enforced dbt</span></div>
+  </div>
+</div></header>
+
+<section id="demos"><div class="wrap">
+  <div class="eyebrow">See it</div>
+  <h2>Six flows, end to end</h2>
+  <p class="lead">Every command and every line of output below is real. Nothing is mocked.</p>
+
+  <div class="demos">
+
+    <div class="demo">
+      <div class="vid"><video src="media/Main.mp4" autoplay loop muted playsinline></video></div>
+      <div class="txt">
+        <div class="n">01 · Design-first</div>
+        <h3>From a blank repo to running dbt</h3>
+        <p>Scaffold a model, add entities (ULIDs minted for you), validate, and compile to
+          contract-enforced dbt — plus an ODCS data contract from the same model.</p>
+        <span class="cmd">mdl init · new entity · validate · generate</span>
+      </div>
+    </div>
+
+    <div class="demo flip">
+      <div class="vid"><video src="media/Adopt.mp4" autoplay loop muted playsinline></video></div>
+      <div class="txt">
+        <div class="n">02 · Adopt a warehouse</div>
+        <h3>Reverse a legacy dbt project into a clean model</h3>
+        <p>Point it at a warehouse with no data model. It excludes staging, detects SCD2 and
+          Data Vault, strips surrogate keys, and logs every inference in a reviewable ledger.</p>
+        <span class="cmd">mdl reverse --project target/manifest.json</span>
+      </div>
+    </div>
+
+    <div class="demo">
+      <div class="vid"><video src="media/Drift.mp4" autoplay loop muted playsinline></video></div>
+      <div class="txt">
+        <div class="n">03 · The drift gate</div>
+        <h3>Model and warehouse, always in lockstep</h3>
+        <p>A column lands in the warehouse. Drift classifies it — additive, not breaking —
+          and reconcile folds the safe change into the model. Nothing is ever lost.</p>
+        <span class="cmd">mdl drift --check · --reconcile</span>
+      </div>
+    </div>
+
+    <div class="demo flip">
+      <div class="vid"><video src="media/Ontology.mp4" autoplay loop muted playsinline></video></div>
+      <div class="txt">
+        <div class="n">04 · Ontology anchoring</div>
+        <h3>Align to an industry vocabulary</h3>
+        <p>Search FIBO (or any OLS / OntoPortal / Collibra source), align an entity to a
+          standard term, and track coverage — anchored, reproducible, offline.</p>
+        <span class="cmd">mdl ontology search · align · status</span>
+      </div>
+    </div>
+
+    <div class="demo">
+      <div class="vid"><video src="media/Erwin.mp4" autoplay loop muted playsinline></video></div>
+      <div class="txt">
+        <div class="n">05 · Erwin import</div>
+        <h3>Bring an erwin model into git</h3>
+        <p>Import an erwin XML export straight into clean logical YAML you can version, diff,
+          and generate from. The migration path off a legacy modeling tool.</p>
+        <span class="cmd">mdl import erwin fund.xml -o fund</span>
+      </div>
+    </div>
+
+    <div class="demo flip">
+      <div class="vid"><video src="media/Compile.mp4" autoplay loop muted playsinline></video></div>
+      <div class="txt">
+        <div class="n">06 · One model, many targets</div>
+        <h3>A contract factory</h3>
+        <p>From one definition: contract-enforced dbt, an ODCS data contract, Pydantic models,
+          SQL DDL, Mermaid, DBML, RDF/SHACL, and a Neo4j graph schema — each deterministic.</p>
+        <span class="cmd">mdl generate · export · emit</span>
+      </div>
+    </div>
+
+  </div>
+</div></section>
+
+<section id="features"><div class="wrap">
+  <div class="eyebrow">Why</div>
+  <h2>Meaning lives in one place, in git</h2>
+  <p class="lead">Warehouse teams scatter their meaning across an ER tool that never sees
+    production, dbt SQL that drifts from the design, and a catalog nobody edits. Modelith
+    collapses them into one model every surface reads and writes.</p>
+  <div class="grid">
+    <div class="feat"><h3>Contract-enforced dbt</h3><p>Generate dbt-core models with enforced
+      contracts, key constraints, and relationship tests. Regeneration runs a three-way merge,
+      so hand edits and generated blocks both survive.</p></div>
+    <div class="feat"><h3>Drift as a CI gate</h3><p>Compare the committed model to the compiled
+      warehouse. Breaking / additive / cosmetic, classified in seconds. <code>--check</code>
+      fails the PR; <code>--reconcile</code> folds the safe deltas back in.</p></div>
+    <div class="feat"><h3>Reverse any warehouse</h3><p>A live database, a dbt manifest, or raw
+      SQL DDL, lifted into a clean model — SCD2 and Data Vault detected, surrogates stripped,
+      every inference reviewable.</p></div>
+    <div class="feat"><h3>Ontology-anchored</h3><p>A four-layer vocabulary stack with SKOS
+      alignments and provenance. Pin bundles like dependencies; resolve against OLS, OntoPortal,
+      or Collibra — reproducibly, offline.</p></div>
+    <div class="feat"><h3>Structural git merge</h3><p>A ULID-keyed merge driver: two people add
+      different attributes to the same entity and merge clean. A rename is one cosmetic change,
+      not a delete-plus-add.</p></div>
+    <div class="feat"><h3>Every surface is a client</h3><p>The model is plain YAML in git. The
+      CLI, the web canvas, the VS Code extension, and CI all read and write it — none of them
+      owns state.</p></div>
+  </div>
+</div></section>
+
+<section id="targets"><div class="wrap">
+  <div class="eyebrow">Model once, ship many</div>
+  <h2>One model compiles to every target it needs</h2>
+  <p class="lead">Each generated deterministically from the single definition.</p>
+  <div class="targets">
+    <div class="tgt"><b>dbt-core</b><code>mdl generate</code></div>
+    <div class="tgt"><b>ODCS data contract</b><code>mdl export contract</code></div>
+    <div class="tgt"><b>Pydantic</b><code>mdl emit pydantic</code></div>
+    <div class="tgt"><b>Neo4j graph</b><code>mdl export graph</code></div>
+    <div class="tgt"><b>Semantic layer</b><code>mdl emit semantic</code></div>
+    <div class="tgt"><b>RDF / SHACL</b><code>mdl export rdf</code></div>
+    <div class="tgt"><b>SQL DDL</b><code>mdl export sql</code></div>
+    <div class="tgt"><b>Mermaid ERD</b><code>mdl export mermaid</code></div>
+    <div class="tgt"><b>DBML</b><code>mdl export dbml</code></div>
+  </div>
+</div></section>
+
+<section class="final"><div class="wrap">
+  <h2>Try it in two minutes</h2>
+  <p class="lead" style="margin:0 auto 28px">No cloud warehouse. The IBoR demo ships a model and
+    a dbt project over a bundled DuckDB, so it builds on a laptop.</p>
+  <div class="cta">
+    <a class="btn primary" href="https://github.com/dbose/modelith">Get started on GitHub</a>
+    <a class="btn" href="https://pypi.org/project/modelith-dbt/">modelith-dbt on PyPI</a>
+  </div>
+</div></section>
+
+<footer><div class="wrap footrow">
+  <span class="logo" style="font-size:18px"><span class="mark">◮</span> Modelith</span>
+  <span class="sp"></span>
+  <a href="https://github.com/dbose/modelith">GitHub</a>
+  <a href="https://pypi.org/project/modelith-dbt/">PyPI</a>
+  <span style="color:var(--border2)">·</span>
+  <span>Apache-2.0</span>
+</div></footer>
+
+</body>
+</html>

@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920">
+<title>Erwin import</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+html,body{margin:0;background:#14110f}
+
+:root{
+  --bg:#14110f; --raised:#1c1815; --card:#221d19; --border:#33291f; --border2:#4a3c2c;
+  --text:#ece6dd; --dim:#a89a86; --accent:#e0a63a; --soft:rgba(224,166,58,0.15);
+  --pk:#f2c14e; --ok:#6cbf73; --blue:#93c5fd;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,monospace; --sans:"Inter",-apple-system,sans-serif;
+}
+body{margin:0}
+.ter-row{opacity:0;transform:translateY(5px);transition:opacity .4s ease,transform .4s ease}
+.ter-row.on{opacity:1;transform:none}
+.enode{background:var(--card);border:1px solid var(--border);border-top:3px solid var(--accent);border-radius:10px;overflow:hidden;box-shadow:0 4px 18px rgba(0,0,0,.35);
+  opacity:0;transform:translateY(14px) scale(.98);transition:opacity .55s ease,transform .55s ease}
+.enode.on{opacity:1;transform:none}
+.ehead{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;background:rgba(255,255,255,.03);border-bottom:1px solid var(--border)}
+.ename{font-weight:700;font-size:16px}
+.arow{display:flex;align-items:center;gap:6px;padding:4px 14px;height:30px;line-height:22px}
+.aname{flex:1;font-size:15px}
+.aname.pk{color:var(--pk);font-weight:600}
+.fk{font-size:11px;padding:0 6px;border-radius:99px;background:var(--soft);color:var(--accent);margin-left:6px}
+.atype{color:var(--dim);font-family:var(--mono);font-size:13px}
+.ln{stroke:var(--border2);stroke-width:2;fill:none;stroke-dasharray:6 6;opacity:0;transition:opacity .6s ease}
+.ln.on{opacity:1}
+.xml{opacity:0;transition:opacity .5s ease;font-family:var(--mono);font-size:14px;line-height:1.6}
+.xml.on{opacity:1}
+.blink{animation:blink 1s steps(2,start) infinite}
+@keyframes blink{to{opacity:0}}
+.arrow{opacity:0;transition:opacity .6s ease;font-size:40px;color:var(--accent)}
+.arrow.on{opacity:1}
+
+</style>
+</head>
+<body>
+<div id="root"><div style="width:1920px;height:1080px;box-sizing:border-box;background:var(--bg);color:var(--text);font-family:var(--sans);display:flex;flex-direction:column;overflow:hidden">
+
+  <div style="padding:34px 56px 0 56px;display:flex;align-items:baseline;gap:18px">
+    <span style="font-size:30px;color:var(--accent)">◮</span>
+    <span style="font-size:30px;font-weight:700">Modelith</span>
+    <span style="font-size:20px;color:var(--dim);font-family:var(--mono)">import erwin</span>
+    <span style="margin-left:auto;font-size:22px;color:var(--dim)">Bring an erwin model in. Own it in git.</span>
+  </div>
+
+  <div style="flex:1;display:flex;gap:40px;padding:28px 56px 48px 56px;min-height:0">
+
+    <!-- TERMINAL -->
+    <div style="width:900px;flex:none;background:#100d0b;border:1px solid var(--border);border-radius:14px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,.5)">
+      <div style="height:40px;flex:none;display:flex;align-items:center;gap:8px;padding:0 16px;border-bottom:1px solid var(--border);background:var(--raised)">
+        <span style="width:12px;height:12px;border-radius:50%;background:#50433a"></span>
+        <span style="width:12px;height:12px;border-radius:50%;background:#50433a"></span>
+        <span style="width:12px;height:12px;border-radius:50%;background:#50433a"></span>
+        <span style="margin-left:10px;font-family:var(--mono);font-size:13px;color:var(--dim)">mdl — import</span>
+      </div>
+      <div style="flex:1;padding:22px 26px;font-family:var(--mono);font-size:17px;line-height:1.7;overflow:hidden">
+        <div class="ter-row" data-cls="s1" data-clsbase="ter-row" style="color:var(--dim)"># a model exported from erwin</div>
+        <div class="ter-row" data-cls="s1" data-clsbase="ter-row">fund.xml  <span style="color:var(--dim)">(erwin XML)</span></div>
+        <div style="height:16px"></div>
+        <div class="ter-row" data-cls="s2" data-clsbase="ter-row"><span style="color:var(--accent)">$</span> mdl import erwin fund.xml -o fund --scaffold model</div>
+        <div class="ter-row" data-cls="s3" data-clsbase="ter-row" style="color:var(--dim)">  scaffolded .mdl/lock.yaml</div>
+        <div class="ter-row" data-cls="s3" data-clsbase="ter-row" style="color:var(--ok)">imported 3 entities, 1 relationships from erwin to fund</div>
+        <div style="height:16px"></div>
+        <div class="ter-row" data-cls="s4" data-clsbase="ter-row"><span style="color:var(--accent)">$</span> mdl validate -m fund</div>
+        <div class="ter-row" data-cls="s4" data-clsbase="ter-row" style="color:var(--ok)">validation passed</div>
+        <div style="height:16px"></div>
+        <div class="ter-row" data-cls="s5" data-clsbase="ter-row" style="color:var(--dim)"># now it's plain YAML in git — yours to version, diff, and generate</div>
+        <div style="margin-top:12px"><span style="color:var(--accent)">$</span> <span class="blink" style="display:inline-block;width:10px;height:18px;background:var(--accent);vertical-align:-3px"></span></div>
+      </div>
+    </div>
+
+    <!-- RIGHT: erwin XML -> clean ER cards -->
+    <div style="flex:1;position:relative;min-width:0">
+      <div style="position:relative;width:820px;height:860px;margin:0 auto">
+
+        <!-- erwin XML blob -->
+        <div class="xml" data-cls="x1" data-clsbase="xml" style="position:absolute;left:0;top:30px;width:300px;padding:16px;border-radius:10px;background:#15110d;border:1px solid var(--border);color:var(--dim)">
+          &lt;Entity Name="Counterparty"&gt;<br>
+          &nbsp;&nbsp;&lt;Attribute Name=<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;"Counterparty_Id" .../&gt;<br>
+          &nbsp;&nbsp;&lt;Attribute Name=<br>
+          &nbsp;&nbsp;&nbsp;&nbsp;"Legal_Name" .../&gt;<br>
+          &lt;/Entity&gt;<br>
+          &lt;Relationship .../&gt;<br>
+          <span style="color:#50433a">…</span>
+        </div>
+
+        <!-- transform arrow -->
+        <div class="arrow" data-cls="ar" data-clsbase="arrow" style="position:absolute;left:325px;top:150px">→</div>
+
+        <!-- relationship line -->
+        <svg style="position:absolute;left:0;top:0;width:820px;height:860px;overflow:visible" viewBox="0 0 820 860" preserveAspectRatio="none">
+          <path class="ln" data-cls="l1" data-clsbase="ln" d="M 650 230 L 650 400"></path>
+        </svg>
+
+        <!-- clean ER cards -->
+        <div class="enode" data-cls="c1" data-clsbase="enode" style="position:absolute;left:500px;top:40px;width:300px">
+          <div class="ehead"><span class="ename">counterparty</span></div>
+          <div style="padding:5px 0">
+            <div class="arow"><span class="aname pk">🔑 counterparty_id</span><span class="atype">id_type</span></div>
+            <div class="arow"><span class="aname">legal_name</span><span class="atype">string</span></div>
+          </div>
+        </div>
+
+        <div class="enode" data-cls="c2" data-clsbase="enode" style="position:absolute;left:500px;top:410px;width:300px">
+          <div class="ehead"><span class="ename">trade</span></div>
+          <div style="padding:5px 0">
+            <div class="arow"><span class="aname pk">🔑 trade_id</span><span class="atype">string</span></div>
+            <div class="arow"><span class="aname">counterparty_id <span class="fk">FK</span></span><span class="atype">id_type</span></div>
+          </div>
+        </div>
+
+        <div class="enode" data-cls="c3" data-clsbase="enode" style="position:absolute;left:160px;top:470px;width:280px">
+          <div class="ehead"><span class="ename">institution</span></div>
+          <div style="padding:5px 0">
+            <div class="arow"><span class="aname">counterparty_id</span><span class="atype">string</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div></div>
+<script>
+
+class Component {
+  constructor(){ this.state = { step: 0 }; }
+  componentDidMount(){ this._t = setInterval(() => this.setState(s => ({ step: (s.step + 1) % 10 })), 1700); }
+    renderVals(){
+    const st = this.state.step;
+    const on = (n) => st >= n ? 'on' : '';
+    return {
+      s1: on(1), s2: on(2), s3: on(3), s4: on(5), s5: on(7),
+      x1: on(1), ar: on(3),
+      c1: on(3), c2: on(4), c3: on(4), l1: on(5)
+    };
+  }
+}
+
+const comp = new Component();
+const root = document.getElementById('root');
+function apply(){
+  const v = comp.renderVals();
+  root.querySelectorAll('[data-cls]').forEach(el=>{
+    const k = el.getAttribute('data-cls'); const base = el.getAttribute('data-clsbase')||'';
+    el.className = (base + ' ' + (v[k]||'')).trim();
+  });
+  root.querySelectorAll('*').forEach(el=>{
+    for (const a of el.attributes){
+      if (a.name.startsWith('data-style-')){
+        const prop = a.name.slice('data-style-'.length);
+        el.style.setProperty(prop, v[a.value] != null ? v[a.value] : '');
+      }
+    }
+  });
+  root.querySelectorAll('[data-text]').forEach(el=>{
+    const k = el.getAttribute('data-text'); el.textContent = v[k] != null ? v[k] : '';
+  });
+}
+comp.setState = function(fn){ comp.state = Object.assign({}, comp.state, typeof fn==='function'?fn(comp.state):fn); apply(); };
+apply();
+comp.componentDidMount && comp.componentDidMount();
+</script>
+</body>
+</html>
