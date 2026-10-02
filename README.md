@@ -15,7 +15,13 @@ owns state.
 [![license](https://img.shields.io/badge/license-Apache--2.0-lightgrey)](#license)
 [![code style: ruff](https://img.shields.io/badge/lint-ruff-black)](https://docs.astral.sh/ruff/)
 
+CLI:
+
 ![Design a model in git, generate contract-enforced dbt, and compile to a data contract — the mdl CLI beside its live ER diagram](docs/assets/demos/Main.gif)
+
+
+VSCode Extension:
+![Split view in VS Code: the model YAML on the left, the live canvas preview on the right](docs/assets/vscode-split.png)
 
 <sub>Design in git → generate dbt → compile to a contract. [See all six flows ↓](#video-demos)</sub>
 
