@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1920">
+<title>Design-first</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<style>
+html,body{margin:0;background:#14110f}
+
+:root{
+  --bg:#14110f; --raised:#1c1815; --card:#221d19; --border:#33291f; --border2:#4a3c2c;
+  --text:#ece6dd; --dim:#a89a86; --accent:#e0a63a; --soft:rgba(224,166,58,0.15);
+  --pk:#f2c14e; --ok:#6cbf73; --blue:#93c5fd;
+  --mono:"JetBrains Mono",ui-monospace,Menlo,monospace; --sans:"Inter",-apple-system,sans-serif;
+}
+body{margin:0}
+.ter-row{opacity:0;transform:translateY(5px);transition:opacity .4s ease,transform .4s ease}
+.ter-row.on{opacity:1;transform:none}
+.enode{background:var(--card);border:1px solid var(--border);border-top:3px solid var(--accent);border-radius:10px;overflow:hidden;box-shadow:0 4px 18px rgba(0,0,0,.35);
+  opacity:0;transform:translateY(14px) scale(.98);transition:opacity .55s ease,transform .55s ease}
+.enode.on{opacity:1;transform:none}
+.enode.glow{box-shadow:0 0 0 3px var(--soft),0 6px 26px rgba(224,166,58,.35)}
+.ehead{display:flex;align-items:center;justify-content:space-between;padding:11px 14px;background:rgba(255,255,255,.03);border-bottom:1px solid var(--border)}
+.ename{font-weight:700;font-size:16px}
+.badge{font-size:12px;padding:1px 7px;border-radius:99px;background:var(--soft);color:var(--accent);text-transform:uppercase;letter-spacing:.05em;font-weight:700}
+.arow{display:flex;align-items:center;gap:6px;padding:4px 14px;height:30px;line-height:22px}
+.aname{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:15px}
+.aname.pk{color:var(--pk);font-weight:600}
+.fk{font-size:11px;padding:0 6px;border-radius:99px;background:var(--soft);color:var(--accent);margin-left:6px}
+.atype{color:var(--dim);font-family:var(--mono);font-size:13px}
+.ln{stroke:var(--border2);stroke-width:2;fill:none;stroke-dasharray:6 6;opacity:0;transition:opacity .6s ease}
+.ln.on{opacity:1}
+.blink{animation:blink 1s steps(2,start) infinite}
+@keyframes blink{to{opacity:0}}
+.chip{opacity:0;transform:translateY(10px);transition:opacity .5s ease,transform .5s ease}
+.chip.on{opacity:1;transform:none}
+
+</style>
+</head>
+<body>
+<div id="root"><div style="width:1920px;height:1080px;box-sizing:border-box;background:var(--bg);color:var(--text);font-family:var(--sans);display:flex;flex-direction:column;overflow:hidden">
+
+  <div style="padding:34px 56px 0 56px;display:flex;align-items:baseline;gap:18px">
+    <span style="font-size:30px;color:var(--accent)">◮</span>
+    <span style="font-size:30px;font-weight:700;letter-spacing:.01em">Modelith</span>
+    <span style="font-size:20px;color:var(--dim);font-family:var(--mono)">design-first</span>
+    <span style="margin-left:auto;font-size:22px;color:var(--dim)">Design in git. Compile to contract-enforced dbt.</span>
+  </div>
+
+  <div style="flex:1;display:flex;gap:40px;padding:28px 56px 48px 56px;min-height:0">
+
+    <!-- TERMINAL -->
+    <div style="width:1000px;flex:none;background:#100d0b;border:1px solid var(--border);border-radius:14px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 10px 40px rgba(0,0,0,.5)">
+      <div style="height:40px;flex:none;display:flex;align-items:center;gap:8px;padding:0 16px;border-bottom:1px solid var(--border);background:var(--raised)">
+        <span style="width:12px;height:12px;border-radius:50%;background:#50433a"></span>
+        <span style="width:12px;height:12px;border-radius:50%;background:#50433a"></span>
+        <span style="width:12px;height:12px;border-radius:50%;background:#50433a"></span>
+        <span style="margin-left:10px;font-family:var(--mono);font-size:13px;color:var(--dim)">mdl — shop</span>
+      </div>
+      <div style="flex:1;padding:24px 28px;font-family:var(--mono);font-size:19px;line-height:1.7;overflow:hidden">
+        <div class="ter-row" data-cls="s1" data-clsbase="ter-row"><span style="color:var(--accent)">$</span> mdl model render</div>
+        <div class="ter-row" data-cls="s1" data-clsbase="ter-row" style="color:var(--dim)"># model: shop</div>
+        <div class="ter-row" data-cls="s1" data-clsbase="ter-row">entity customer <span style="color:var(--dim)">· order · order_line · product</span></div>
+        <div style="height:14px"></div>
+        <div class="ter-row" data-cls="s2" data-clsbase="ter-row"><span style="color:var(--accent)">$</span> mdl new entity payment --definition <span style="color:var(--ok)">"A settlement against an order"</span></div>
+        <div class="ter-row" data-cls="s2" data-clsbase="ter-row" style="color:var(--ok)">created entity 'payment' (01M3WX64NZ…)</div>
+        <div style="height:14px"></div>
+        <div class="ter-row" data-cls="s3" data-clsbase="ter-row"><span style="color:var(--accent)">$</span> mdl validate</div>
+        <div class="ter-row" data-cls="s3" data-clsbase="ter-row" style="color:var(--ok)">validation passed</div>
+        <div style="height:14px"></div>
+        <div class="ter-row" data-cls="s4" data-clsbase="ter-row"><span style="color:var(--accent)">$</span> mdl generate</div>
+        <div class="ter-row" data-cls="s4" data-clsbase="ter-row" style="color:var(--dim)">wrote 9 files to target/dbt</div>
+        <div style="height:14px"></div>
+        <div class="ter-row" data-cls="s5" data-clsbase="ter-row"><span style="color:var(--accent)">$</span> mdl export contract</div>
+        <div class="ter-row" data-cls="s5" data-clsbase="ter-row" style="color:var(--dim)">wrote contract to datacontract.yaml</div>
+        <div style="margin-top:12px"><span style="color:var(--accent)">$</span> <span class="blink" style="display:inline-block;width:11px;height:20px;background:var(--accent);vertical-align:-3px"></span></div>
+      </div>
+    </div>
+
+    <!-- ER DIAGRAM -->
+    <div style="flex:1;position:relative;min-width:0">
+      <div style="position:relative;width:760px;height:860px;margin:0 auto">
+
+        <svg style="position:absolute;left:0;top:0;width:760px;height:860px;overflow:visible" viewBox="0 0 760 860" preserveAspectRatio="none">
+          <path class="ln" data-cls="l1" data-clsbase="ln" d="M 300 220 L 300 360"></path>
+          <path class="ln" data-cls="l2" data-clsbase="ln" d="M 180 530 L 180 650"></path>
+          <path class="ln" data-cls="l3" data-clsbase="ln" d="M 470 530 L 470 650"></path>
+        </svg>
+
+        <!-- customer -->
+        <div class="enode" data-cls="c1" data-clsbase="enode" style="position:absolute;left:150px;top:40px;width:300px">
+          <div class="ehead"><span class="ename">customer</span></div>
+          <div style="padding:5px 0">
+            <div class="arow"><span class="aname pk">🔑 customer_id</span><span class="atype">bigint</span></div>
+            <div class="arow"><span class="aname">email</span><span class="atype">string</span></div>
+            <div class="arow"><span class="aname">full_name</span><span class="atype">string</span></div>
+            <div class="arow"><span class="aname">created_at</span><span class="atype">timestamp</span></div>
+          </div>
+        </div>
+
+        <!-- order -->
+        <div class="enode" data-cls="c2" data-clsbase="enode" style="position:absolute;left:150px;top:370px;width:300px">
+          <div class="ehead"><span class="ename">order</span></div>
+          <div style="padding:5px 0">
+            <div class="arow"><span class="aname pk">🔑 order_id</span><span class="atype">bigint</span></div>
+            <div class="arow"><span class="aname">customer_id <span class="fk">FK</span></span><span class="atype">bigint</span></div>
+            <div class="arow"><span class="aname">order_date</span><span class="atype">date</span></div>
+            <div class="arow"><span class="aname">status</span><span class="atype">string</span></div>
+          </div>
+        </div>
+
+        <!-- order_line -->
+        <div class="enode" data-cls="c3" data-clsbase="enode" style="position:absolute;left:30px;top:660px;width:300px">
+          <div class="ehead"><span class="ename">order_line</span></div>
+          <div style="padding:5px 0">
+            <div class="arow"><span class="aname pk">🔑 order_line_id</span><span class="atype">bigint</span></div>
+            <div class="arow"><span class="aname">order_id <span class="fk">FK</span></span><span class="atype">bigint</span></div>
+            <div class="arow"><span class="aname">product_id <span class="fk">FK</span></span><span class="atype">bigint</span></div>
+            <div class="arow"><span class="aname">quantity</span><span class="atype">integer</span></div>
+          </div>
+        </div>
+
+        <!-- product -->
+        <div class="enode" data-cls="c4" data-clsbase="enode" style="position:absolute;left:400px;top:660px;width:300px">
+          <div class="ehead"><span class="ename">product</span></div>
+          <div style="padding:5px 0">
+            <div class="arow"><span class="aname pk">🔑 product_id</span><span class="atype">bigint</span></div>
+            <div class="arow"><span class="aname">sku</span><span class="atype">string</span></div>
+            <div class="arow"><span class="aname">name</span><span class="atype">string</span></div>
+            <div class="arow"><span class="aname">unit_price</span><span class="atype">decimal</span></div>
+          </div>
+        </div>
+
+        <!-- payment (appears on step 3) -->
+        <div class="enode" data-cls="c5" data-clsbase="enode" style="position:absolute;left:490px;top:370px;width:220px">
+          <div class="ehead"><span class="ename">payment</span><span class="badge">new</span></div>
+          <div style="padding:5px 0">
+            <div class="arow"><span class="aname pk">🔑 payment_id</span><span class="atype">bigint</span></div>
+          </div>
+        </div>
+
+        <!-- valid badge -->
+        <div style="position:absolute;left:280px;top:-2px;align-items:center;gap:8px;padding:8px 16px;border-radius:99px;background:rgba(108,191,115,.15);color:var(--ok);font-weight:700;font-size:17px;border:1px solid rgba(108,191,115,.4)" data-style-display="validShow">✓ valid</div>
+
+        <!-- compile-target chips -->
+        <div style="position:absolute;left:0;bottom:-6px;display:flex;gap:14px">
+          <div class="chip" data-cls="t1" data-clsbase="chip" style="padding:12px 18px;border-radius:10px;background:var(--card);border:1px solid var(--border);border-left:3px solid var(--accent);font-size:16px"><b>dbt</b> <span style="color:var(--dim)">· contract enforced</span></div>
+          <div class="chip" data-cls="t2" data-clsbase="chip" style="padding:12px 18px;border-radius:10px;background:var(--card);border:1px solid var(--border);border-left:3px solid var(--blue);font-size:16px"><b>ODCS</b> <span style="color:var(--dim)">· data contract</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div></div>
+<script>
+
+class Component {
+  constructor(){ this.state = { step: 0 }; }
+  componentDidMount(){
+    this._t = setInterval(() => {
+      this.setState(s => ({ step: (s.step + 1) % 12 }));
+    }, 1600);
+  }
+    renderVals(){
+    const st = this.state.step;
+    const on = (n) => st >= n ? 'on' : '';
+    return {
+      s1: on(1), s2: on(3), s3: on(5), s4: on(7), s5: on(8),
+      c1: on(1), c2: on(1), c3: on(2), c4: on(2), c5: on(3),
+      l1: on(2), l2: on(2), l3: on(2),
+      t1: on(7), t2: on(8),
+      validShow: st >= 5 ? 'inline-flex' : 'none'
+    };
+  }
+}
+
+const comp = new Component();
+const root = document.getElementById('root');
+function apply(){
+  const v = comp.renderVals();
+  root.querySelectorAll('[data-cls]').forEach(el=>{
+    const k = el.getAttribute('data-cls'); const base = el.getAttribute('data-clsbase')||'';
+    el.className = (base + ' ' + (v[k]||'')).trim();
+  });
+  root.querySelectorAll('*').forEach(el=>{
+    for (const a of el.attributes){
+      if (a.name.startsWith('data-style-')){
+        const prop = a.name.slice('data-style-'.length);
+        el.style.setProperty(prop, v[a.value] != null ? v[a.value] : '');
+      }
+    }
+  });
+  root.querySelectorAll('[data-text]').forEach(el=>{
+    const k = el.getAttribute('data-text'); el.textContent = v[k] != null ? v[k] : '';
+  });
+}
+comp.setState = function(fn){ comp.state = Object.assign({}, comp.state, typeof fn==='function'?fn(comp.state):fn); apply(); };
+apply();
+comp.componentDidMount && comp.componentDidMount();
+</script>
+</body>
+</html>

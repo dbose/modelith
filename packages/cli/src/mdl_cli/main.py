@@ -2726,7 +2726,7 @@ def export_json_schema(
     for name, cls in kinds.items():
         schema = cls.model_json_schema()
         schema["$schema"] = "http://json-schema.org/draft-07/schema#"
-        (out / f"{name}.schema.json").write_text(_json.dumps(schema, indent=2))
+        (out / f"{name}.schema.json").write_text(_json.dumps(schema, indent=2), encoding="utf-8")
     typer.secho(f"wrote {len(kinds)} schemas to {out}", fg=typer.colors.GREEN)
 
 
@@ -3783,7 +3783,12 @@ def _git_metadata(model_dir: Path) -> tuple[str | None, str | None]:
     def _git(*args: str) -> str | None:
         try:
             out = subprocess.run(  # noqa: S603,S607 - trusted git argv
-                ["git", *args], cwd=str(model_dir), capture_output=True, text=True
+                ["git", *args],
+                cwd=str(model_dir),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
             )
             return out.stdout.strip() if out.returncode == 0 and out.stdout.strip() else None
         except Exception:  # noqa: BLE001

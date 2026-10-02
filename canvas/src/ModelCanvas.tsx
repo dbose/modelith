@@ -24,7 +24,7 @@ import {
 } from "./EntityNode";
 import type { Capabilities, Exec } from "./exec";
 import { Inspector } from "./Inspector";
-import { type LayoutMode, layoutGraph } from "./layout";
+import { type LayoutDir, type LayoutMode, layoutGraph } from "./layout";
 import { AlignModal, NewEntityModal, RelEditModal, RelModal, TermMapModal } from "./modals";
 import { RelationshipEdge, type RelationshipEdgeData } from "./RelationshipEdge";
 import type { Entity, ModelDoc } from "./types";
@@ -61,7 +61,7 @@ export function anchorFor(
 /** Imperative handle for the things a shell needs to drive from its own chrome
  * (the toolbar's re-layout and fit buttons, and focus-by-id from search). */
 export interface ModelCanvasHandle {
-  relayout: (mode?: LayoutMode) => void;
+  relayout: (mode?: LayoutMode, dir?: LayoutDir) => void;
   fitView: () => void;
   focusEntity: (id: string) => void;
   /** Open the New Entity modal — a shell gesture (toolbar button, `n` shortcut). */
@@ -84,6 +84,9 @@ export interface ModelCanvasProps {
   /** per-entity overrides of the global collapse */
   expandedEntities?: Set<string>;
   onToggleExpand?: (entityId: string) => void;
+  /** Subject-area filter: when non-empty, show ONLY entities in these area ids (hide the rest)
+   *  and fit to the visible set. Empty = show all. Driven by the left drawer. */
+  activeAreas?: Set<string>;
   /** Surfaced by the shell however it likes (a toast, a banner). */
   onError?: (message: string) => void;
   handleRef?: React.Ref<ModelCanvasHandle>;
@@ -108,6 +111,7 @@ export function ModelCanvas({
   collapseDetail = false,
   expandedEntities,
   onToggleExpand,
+  activeAreas,
   onError,
   handleRef,
 }: ModelCanvasProps) {
@@ -144,6 +148,40 @@ export function ModelCanvas({
     doc.entities.forEach((e) => m.set(e.id, e));
     return m;
   }, [doc]);
+
+  // entity id -> its subject area {id, name}, for BOTH node coloring and the clustered/grid
+  // layouts. A reversed or erwin model carries membership only on the area
+  // (subject_areas[].members lists conceptual ULIDs), leaving entity.conceptual.subject_area
+  // null — so resolve from BOTH: the inverted members list (via the entity's conceptual id),
+  // then the direct pointer. Without this, every card falls back to NO_SA_COLOR and the whole
+  // model reads as one undifferentiated grey blob.
+  const areaByEntity = useMemo(() => {
+    const m = new Map<string, { id: string; name: string }>();
+    const byConceptual = new Map<string, { id: string; name: string }>(); // conceptual id -> area
+    doc.subject_areas.forEach((sa) => {
+      (sa.members ?? []).forEach((cid) => byConceptual.set(cid, { id: sa.id, name: sa.name }));
+    });
+    doc.entities.forEach((e) => {
+      const viaMembers = e.conceptual?.id ? byConceptual.get(e.conceptual.id) : undefined;
+      const direct = e.conceptual?.subject_area;
+      const area = viaMembers ?? (direct ? { id: direct.id, name: direct.name ?? direct.id } : undefined);
+      if (area) m.set(e.id, area);
+    });
+    return m;
+  }, [doc]);
+
+  // The subject-area filter predicate, shared by BOTH the heavy derivation and the lightweight
+  // hover effect. An entity is hidden when a filter is active and its area is not selected —
+  // an unassigned entity (no area) is hidden whenever any filter is on. Both effects MUST agree
+  // on this, or lifting a hover would un-hide filtered nodes.
+  const hiddenByArea = useCallback(
+    (id: string) => {
+      if (!activeAreas || activeAreas.size === 0) return false;
+      const areaId = areaByEntity.get(id)?.id;
+      return !(areaId && activeAreas.has(areaId));
+    },
+    [activeAreas, areaByEntity],
+  );
 
   // entity id -> the set of its attribute ULIDs that are an endpoint of some
   // relationship, for pinning them near the header (issue #5). Built once per model.
@@ -185,66 +223,34 @@ export function ModelCanvas({
       }
     }
 
-    // --- attribute-level hover (issue #5) -------------------------------------
-    // Which relationships does the hovered attribute participate in, and which
-    // attribute rows does the hovered edge connect? Both feed the dimmed/highlighted
-    // flags below rather than a parallel highlight system.
-    const relsForAttr = new Set<string>(); // relationship ids touching hoveredAttr
-    const entsForAttr = new Set<string>(); // entities on those relationships
-    // The attribute rows to emphasise at BOTH ends, keyed by entity. Populated for a
-    // hovered edge (both its paired columns) and for a hovered attribute (that column
-    // plus the columns it joins to at the other end), so hovering one data element
-    // lights up the data element it links to on the far side.
-    const hitAttrsByEntity = new Map<string, Set<string>>();
-    const mark = (entity: string, attrs: string[]) => {
-      if (!attrs.length) return;
-      const s = hitAttrsByEntity.get(entity) ?? new Set<string>();
-      attrs.forEach((a) => s.add(a));
-      hitAttrsByEntity.set(entity, s);
-    };
-    if (hoveredAttr) {
-      for (const r of doc.relationships) {
-        if (r.from.attributes.includes(hoveredAttr) || r.to.attributes.includes(hoveredAttr)) {
-          relsForAttr.add(r.id);
-          entsForAttr.add(r.from.entity);
-          entsForAttr.add(r.to.entity);
-          // light up the joined columns on BOTH sides of this relationship
-          mark(r.from.entity, r.from.attributes);
-          mark(r.to.entity, r.to.attributes);
-        }
-      }
-    }
-    if (hoveredEdge) {
-      const r = doc.relationships.find((x) => x.id === hoveredEdge);
-      if (r) {
-        mark(r.from.entity, r.from.attributes);
-        mark(r.to.entity, r.to.attributes);
-      }
-    }
+    // NOTE: attribute/edge HOVER highlighting is applied by a separate, lightweight effect
+    // (see below) that mutates only the dimmed/highlight data fields in place. It is
+    // deliberately NOT part of this heavy derivation, so moving the mouse over a row does
+    // not rebuild all N nodes + M edges (that caused a full re-render flicker on a large
+    // model). This effect handles only the STRUCTURAL view state: search + selection.
 
     const newNodes: Node<EntityNodeData>[] = doc.entities.map((e) => {
       const searchDim = q !== "" && !matches.has(e.id);
       const neighbourDim = selectedId !== null && !neighbours.has(e.id);
-      // when hovering an attribute, dim entities not on any of its relationships
-      const hoverDim = hoveredAttr !== null && !entsForAttr.has(e.id);
       return {
         id: e.id,
         type: "entity",
         position: { x: 0, y: 0 },
+        hidden: hiddenByArea(e.id),
         data: {
           entity: e,
-          color: e.conceptual?.subject_area
-            ? saColors.get(e.conceptual.subject_area.id) ?? NO_SA_COLOR
-            : NO_SA_COLOR,
-          dimmed: searchDim || neighbourDim || hoverDim,
-          highlighted:
-            (q !== "" && matches.has(e.id)) || (hoveredAttr !== null && entsForAttr.has(e.id)),
+          color: (() => {
+            const area = areaByEntity.get(e.id);
+            return area ? saColors.get(area.id) ?? NO_SA_COLOR : NO_SA_COLOR;
+          })(),
+          dimmed: searchDim || neighbourDim,
+          highlighted: q !== "" && matches.has(e.id),
           showTypes,
           collapseDetail,
           expanded: expandedEntities?.has(e.id) ?? false,
           onToggleExpand,
           endpointAttrs: endpointAttrsByEntity.get(e.id),
-          highlightAttrs: hitAttrsByEntity.get(e.id),
+          highlightAttrs: undefined,
           onHoverAttr: setHoveredAttr,
         },
       };
@@ -254,11 +260,8 @@ export function ModelCanvas({
       .filter((r) => entityIndex.has(r.from.entity) && entityIndex.has(r.to.entity))
       .map((r) => {
         const { sourceHandle, targetHandle } = anchorFor(r, entityIndex);
-        // dim: search/select context, OR (when hovering an attribute) any edge that
-        // attribute is not part of.
         const selectDim =
           selectedId !== null && r.from.entity !== selectedId && r.to.entity !== selectedId;
-        const hoverDim = hoveredAttr !== null && !relsForAttr.has(r.id);
         return {
           id: r.id,
           source: r.from.entity,
@@ -268,7 +271,7 @@ export function ModelCanvas({
           type: "relationship",
           data: {
             relationship: r,
-            dimmed: selectDim || hoverDim,
+            dimmed: selectDim,
             memberCount: Math.max(r.from.attributes.length, r.to.attributes.length),
             onHoverEdge: setHoveredEdge,
           },
@@ -278,14 +281,21 @@ export function ModelCanvas({
     setNodes((prev) => {
       const posById = new Map(prev.map((n) => [n.id, n.position]));
       const known = newNodes.every((n) => posById.has(n.id));
-      if (layoutedRef.current && known && prev.length >= newNodes.length) {
+      // When a subject-area filter is active, lay out ONLY the visible nodes so the focused
+      // domain fills the canvas (a stale full-model layout would leave it in a far corner).
+      // Otherwise keep known positions so a re-derivation (search, selection) doesn't reflow.
+      const filtering = (activeAreas?.size ?? 0) > 0;
+      if (layoutedRef.current && known && prev.length >= newNodes.length && !filtering) {
         return newNodes.map((n) => ({ ...n, position: posById.get(n.id) ?? n.position }));
       }
-      // new entity (or first load): layout, keeping existing positions where known
-      const laid = layoutGraph(newNodes, newEdges, entityIndex);
-      const merged = laid.map((n) =>
-        posById.has(n.id) && layoutedRef.current ? { ...n, position: posById.get(n.id)! } : n,
-      );
+      const toLay = filtering ? newNodes.filter((n) => !n.hidden) : newNodes;
+      const laid = layoutGraph(toLay, newEdges, entityIndex, "auto", areaByEntity);
+      const laidPos = new Map(laid.map((n) => [n.id, n.position]));
+      const merged = newNodes.map((n) => {
+        if (laidPos.has(n.id)) return { ...n, position: laidPos.get(n.id)! };
+        // a hidden node keeps its prior position (it isn't shown, so it doesn't matter)
+        return posById.has(n.id) && layoutedRef.current ? { ...n, position: posById.get(n.id)! } : n;
+      });
       layoutedRef.current = true;
       requestAnimationFrame(() => fitView({ padding: 0.15, duration: 300 }));
       return merged;
@@ -301,11 +311,108 @@ export function ModelCanvas({
     onToggleExpand,
     saColors,
     entityIndex,
+    areaByEntity,
+    hiddenByArea,
+    activeAreas,
     endpointAttrsByEntity,
-    hoveredAttr,
-    hoveredEdge,
     fitView,
   ]);
+
+  // --- lightweight hover overlay (issue #5) ---------------------------------------
+  // Hovering an attribute row or an edge highlights the relationships/columns it joins.
+  // This is TRANSIENT view state, so it updates the existing nodes/edges IN PLACE (same
+  // identities + positions, only the dim/highlight data fields change) instead of
+  // re-running the heavy derivation above — which on a 50+ entity model rebuilt every
+  // node and edge on each mouse move and made the canvas flicker.
+  const hover = useMemo(() => {
+    const relsForAttr = new Set<string>();
+    const entsForAttr = new Set<string>();
+    const hitAttrsByEntity = new Map<string, Set<string>>();
+    const mark = (entity: string, attrs: string[]) => {
+      if (!attrs.length) return;
+      const s = hitAttrsByEntity.get(entity) ?? new Set<string>();
+      attrs.forEach((a) => s.add(a));
+      hitAttrsByEntity.set(entity, s);
+    };
+    if (hoveredAttr) {
+      for (const r of doc.relationships) {
+        if (r.from.attributes.includes(hoveredAttr) || r.to.attributes.includes(hoveredAttr)) {
+          relsForAttr.add(r.id);
+          entsForAttr.add(r.from.entity);
+          entsForAttr.add(r.to.entity);
+          mark(r.from.entity, r.from.attributes);
+          mark(r.to.entity, r.to.attributes);
+        }
+      }
+    }
+    if (hoveredEdge) {
+      const r = doc.relationships.find((x) => x.id === hoveredEdge);
+      if (r) {
+        mark(r.from.entity, r.from.attributes);
+        mark(r.to.entity, r.to.attributes);
+      }
+    }
+    return { active: hoveredAttr !== null, relsForAttr, entsForAttr, hitAttrsByEntity };
+  }, [doc, hoveredAttr, hoveredEdge]);
+
+  useEffect(() => {
+    // Recompute the base (structural) dim from search + selection so lifting the hover
+    // restores exactly what the heavy effect would have set — without re-running it.
+    const q = query.trim().toLowerCase();
+    const matches = new Set<string>();
+    if (q) {
+      for (const e of doc.entities) {
+        const hay =
+          e.name.toLowerCase() +
+          " " +
+          (e.conceptual?.name.toLowerCase() ?? "") +
+          " " +
+          e.attributes.map((a) => a.name.toLowerCase()).join(" ");
+        if (hay.includes(q)) matches.add(e.id);
+      }
+    }
+    const neighbours = new Set<string>();
+    if (selectedId) {
+      neighbours.add(selectedId);
+      for (const r of doc.relationships) {
+        if (r.from.entity === selectedId) neighbours.add(r.to.entity);
+        if (r.to.entity === selectedId) neighbours.add(r.from.entity);
+      }
+    }
+    setNodes((prev) =>
+      prev.map((n) => {
+        const searchDim = q !== "" && !matches.has(n.id);
+        const neighbourDim = selectedId !== null && !neighbours.has(n.id);
+        const hoverDim = hover.active && !hover.entsForAttr.has(n.id);
+        const dimmed = searchDim || neighbourDim || hoverDim;
+        const highlighted =
+          (q !== "" && matches.has(n.id)) || (hover.active && hover.entsForAttr.has(n.id));
+        const highlightAttrs = hover.hitAttrsByEntity.get(n.id);
+        // only replace the node object when a field actually changed (keeps identity
+        // stable, so React Flow doesn't re-mount unchanged nodes)
+        if (
+          n.data.dimmed === dimmed &&
+          n.data.highlighted === highlighted &&
+          n.data.highlightAttrs === highlightAttrs
+        ) {
+          return n;
+        }
+        return { ...n, data: { ...n.data, dimmed, highlighted, highlightAttrs } };
+      }),
+    );
+    setEdges((prev) =>
+      prev.map((r) => {
+        const rel = r.data?.relationship;
+        const selectDim =
+          selectedId !== null && rel !== undefined &&
+          rel.from.entity !== selectedId && rel.to.entity !== selectedId;
+        const hoverDim = hover.active && !hover.relsForAttr.has(r.id);
+        const dimmed = selectDim || hoverDim;
+        if (r.data?.dimmed === dimmed) return r;
+        return { ...r, data: { ...r.data!, dimmed } };
+      }),
+    );
+  }, [hover, query, selectedId, doc]);
 
   // Frame the matches. In a large model the entities a search hits may be off-screen,
   // so highlighting alone is not enough — pan/zoom to the matched nodes (like Fit, but
@@ -341,11 +448,11 @@ export function ModelCanvas({
   }, [query, doc, getNodes, fitBounds]);
 
   const relayout = useCallback(
-    (mode: LayoutMode = "auto") => {
-      setNodes((prev) => layoutGraph(prev, edges, entityIndex, mode));
+    (mode: LayoutMode = "auto", dir: LayoutDir = "LR") => {
+      setNodes((prev) => layoutGraph(prev, edges, entityIndex, mode, areaByEntity, dir));
       requestAnimationFrame(() => fitView({ padding: 0.15, duration: 300 }));
     },
-    [edges, entityIndex, fitView],
+    [edges, entityIndex, areaByEntity, fitView],
   );
 
   const focusEntity = useCallback(

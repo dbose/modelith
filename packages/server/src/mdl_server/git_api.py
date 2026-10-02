@@ -35,7 +35,7 @@ def _git(model_dir: Path, *args: str, timeout: int = 30) -> tuple[int, str]:
     proc = subprocess.run(
         ["git", "-C", str(model_dir), *args],
         capture_output=True,
-        text=True,
+        text=True, encoding="utf-8", errors="replace",
         timeout=timeout,
     )
     out = proc.stdout + (("\n" + proc.stderr) if proc.returncode != 0 else "")
@@ -669,7 +669,12 @@ def _gh_prs(model_dir: Path) -> dict[str, dict]:
         proc = subprocess.run(
             ["gh", "pr", "list", "--state", "all", "--limit", "50", "--json",
              "number,url,state,headRefName,reviewDecision"],
-            cwd=str(model_dir), capture_output=True, text=True, timeout=10,
+            cwd=str(model_dir),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
         )
     except (subprocess.SubprocessError, OSError):
         return {}
@@ -1056,7 +1061,12 @@ def git_router(
                 proc = subprocess.run(
                     ["gh", "pr", "create", "--head", branch_name,
                      "--title", body.title, "--body", body.body or body.title],
-                    cwd=str(model_dir), capture_output=True, text=True, timeout=60,
+                    cwd=str(model_dir),
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    timeout=60,
                 )
                 if proc.returncode == 0:
                     result["pr_url"] = proc.stdout.strip()

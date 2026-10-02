@@ -1,0 +1,25 @@
+id: 01M3WS6Q5YM32P4ZWX3DQQF4TG
+kind: logical_entity
+name: order_line
+realises: 01M3WS6Q5Y8C3J4GH1B3Q3TCDR
+attributes:
+- id: 01E27JA246C69XXSNHG3G5NXSM
+  name: order_line_id
+  domain: identifier_bigint
+  role: business_key
+  nullable: false
+- id: 01WCBNMDRE9XY1MFNG29G1XKHH
+  name: order_id
+  domain: identifier_bigint
+  role: attribute
+  nullable: false
+- id: 01EBXNY3SSNY6DVMFR1W3KQQVS
+  name: product_id
+  domain: identifier_bigint
+  role: attribute
+  nullable: false
+- id: 01M260C4FKNHRBXRFKY69QG3R3
+  name: quantity
+  domain: integer
+  role: attribute
+  nullable: false

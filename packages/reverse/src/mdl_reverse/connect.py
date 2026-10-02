@@ -97,7 +97,7 @@ def _run(argv: list[str], cwd: Path | None = None, timeout: float = DEFAULT_TIME
             argv,
             cwd=str(cwd) if cwd else None,
             capture_output=True,
-            text=True,
+            text=True, encoding="utf-8", errors="replace",
             timeout=timeout,
         )
         return RunResult(proc.returncode, proc.stdout, proc.stderr)

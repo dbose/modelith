@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Exec } from "./exec";
 import {
-  IconCaret,
+  IconArrow,
   IconChanges,
   IconCheck,
   IconCollapse,
@@ -11,6 +11,7 @@ import {
   IconFit,
   IconLayers,
   IconLayout,
+  IconMenu,
   IconOntology,
   IconPlus,
   IconRefresh,
@@ -18,7 +19,7 @@ import {
   IconTypes,
   IconWarn,
 } from "./icons";
-import type { LayoutMode } from "./layout";
+import type { LayoutDir, LayoutMode } from "./layout";
 import type { PanelTab } from "./SidePanel";
 import { ImportExportMenu } from "./sme/ImportExportMenu";
 import type { DiagnosticsDoc, ModelDoc } from "./types";
@@ -36,7 +37,6 @@ export function TopBar({
   onFitView,
   onRelayout,
   onRefresh,
-  saColors,
   readOnly,
   dirty,
   panelTab,
@@ -46,6 +46,9 @@ export function TopBar({
   onImported,
   onImportBatch,
   openImport,
+  onToggleDrawer,
+  drawerOpen,
+  filterCount,
 }: {
   doc: ModelDoc;
   diagnostics: DiagnosticsDoc | null;
@@ -57,9 +60,8 @@ export function TopBar({
   collapseDetail: boolean;
   onToggleCollapse: () => void;
   onFitView: () => void;
-  onRelayout: (mode?: LayoutMode) => void;
+  onRelayout: (mode?: LayoutMode, dir?: LayoutDir) => void;
   onRefresh: () => void;
-  saColors: Map<string, string>;
   readOnly: boolean;
   dirty: boolean;
   panelTab: PanelTab | null;
@@ -73,6 +75,11 @@ export function TopBar({
   onImportBatch?: (changes: { op: string; payload: Record<string, unknown> }[]) => Promise<unknown>;
   /** open the Import wizard immediately (VS Code "Import to Model" via `?import=1`) */
   openImport?: boolean;
+  /** toggle the left subject-area / layout drawer */
+  onToggleDrawer: () => void;
+  drawerOpen: boolean;
+  /** number of subject areas currently filtered to (0 = showing all) — badges the hamburger */
+  filterCount: number;
 }) {
   const errors = diagnostics?.items.filter((d) => d.severity === "error").length ?? 0;
   const warnings = diagnostics?.items.filter((d) => d.severity === "warning").length ?? 0;
@@ -100,6 +107,17 @@ export function TopBar({
     <header className="topbar">
       {/* Row 1 — identity, search, live status */}
       <div className="topbar-row context">
+        <button
+          className={"hamburger" + (drawerOpen ? " active" : "")}
+          onClick={onToggleDrawer}
+          title={drawerOpen ? "Hide subject areas & layout" : "Subject areas & layout"}
+          aria-label="Toggle subject-area & layout drawer"
+          aria-expanded={drawerOpen}
+        >
+          <IconMenu size={18} />
+          {filterCount > 0 && <span className="hamburger-badge">{filterCount}</span>}
+        </button>
+
         <div className="brand">
           <span className="logo">{"◮"}</span>
           <span className="brand-name">Modelith</span>
@@ -233,29 +251,33 @@ export function TopBar({
           />
         </div>
       </div>
-
-      {/* Reference strip — subject-area colour key (data, not a control) */}
-      {doc.subject_areas.length > 0 && (
-        <div className="sa-legend">
-          <span className="sa-legend-label">Subject areas</span>
-          {doc.subject_areas.map((sa) => (
-            <span key={sa.id} className="legend-item">
-              <span className="swatch" style={{ background: saColors.get(sa.id) }} />
-              {sa.name}
-            </span>
-          ))}
-        </div>
-      )}
     </header>
   );
 }
 
-/** Auto-layout as a small picker. The icon button re-lays out in "auto" (dagre for
- *  small models, grid past the entity threshold — no regression for existing models).
- *  The caret opens a menu to force Hierarchical or Grid, so a large model can be
- *  arranged either way. */
-function LayoutPicker({ onRelayout }: { onRelayout: (mode?: LayoutMode) => void }) {
+// The flow-direction cycle for the dagre-based layouts. Grouped with the layout picker so the
+// arrow toggle reads as part of one layout control. Grid ignores direction (a no-op). The arrow
+// icon rotates to point the flow way.
+const DIR_CYCLE: LayoutDir[] = ["LR", "TB", "RL", "BT"];
+const DIR_ROT: Record<LayoutDir, number> = { LR: 0, TB: 90, RL: 180, BT: 270 };
+const DIR_LABEL: Record<LayoutDir, string> = {
+  LR: "left → right",
+  TB: "top → bottom",
+  RL: "right → left",
+  BT: "bottom → top",
+};
+
+/** Auto-layout as a small picker plus a flow-direction toggle. The icon button re-lays out in
+ *  "auto" (dagre for small models, grid past the entity threshold — no regression). The caret
+ *  opens a menu to force Hierarchical / Clustered / Grid. The arrow button cycles the dagre flow
+ *  direction (→ ↓ ← ↑) and re-applies the current layout, so a large model can be arranged either
+ *  way and flowed in any direction. Direction persists across relayouts. */
+function LayoutPicker({ onRelayout }: { onRelayout: (mode?: LayoutMode, dir?: LayoutDir) => void }) {
   const [open, setOpen] = useState(false);
+  const [dir, setDir] = useState<LayoutDir>("LR");
+  // Remember the last chosen layout so cycling the direction re-applies THAT layout, not a reset
+  // to auto. Starts at auto (the on-load default).
+  const [mode, setMode] = useState<LayoutMode>("auto");
   const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (!open) return;
@@ -266,16 +288,25 @@ function LayoutPicker({ onRelayout }: { onRelayout: (mode?: LayoutMode) => void 
     return () => document.removeEventListener("mousedown", onDown);
   }, [open]);
 
-  const pick = (mode: LayoutMode) => {
-    onRelayout(mode);
+  const apply = (m: LayoutMode) => {
+    setMode(m);
+    onRelayout(m, dir);
+  };
+  const pick = (m: LayoutMode) => {
+    apply(m);
     setOpen(false);
+  };
+  const cycleDir = () => {
+    const next = DIR_CYCLE[(DIR_CYCLE.indexOf(dir) + 1) % DIR_CYCLE.length];
+    setDir(next);
+    onRelayout(mode, next);
   };
 
   return (
     <div className="layout-picker" ref={ref}>
       <button
         className="grp-btn icon-only"
-        onClick={() => onRelayout("auto")}
+        onClick={() => apply("auto")}
         title="Auto-layout"
         aria-label="Auto-layout"
       >
@@ -287,12 +318,23 @@ function LayoutPicker({ onRelayout }: { onRelayout: (mode?: LayoutMode) => void 
         title="Layout style"
         aria-label="Layout style"
       >
-        <IconCaret size={13} />
+        {"▾"}
+      </button>
+      <button
+        className="grp-btn icon-only"
+        onClick={cycleDir}
+        title={`Flow direction: ${DIR_LABEL[dir]} (click to rotate)`}
+        aria-label={`Flow direction: ${DIR_LABEL[dir]}`}
+      >
+        <span className="dir-arrow" style={{ transform: `rotate(${DIR_ROT[dir]}deg)` }}>
+          <IconArrow size={15} />
+        </span>
       </button>
       {open && (
         <div className="layout-menu" role="menu">
           <button onClick={() => pick("auto")}>Auto (by size)</button>
           <button onClick={() => pick("hierarchical")}>Hierarchical</button>
+          <button onClick={() => pick("clustered")}>Clustered (by area)</button>
           <button onClick={() => pick("grid")}>Grid</button>
         </div>
       )}

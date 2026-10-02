@@ -15,6 +15,16 @@ owns state.
 [![license](https://img.shields.io/badge/license-Apache--2.0-lightgrey)](#license)
 [![code style: ruff](https://img.shields.io/badge/lint-ruff-black)](https://docs.astral.sh/ruff/)
 
+CLI:
+
+![Design a model in git, generate contract-enforced dbt, and compile to a data contract — the mdl CLI beside its live ER diagram](docs/assets/demos/Main.gif)
+
+
+VSCode Extension:
+![Split view in VS Code: the model YAML on the left, the live canvas preview on the right](docs/assets/vscode-split.png)
+
+<sub>Design in git → generate dbt → compile to a contract. [See all six flows ↓](#video-demos)</sub>
+
 ![Modelith canvas: a seven-entity pension IBoR model with crow's-foot relationships](docs/assets/canvas.png)
 
 ## Try it in 2 minutes
@@ -41,6 +51,46 @@ term — the demo starts a local ontology server for you. See
 [demo/ibor](demo/ibor/README.md) for the full walkthrough and
 [Ontology and knowledge graph, step by step](#ontology-and-knowledge-graph-step-by-step)
 for the ontology workflow.
+
+## Video demos
+
+Six flows, end to end. Every command and every line of output is real — the `mdl` CLI on the
+left, the live ER diagram on the right.
+
+### Design-first — a blank repo to running dbt
+Scaffold a model, add entities (ULIDs minted for you), validate, and compile to
+contract-enforced dbt plus an ODCS data contract.
+
+![Design-first: mdl init, new entity, validate, generate, export contract, with the ER diagram building alongside](docs/assets/demos/Main.gif)
+
+### Adopt a warehouse — reverse a legacy dbt project
+Point it at a warehouse with no data model: staging excluded, SCD2 and Data Vault detected,
+surrogate keys stripped, every inference in a reviewable ledger.
+
+![Adopt a warehouse: mdl reverse detecting SCD2, Data Vault, and stripping surrogate keys, with raw SQL becoming clean ER cards](docs/assets/demos/Adopt.gif)
+
+### The drift gate — model and warehouse in lockstep
+A column lands in the warehouse; drift classifies it (additive, not breaking) and reconcile
+folds the safe change into the model. Nothing is ever lost.
+
+![The drift gate: no drift, then an additive column caught by mdl drift --check and folded into the model by --reconcile](docs/assets/demos/Drift.gif)
+
+### Ontology anchoring — align to an industry vocabulary
+Search FIBO, align an entity to a standard term, and track coverage — reproducible, offline.
+
+![Ontology anchoring: mdl ontology search returning fibo:PartyInRole, aligning counterparty, and 100% coverage](docs/assets/demos/Ontology.gif)
+
+### Erwin import — bring an erwin model into git
+Import an erwin XML export straight into clean logical YAML you can version, diff, and
+generate from.
+
+![Erwin import: mdl import erwin turning an erwin XML export into clean Modelith ER cards](docs/assets/demos/Erwin.gif)
+
+### One model, many targets — a contract factory
+From one definition: contract-enforced dbt, an ODCS contract, Pydantic, SQL DDL, Mermaid,
+DBML, RDF/SHACL, and a Neo4j graph schema — each generated deterministically.
+
+![One model, many targets: the model fanning out to dbt, ODCS, Pydantic, SQL, Mermaid, and DBML](docs/assets/demos/Compile.gif)
 
 ## Why
 

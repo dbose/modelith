@@ -134,3 +134,33 @@ export const IconError = (p: IconProps) => (
     <path d="M15 9l-6 6M9 9l6 6" />
   </Svg>
 );
+
+// --- drawer / filter ------------------------------------------------------------
+/** Hamburger — opens the left drawer (subject-area filter). */
+export const IconMenu = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M4 6h16M4 12h16M4 18h16" />
+  </Svg>
+);
+/** Subject areas / domains — stacked tiles, the "group by area" idea. */
+export const IconDomains = (p: IconProps) => (
+  <Svg {...p}>
+    <rect x="3" y="3" width="7" height="7" rx="1.5" />
+    <rect x="14" y="3" width="7" height="7" rx="1.5" />
+    <rect x="3" y="14" width="7" height="7" rx="1.5" />
+    <rect x="14" y="14" width="7" height="7" rx="1.5" />
+  </Svg>
+);
+/** Close (✕) for the drawer header. */
+export const IconClose = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M6 6l12 12M18 6L6 18" />
+  </Svg>
+);
+/** A single arrow, pointing right by default. The flow-direction toggle rotates it via a
+ *  CSS transform (0/90/180/270deg) so one glyph serves → ↓ ← ↑ crisply. */
+export const IconArrow = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M5 12h14M13 6l6 6-6 6" />
+  </Svg>
+);
