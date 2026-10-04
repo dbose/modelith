@@ -185,15 +185,43 @@ export interface ImportResult {
 export const importModel = (format: string, content: string, dialect?: string) =>
   post<ImportResult>("/api/import", { format, content, dialect });
 
+/** A semantic diff of an import against the current model (the review view's ModelDiffDoc),
+ *  WITHOUT writing — plus the import's change list + warnings, so the review can apply the
+ *  selected objects afterwards. Powers "review before it lands" for erwin imports. */
+export type ImportPreviewDoc = ModelDiffDoc & {
+  changes: { op: string; payload: Record<string, unknown> }[];
+  warnings: string[];
+};
+
+export const importPreview = (format: string, content: string) =>
+  post<ImportPreviewDoc>("/api/import/preview", { format, content });
+
+/** Fetch import content a host (VS Code) stashed by token — the webview can't read local
+ *  files, so /sme?import=<token> hands off the file this way. One-shot. */
+export const importStashGet = (token: string) =>
+  get<{ ok: boolean; content?: string; error?: string }>(
+    `/api/import/stash/${encodeURIComponent(token)}`,
+  );
+
 /** Apply an imported change list to the working tree as one batch (direct-write
  *  canvas). Each command is sent WITHOUT a fingerprint so the server's stale-model
  *  check is skipped: the guard exists to catch an external edit between a human's
- *  view and their action, not to serialise a machine applying its own batch. */
+ *  view and their action, not to serialise a machine applying its own batch.
+ *
+ *  `tolerateExisting` skips "already exists" errors (idempotent scaffolding): an import
+ *  into an existing model re-emits shared domains / subject areas / categories, and a
+ *  create for one already present is a no-op, not a failure. Any OTHER error still throws. */
 export const applyImportBatch = async (
   changes: { op: string; payload: Record<string, unknown> }[],
+  tolerateExisting = false,
 ) => {
   for (const c of changes) {
-    await sendCommand(c.op, c.payload); // no fingerprint -> no stale-check
+    try {
+      await sendCommand(c.op, c.payload); // no fingerprint -> no stale-check
+    } catch (e) {
+      if (tolerateExisting && e instanceof Error && /already exists/i.test(e.message)) continue;
+      throw e;
+    }
   }
 };
 

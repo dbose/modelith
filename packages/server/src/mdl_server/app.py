@@ -81,6 +81,10 @@ def create_app(
     model_dir = Path(model_dir)
     app = FastAPI(title="Modelith", docs_url="/api/docs", openapi_url="/api/openapi.json")
     cache: dict = {"fingerprint": None, "repo": None}
+    # One-shot in-memory stash for import content handed from a host (VS Code reads a local
+    # .xml and POSTs it here; the canvas webview, which cannot read local files, fetches it by
+    # token). Consumed on read; this is a convenience channel, not durable state.
+    import_stash: dict[str, str] = {}
 
     # Identity is resolved per request from a trusted-proxy header (enterprise) or the
     # model dir's git config (solo), or falls back to anonymous — see identity.py. The
@@ -259,6 +263,73 @@ def create_app(
                 "warnings": imported.warnings,
             }
         )
+
+    @app.post("/api/import/stash")
+    def import_stash_put(body: dict) -> JSONResponse:
+        """Stash import content (e.g. an erwin XML a VS Code host read from disk) and return a
+        one-shot token. The canvas opens /sme?import=<token> and fetches it below — the webview
+        itself cannot read the host's filesystem."""
+        import secrets
+
+        content = body.get("content", "")
+        if not content:
+            return JSONResponse({"ok": False, "error": "content is empty"}, status_code=422)
+        token = secrets.token_urlsafe(12)
+        import_stash[token] = content
+        # cap the stash so a long-lived server can't accumulate; this is a transient handoff
+        if len(import_stash) > 32:
+            for k in list(import_stash)[:-16]:
+                import_stash.pop(k, None)
+        return JSONResponse({"ok": True, "token": token})
+
+    @app.get("/api/import/stash/{token}")
+    def import_stash_get(token: str) -> JSONResponse:
+        """Consume a stashed import content by token (one-shot)."""
+        content = import_stash.pop(token, None)
+        if content is None:
+            return JSONResponse({"ok": False, "error": "unknown or expired token"}, status_code=404)
+        return JSONResponse({"ok": True, "content": content})
+
+    @app.post("/api/import/preview")
+    def import_preview(body: dict) -> JSONResponse:
+        """Parse an import and return a SEMANTIC DIFF of it against the current model, WITHOUT
+        writing anything — so the change can be reviewed (filters, per-field selection, break
+        impact) before it lands. Returns the ModelDiffDoc shape (as /api/git/diff/model does)
+        plus the import's `changes` and `warnings`, so the client can apply the selected
+        objects afterwards without re-parsing. Erwin only for now (the flagship migration);
+        other formats 422 until wired."""
+        from mdl_emit_erd.imports.model import model_to_commands
+
+        from mdl_core.diff import diff_models, remap_head_by_name
+        from mdl_core.diff_render import render_json
+        from mdl_server.git_api import _attach_breaks, _attach_paths
+
+        fmt = body.get("format", "")
+        content = body.get("content", "")
+        if not content:
+            return JSONResponse({"ok": False, "error": "content is empty"}, status_code=422)
+        if fmt != "erwin":
+            return JSONResponse(
+                {"ok": False, "error": f"import preview supports erwin only (got {fmt!r})"},
+                status_code=422,
+            )
+        from mdl_reverse.erwin import import_erwin
+
+        result = import_erwin(content)
+        current = _load().model
+        # Imported ULIDs are fresh, so match by NAME; keep the remapped head to enrich break
+        # impact against the same ULIDs the diff doc carries.
+        head = remap_head_by_name(current, result.model)
+        diff = diff_models(current, head, base_label="current", head_label="import")
+        doc = render_json(diff)
+        doc["ok"] = True
+        doc["base"] = {"ref": "current", "sha": "", "label": "current model"}
+        doc["head"] = {"ref": None, "label": "erwin import"}
+        _attach_paths(model_dir, doc)
+        _attach_breaks(head, doc)
+        doc["changes"] = model_to_commands(result.model)
+        doc["warnings"] = result.warnings
+        return JSONResponse(doc)
 
     @app.get("/api/entities/{ulid}")
     def get_entity(ulid: str) -> JSONResponse:

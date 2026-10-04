@@ -3158,6 +3158,31 @@ def model_detail(
     typer.echo(json.dumps(entities_detail(_load(model_dir).model, limit=limit), default=str))
 
 
+@model_app.command("tree")
+def model_tree_cmd(
+    model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
+    subject_area: str = typer.Option(None, "--subject-area", help="Scope by area name or ULID"),
+    fmt: str = typer.Option("json", "--format", help="json (the VS Code Model tree consumes it)"),
+) -> None:
+    """A navigable tree of the logical model — every entity with its attributes and the
+    source file each lives in — for an editor's Model Explorer (entity → attributes, click
+    to open the YAML). Uncapped, unlike `model detail`. `--format json` is what the VS Code
+    Model tree consumes."""
+    from mdl_core.query import model_tree
+
+    repo = _load(model_dir)
+    tree = model_tree(repo.model, path_for=repo.path_for_ulid, subject_area=subject_area)
+    if fmt == "json":
+        typer.echo(json.dumps(tree, default=str))
+        return
+    # a terse text fallback for the terminal
+    for e in tree["entities"]:
+        typer.secho(e["name"], fg=typer.colors.CYAN)
+        for a in e["attributes"]:
+            key = " (pk)" if a["is_pk"] else ""
+            typer.echo(f"    {a['name']}: {a['domain']}{key}")
+
+
 @app.command()
 def mcp(
     repo: Path = typer.Option(

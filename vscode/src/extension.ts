@@ -6,6 +6,7 @@ import type { LanguageClient } from "vscode-languageclient/node";
 import { CanvasManager } from "./canvasPanel";
 import { registerChatParticipant } from "./chatParticipant";
 import { ConfigTreeProvider } from "./configView";
+import { ModelTreeProvider, openModelObject } from "./modelView";
 import { DocsProvider } from "./docsView";
 import { DriftCodeActionProvider, DriftManager } from "./driftDiagnostics";
 import { DriftTreeProvider } from "./driftView";
@@ -306,11 +307,31 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     stateWatcher.onDidDelete(onStateChange),
   );
 
-  // Warehouse Config: a live view of how the reverse: config classifies every dbt model,
-  // grouped by role, with Suggest/Import in its title bar. The home of the config workflow.
+  // Warehouse Mapping: a live view of how the reverse: config classifies every dbt model
+  // INTO entities, grouped by role, with Suggest/Import in its title bar. Distinct from the
+  // Model tree below (which is the logical model itself); this one answers "how does my
+  // warehouse map to entities?".
   const configTree = new ConfigTreeProvider(out);
   ctx.subscriptions.push(vscode.window.registerTreeDataProvider("modelithConfig", configTree));
   void configTree.refresh();
+
+  // Model: the logical model as an entity → attribute tree; clicking opens the YAML.
+  const modelTree = new ModelTreeProvider(out);
+  ctx.subscriptions.push(vscode.window.registerTreeDataProvider("modelithModel", modelTree));
+  ctx.subscriptions.push(
+    vscode.commands.registerCommand(
+      "modelith.openModelObject",
+      (uri: vscode.Uri, reveal: string) => openModelObject(uri, reveal),
+    ),
+    vscode.commands.registerCommand("modelith.refreshModel", () => modelTree.refresh()),
+    // keep the Model tree current when a logical entity YAML is saved (editor or CLI edit)
+    vscode.workspace.onDidSaveTextDocument((doc) => {
+      if (doc.uri.fsPath.includes(`${path.sep}logical${path.sep}`) && doc.uri.fsPath.endsWith(".yaml")) {
+        void modelTree.refresh();
+      }
+    }),
+  );
+  void modelTree.refresh();
 
   // Active-model indicator: which model dir the panels read. In a multi-model workspace
   // (e.g. an original model/ plus a fresh model_reversed/) auto-discovery picks the
@@ -612,6 +633,43 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
         // Reveal the canvas with the Import wizard open. Import writes to the
         // working tree (direct-write, like the CLI) — you review the git diff.
         await canvas.open(dir, "import=1");
+      } catch (e) {
+        if (isMdlNotFound(e)) throw e; // let cmd() offer the one-click installer
+        void vscode.window.showErrorMessage(`Modelith canvas: ${e}`);
+      }
+    }),
+  );
+
+  cmd("modelith.reviewImport", (arg: unknown) =>
+    withModelDir(async (dir) => {
+      if (vscode.workspace.getConfiguration("modelith").get<boolean>("canvas.readOnly")) {
+        void vscode.window.showWarningMessage(
+          "Modelith: the canvas is in read-only mode — turn off modelith.canvas.readOnly to import.",
+        );
+        return;
+      }
+      try {
+        // Resolve an erwin XML: the clicked file (explorer right-click), else a picker. If the
+        // user cancels the picker we still open the panel empty (they can paste).
+        let fileUri = arg instanceof vscode.Uri ? arg : undefined;
+        if (!fileUri) {
+          const picked = await vscode.window.showOpenDialog({
+            title: "Review Erwin XML before import",
+            canSelectMany: false,
+            filters: { "erwin XML": ["xml"] },
+            openLabel: "Review",
+          });
+          fileUri = picked?.[0];
+        }
+        // Read the file here (the webview can't) and hand the content to the SME review app via
+        // a one-shot server stash. An erwin import there is shown as a SEMANTIC diff you review
+        // (filters, per-field selection, break impact) BEFORE anything is written; "Apply
+        // import" writes only the entities you keep.
+        let content: string | undefined;
+        if (fileUri) {
+          content = Buffer.from(await vscode.workspace.fs.readFile(fileUri)).toString("utf8");
+        }
+        await canvas.openImportReview(dir, content);
       } catch (e) {
         if (isMdlNotFound(e)) throw e; // let cmd() offer the one-click installer
         void vscode.window.showErrorMessage(`Modelith canvas: ${e}`);

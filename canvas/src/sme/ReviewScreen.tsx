@@ -2,6 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useState } from "react";
 import { fetchClassification, fetchConflicts, fetchGitContext, fetchModelDiff } from "../api";
 import type { ClassificationDoc, ConflictDoc, GitContext, ModelDiffDoc } from "../types";
 import { DiffView } from "./DiffView";
+import { type ReviewAction, allFieldKeys, includedUlids } from "./reviewModel";
 
 const ModelDiagram = lazy(() =>
   import("./ModelDiagram").then((m) => ({ default: m.ModelDiagram })),
@@ -19,10 +20,14 @@ export function ReviewScreen({
   user,
   onBack,
   onSubmit,
-  /** ULIDs the SME has excluded from this proposal (selective proposal) */
+  /** field keys the SME has excluded from this proposal (per-field selective review) */
   excluded,
-  onToggleObject,
+  onToggleField,
   selectable,
+  /** When set, the review is driven by a source other than propose (e.g. an erwin import):
+   *  the footer shows this action's button, which applies to the SELECTED objects, instead of
+   *  the "Submit for review" propose button. Absent = today's propose flow, unchanged. */
+  action,
 }: {
   stagedDiff?: ModelDiffDoc | null;
   /** route/reviewers/gates for the STAGED set (POST /api/git/classify); the
@@ -31,9 +36,11 @@ export function ReviewScreen({
   user: string;
   onBack: () => void;
   onSubmit: (cl: ClassificationDoc | null) => void;
+  /** excluded (ulid, field) keys; a field not in the set is included */
   excluded: Set<string>;
-  onToggleObject: (ulid: string) => void;
+  onToggleField: (ulid: string, field: string) => void;
   selectable: boolean;
+  action?: ReviewAction;
 }) {
   const [diff, setDiff] = useState<ModelDiffDoc | null>(null);
   const [cl, setCl] = useState<ClassificationDoc | null>(null);
@@ -82,7 +89,8 @@ export function ReviewScreen({
   }
   if (!diff) return <div className="sme-splash">◮ reading your changes…</div>;
 
-  const selected = new Set(diff.objects.map((o) => o.ulid).filter((u) => !excluded.has(u)));
+  // selected = every field key EXCEPT the ones the SME unticked (default: all included)
+  const selected = new Set([...allFieldKeys(diff)].filter((k) => !excluded.has(k)));
 
   return (
     <div className="rv-shell">
@@ -92,7 +100,7 @@ export function ReviewScreen({
           diff={diff}
           selectable={selectable}
           selected={selected}
-          onToggle={onToggleObject}
+          onToggleField={onToggleField}
         />
       ) : (
         <Suspense fallback={<div className="sme-splash">◮ drawing the model…</div>}>
@@ -104,16 +112,27 @@ export function ReviewScreen({
         <ConflictBanner conf={conf} ctx={ctx} />
         <div className="rv-actions">
           <button className="sme-secondary" onClick={onBack}>
-            Keep editing
+            {action ? "Cancel" : "Keep editing"}
           </button>
-          <button
-            className="sme-primary"
-            disabled={!diff.objects.length || (ctx ? !ctx.can_propose : false)}
-            title={ctx && !ctx.can_propose ? "the working tree has uncommitted changes" : ""}
-            onClick={() => onSubmit(cl)}
-          >
-            Submit for review →
-          </button>
+          {action ? (
+            <button
+              className="sme-primary"
+              disabled={!diff.objects.length || !!action.disabledReason}
+              title={action.disabledReason ?? ""}
+              onClick={() => action.apply(includedUlids(diff, selected))}
+            >
+              {action.label}
+            </button>
+          ) : (
+            <button
+              className="sme-primary"
+              disabled={!diff.objects.length || (ctx ? !ctx.can_propose : false)}
+              title={ctx && !ctx.can_propose ? "the working tree has uncommitted changes" : ""}
+              onClick={() => onSubmit(cl)}
+            >
+              Submit for review →
+            </button>
+          )}
         </div>
       </div>
     </div>
