@@ -2,7 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useState } from "react";
 import { fetchClassification, fetchConflicts, fetchGitContext, fetchModelDiff } from "../api";
 import type { ClassificationDoc, ConflictDoc, GitContext, ModelDiffDoc } from "../types";
 import { DiffView } from "./DiffView";
-import { allFieldKeys } from "./reviewModel";
+import { type ReviewAction, allFieldKeys, includedUlids } from "./reviewModel";
 
 const ModelDiagram = lazy(() =>
   import("./ModelDiagram").then((m) => ({ default: m.ModelDiagram })),
@@ -24,6 +24,10 @@ export function ReviewScreen({
   excluded,
   onToggleField,
   selectable,
+  /** When set, the review is driven by a source other than propose (e.g. an erwin import):
+   *  the footer shows this action's button, which applies to the SELECTED objects, instead of
+   *  the "Submit for review" propose button. Absent = today's propose flow, unchanged. */
+  action,
 }: {
   stagedDiff?: ModelDiffDoc | null;
   /** route/reviewers/gates for the STAGED set (POST /api/git/classify); the
@@ -36,6 +40,7 @@ export function ReviewScreen({
   excluded: Set<string>;
   onToggleField: (ulid: string, field: string) => void;
   selectable: boolean;
+  action?: ReviewAction;
 }) {
   const [diff, setDiff] = useState<ModelDiffDoc | null>(null);
   const [cl, setCl] = useState<ClassificationDoc | null>(null);
@@ -107,16 +112,27 @@ export function ReviewScreen({
         <ConflictBanner conf={conf} ctx={ctx} />
         <div className="rv-actions">
           <button className="sme-secondary" onClick={onBack}>
-            Keep editing
+            {action ? "Cancel" : "Keep editing"}
           </button>
-          <button
-            className="sme-primary"
-            disabled={!diff.objects.length || (ctx ? !ctx.can_propose : false)}
-            title={ctx && !ctx.can_propose ? "the working tree has uncommitted changes" : ""}
-            onClick={() => onSubmit(cl)}
-          >
-            Submit for review →
-          </button>
+          {action ? (
+            <button
+              className="sme-primary"
+              disabled={!diff.objects.length || !!action.disabledReason}
+              title={action.disabledReason ?? ""}
+              onClick={() => action.apply(includedUlids(diff, selected))}
+            >
+              {action.label}
+            </button>
+          ) : (
+            <button
+              className="sme-primary"
+              disabled={!diff.objects.length || (ctx ? !ctx.can_propose : false)}
+              title={ctx && !ctx.can_propose ? "the working tree has uncommitted changes" : ""}
+              onClick={() => onSubmit(cl)}
+            >
+              Submit for review →
+            </button>
+          )}
         </div>
       </div>
     </div>

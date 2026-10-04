@@ -92,6 +92,75 @@ export function includedUlids(diff: ModelDiffDoc, selected: Set<string>): string
   return diff.objects.filter((o) => objectIncluded(o, selected)).map((o) => o.ulid);
 }
 
+/** The NEW logical-entity names the reviewer kept, for filtering an import's command list.
+ *  Only `added` entities are returned: the import emits `create_entity` for each entity, which
+ *  fails for one that already exists in the current model (a name-matched "modified" object), so
+ *  an import applies only its genuinely-new entities — a modified existing entity is left as-is
+ *  (shown in the review, not clobbered). Name is the stable join: the diff doc carries remapped
+ *  ULIDs (base's ULID for a name-matched object) while the import commands carry fresh ULIDs. */
+export function includedEntityNames(diff: ModelDiffDoc, selected: Set<string>): Set<string> {
+  const names = new Set<string>();
+  for (const o of diff.objects) {
+    if (o.object_kind !== "logical_entity") continue;
+    if (o.change !== "added") continue; // only new entities can be created by the import
+    if (!objectIncluded(o, selected)) continue;
+    const n = o.name_after ?? o.name_before;
+    if (n) names.add(n);
+  }
+  return names;
+}
+
+type ImportCommand = { op: string; payload: Record<string, unknown> };
+
+/** Filter an erwin import's command list to the entities the reviewer kept (by name).
+ *  Scaffolding ops (subject areas, domains, categories, members) always apply; an entity and
+ *  its attributes apply when the entity's name is kept; a relationship or key group applies
+ *  only when EVERY entity it references is kept. `model_to_commands` emits entities before the
+ *  attributes/relationships that reference them, so a single pass can track which entity ids
+ *  survive. */
+export function filterImportChanges(
+  changes: ImportCommand[],
+  keepNames: Set<string>,
+): ImportCommand[] {
+  if (keepNames.size === 0) return []; // nothing selected -> write nothing
+  const keptEntityIds = new Set<string>(); // import-ULIDs of entities we keep
+  const out: ImportCommand[] = [];
+  const refEntityIds = (p: Record<string, unknown>): string[] =>
+    [p.entity_id, p.from_entity, p.to_entity, p.from, p.to].filter(
+      (v): v is string => typeof v === "string",
+    );
+  for (const c of changes) {
+    const p = c.payload;
+    switch (c.op) {
+      case "create_entity": {
+        const name = typeof p.name === "string" ? p.name : "";
+        const id = typeof p.id === "string" ? p.id : "";
+        if (keepNames.has(name)) {
+          keptEntityIds.add(id);
+          out.push(c);
+        }
+        break;
+      }
+      case "add_attribute": {
+        const eid = typeof p.entity_id === "string" ? p.entity_id : "";
+        if (keptEntityIds.has(eid)) out.push(c);
+        break;
+      }
+      case "create_relationship":
+      case "create_key_group": {
+        const refs = refEntityIds(p);
+        if (refs.length > 0 && refs.every((id) => keptEntityIds.has(id))) out.push(c);
+        break;
+      }
+      default:
+        // scaffolding (create_subject_area, create_domain, create_category,
+        // set_subject_area_members, …) always applies
+        out.push(c);
+    }
+  }
+  return out;
+}
+
 /** All field keys across the whole diff — the initial "everything selected" set. */
 export function allFieldKeys(diff: ModelDiffDoc): Set<string> {
   const s = new Set<string>();

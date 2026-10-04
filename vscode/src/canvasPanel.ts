@@ -56,12 +56,15 @@ export class CanvasManager {
    * wizard the toolbar button opens is already up when the panel appears. When a
    * query is given we rewrite the iframe even on an already-open panel, so the
    * wizard opens whether or not the canvas was already showing. */
-  async open(modelDir: string, query?: string): Promise<void> {
+  async open(modelDir: string, query?: string, path = ""): Promise<void> {
     const cfg = vscode.workspace.getConfiguration("modelith");
     await this.ensureServer(modelDir);
     const local = vscode.Uri.parse(`http://127.0.0.1:${this.port}/`);
     const external = await vscode.env.asExternalUri(local);
-    const url = external.toString().replace(/\/$/, "") + "/" + (query ? `?${query}` : "");
+    // `path` selects which SPA (default "" = architect canvas; "sme" = the SME review app
+    // served at /sme). `query` (e.g. import=1) is appended as-is.
+    const base = external.toString().replace(/\/$/, "") + "/" + path;
+    const url = base + (query ? `?${query}` : "");
 
     if (cfg.get<string>("canvas.display") === "external") {
       await vscode.env.openExternal(vscode.Uri.parse(url));
@@ -85,6 +88,29 @@ export class CanvasManager {
     this.panel.iconPath = undefined;
     this.panel.webview.html = this.html(url);
     this.panel.onDidDispose(() => (this.panel = undefined));
+  }
+
+  /** Open the SME review app with the erwin import panel. If `content` is given (a .xml the
+   * host read from disk — the webview cannot read local files), stash it on the server first
+   * and open /sme?import=<token> so the panel is pre-filled; otherwise open /sme?import=1 for
+   * a paste-or-pick. */
+  async openImportReview(modelDir: string, content?: string): Promise<void> {
+    await this.ensureServer(modelDir);
+    let query = "import=1";
+    if (content) {
+      try {
+        const res = await fetch(`http://127.0.0.1:${this.port}/api/import/stash`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ content }),
+        });
+        const data = (await res.json()) as { ok?: boolean; token?: string };
+        if (data.ok && data.token) query = `import=${encodeURIComponent(data.token)}`;
+      } catch {
+        // stash failed -> fall back to the paste-or-pick panel
+      }
+    }
+    await this.open(modelDir, query, "sme");
   }
 
   /** Re-hydrate a webview panel VS Code restored after a window reload. The

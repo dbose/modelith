@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { type ExportFormat, exportUrl, fetchExportFormats, importModel } from "../api";
+import {
+  type ExportFormat,
+  type ImportPreviewDoc,
+  exportUrl,
+  fetchExportFormats,
+  importModel,
+  importPreview,
+} from "../api";
 import type { Exec } from "../exec";
 import "./ImportExportMenu.css";
 
@@ -17,11 +24,17 @@ export function ImportExportMenu({
   buttonClass = "erd-action ghost",
   applyBatch,
   openImport = false,
+  prefillImport = "",
+  onPreview,
 }: {
   exec: Exec;
   canEdit: boolean;
   /** called after a successful import so the shell can jump to the review screen */
   onImported?: (tables: number) => void;
+  /** when set, an erwin import is reviewed before it lands (see ImportPanel.onPreview) */
+  onPreview?: (doc: ImportPreviewDoc) => void;
+  /** pre-fill the import content (a host-stashed .xml) */
+  prefillImport?: string;
   /** the import button's label — "Import & review" in the staged (SME) app, plain
    *  "Import" in the direct-write architect canvas where there is no review screen */
   submitLabel?: string;
@@ -126,6 +139,8 @@ export function ImportExportMenu({
             setOpen(null);
             onImported?.(n);
           }}
+          onPreview={onPreview}
+          prefillImport={prefillImport}
         />
       )}
     </div>
@@ -146,6 +161,8 @@ function ImportPanel({
   applyBatch,
   onClose,
   onImported,
+  onPreview,
+  prefillImport,
 }: {
   exec: Exec;
   submitLabel: string;
@@ -153,13 +170,25 @@ function ImportPanel({
   applyBatch?: (changes: { op: string; payload: Record<string, unknown> }[]) => Promise<unknown>;
   onClose: () => void;
   onImported: (tables: number) => void;
+  /** When set, an erwin import is sent for PRE-WRITE REVIEW instead of being applied: the
+   *  parsed semantic diff is handed up so the host mounts the review screen with an "Apply
+   *  import" action. Absent = apply immediately (today's behaviour / direct-write canvas). */
+  onPreview?: (doc: ImportPreviewDoc) => void;
+  prefillImport?: string;
 }) {
-  const [format, setFormat] = useState("sql");
+  // When opened for pre-write review (onPreview wired), default to erwin — the only format the
+  // review path supports today — so the VS Code "Review Erwin import" flow lands ready to paste.
+  const [format, setFormat] = useState(onPreview ? "erwin" : "sql");
   const [dialect, setDialect] = useState("postgres");
-  const [content, setContent] = useState("");
+  const [content, setContent] = useState(prefillImport ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
+
+  // Host-stashed content (a VS Code .xml) arrives after mount; fill the panel when it does.
+  useEffect(() => {
+    if (prefillImport) setContent(prefillImport);
+  }, [prefillImport]);
 
   const onFile = (f: File | null) => {
     if (!f) return;
@@ -171,6 +200,21 @@ function ImportPanel({
     setError(null);
     setWarnings([]);
     try {
+      // Pre-write review: for an erwin import in the SME app, fetch the semantic diff and hand
+      // it up for review BEFORE anything is written; the review's "Apply import" action does
+      // the write. Other formats / the direct-write canvas keep the apply-now path below.
+      if (onPreview && format === "erwin") {
+        const doc = await importPreview(format, content);
+        if (!doc.changes.length) {
+          setError(doc.warnings[0] ?? "nothing to import from that document");
+          setBusy(false);
+          return;
+        }
+        onClose();
+        onPreview(doc);
+        setBusy(false);
+        return;
+      }
       const res = await importModel(format, content, format === "sql" ? dialect : undefined);
       if (!res.changes.length) {
         setError(res.warnings[0] ?? "nothing to import from that document");

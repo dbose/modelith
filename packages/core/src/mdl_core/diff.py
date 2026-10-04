@@ -565,6 +565,16 @@ def diff_models_by_name(
     relationships and key groups by name), then delegates to the unchanged `diff_models`
     — so all the classification, severity and rendering are reused. Head-only names keep
     their own ULIDs and show as added; base-only names show as removed."""
+    head = remap_head_by_name(base, head)
+    return diff_models(base, head, base_label=base_label, head_label=head_label)
+
+
+def remap_head_by_name(base: Model, head: Model) -> Model:
+    """Return a COPY of `head` whose ULIDs are rewritten to `base`'s ULID for every same-named
+    object, so the two models can be diffed (or enriched) by shared ULID. This is the name-match
+    step behind `diff_models_by_name`, exposed so a caller that needs both the diff AND the
+    remapped head (e.g. the server's import-preview, which runs break-impact enrichment against
+    the head using the diff doc's ULIDs) can share one remapping instead of duplicating it."""
     import copy
 
     head = copy.deepcopy(head)
@@ -594,7 +604,7 @@ def diff_models_by_name(
                 remap[a.id] = base_attr[key]
 
     _apply_remap(head, remap)
-    return diff_models(base, head, base_label=base_label, head_label=head_label)
+    return head
 
 
 def _apply_remap(model: Model, remap: dict[str, str]) -> None:

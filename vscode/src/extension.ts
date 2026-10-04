@@ -640,6 +640,43 @@ export async function activate(ctx: vscode.ExtensionContext): Promise<void> {
     }),
   );
 
+  cmd("modelith.reviewImport", (arg: unknown) =>
+    withModelDir(async (dir) => {
+      if (vscode.workspace.getConfiguration("modelith").get<boolean>("canvas.readOnly")) {
+        void vscode.window.showWarningMessage(
+          "Modelith: the canvas is in read-only mode — turn off modelith.canvas.readOnly to import.",
+        );
+        return;
+      }
+      try {
+        // Resolve an erwin XML: the clicked file (explorer right-click), else a picker. If the
+        // user cancels the picker we still open the panel empty (they can paste).
+        let fileUri = arg instanceof vscode.Uri ? arg : undefined;
+        if (!fileUri) {
+          const picked = await vscode.window.showOpenDialog({
+            title: "Review Erwin XML before import",
+            canSelectMany: false,
+            filters: { "erwin XML": ["xml"] },
+            openLabel: "Review",
+          });
+          fileUri = picked?.[0];
+        }
+        // Read the file here (the webview can't) and hand the content to the SME review app via
+        // a one-shot server stash. An erwin import there is shown as a SEMANTIC diff you review
+        // (filters, per-field selection, break impact) BEFORE anything is written; "Apply
+        // import" writes only the entities you keep.
+        let content: string | undefined;
+        if (fileUri) {
+          content = Buffer.from(await vscode.workspace.fs.readFile(fileUri)).toString("utf8");
+        }
+        await canvas.openImportReview(dir, content);
+      } catch (e) {
+        if (isMdlNotFound(e)) throw e; // let cmd() offer the one-click installer
+        void vscode.window.showErrorMessage(`Modelith canvas: ${e}`);
+      }
+    }),
+  );
+
   // Import an erwin XML export into a fresh Modelith model. An erwin export is a whole
   // model (like a reverse), so this WRITES a model dir via the CLI (10MB-safe, server-
   // free) and opens it — not a canvas paste. Reachable from the palette, the Reverse

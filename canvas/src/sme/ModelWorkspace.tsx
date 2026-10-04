@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { ReactFlowProvider } from "reactflow";
+import type { ImportPreviewDoc } from "../api";
 import type { Capabilities, Exec } from "../exec";
 import { ModelCanvas, type ModelCanvasHandle } from "../ModelCanvas";
 import { LayersView, OntologyBrowser, type ReadOnlyPanelTab } from "../SidePanel";
@@ -54,6 +55,9 @@ export function ModelWorkspace({
   direct = false,
   onSelectEntity,
   onImported,
+  onImportPreview,
+  openImport = false,
+  prefillImport = "",
   query = "",
   busy,
 }: {
@@ -67,6 +71,12 @@ export function ModelWorkspace({
   onSelectEntity?: (id: string) => void;
   /** after an import stages its changes, jump the shell to the review screen */
   onImported?: (tables: number) => void;
+  /** when set, an erwin import is reviewed before it lands (the shell mounts the review) */
+  onImportPreview?: (doc: ImportPreviewDoc) => void;
+  /** open the import panel on mount (VS Code "Review Erwin import" via /sme?import=1) */
+  openImport?: boolean;
+  /** pre-fill the import panel with this content (a host-stashed .xml via /sme?import=<token>) */
+  prefillImport?: string;
   /** the top-bar search text — highlights matching entities and dims the rest */
   query?: string;
   busy?: boolean;
@@ -242,7 +252,14 @@ export function ModelWorkspace({
           <span className="erd-sep" aria-hidden="true" />
 
           {/* Interchange: move the model in and out of other formats. */}
-          <ImportExportMenu exec={exec} canEdit={canEdit} onImported={onImported} />
+          <ImportExportMenu
+            exec={exec}
+            canEdit={canEdit}
+            onImported={onImported}
+            onPreview={onImportPreview}
+            openImport={openImport}
+            prefillImport={prefillImport}
+          />
           {busy && <span className="erd-busy">updating…</span>}
           {!canEdit && <span className="sme-chip">read-only</span>}
           {error && <span className="erd-error">{error}</span>}

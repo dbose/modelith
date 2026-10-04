@@ -1,0 +1,108 @@
+<?xml version="1.0"?>
+<erwin xmlns="http://www.erwin.com/dm" FileVersion="9.8.00" Format="erwin">
+  <Model xmlns="http://www.erwin.com/dm/data">
+    <ModelProps><Name>TradingModel</Name></ModelProps>
+    <Domain_Groups>
+      <Domain id="D1"><DomainProps>
+        <Name>id_type</Name><Logical_Data_Type>BIGINT</Logical_Data_Type>
+      </DomainProps></Domain>
+    </Domain_Groups>
+    <UDP_Definition_Groups>
+      <UDP_Definition id="U_STEWARD"><UDP_DefinitionProps>
+        <Name>Steward</Name><Type>Text</Type>
+      </UDP_DefinitionProps></UDP_Definition>
+    </UDP_Definition_Groups>
+    <Naming_Options_Groups>
+      <Naming_Options id="N_PHYS"><Naming_OptionsProps>
+        <Name>Physical</Name><Case_Conversion_Type>UPPER</Case_Conversion_Type>
+        <Is_Physical_Only>1</Is_Physical_Only>
+      </Naming_OptionsProps></Naming_Options>
+      <Naming_Options id="N_LOG"><Naming_OptionsProps>
+        <Name>Logical</Name><Case_Conversion_Type>LOWER</Case_Conversion_Type>
+        <Is_Logical_Only>1</Is_Logical_Only>
+      </Naming_OptionsProps></Naming_Options>
+    </Naming_Options_Groups>
+    <Entity_Groups>
+      <Entity id="E_CP"><EntityProps>
+          <Name>Counterparty</Name><Physical_Name>COUNTERPARTY</Physical_Name>
+          <Definition>A trading partner.</Definition>
+          <UDP_Instance_Groups>
+            <UDP_Instance name="Steward" id="U_STEWARD">Jane Doe</UDP_Instance>
+          </UDP_Instance_Groups>
+        </EntityProps>
+        <Attribute_Groups>
+          <Attribute id="A_CP1"><AttributeProps>
+            <Name>counterparty_id</Name><Parent_Domain_Ref>D1</Parent_Domain_Ref>
+            <Null_Option_Type>Not_Null</Null_Option_Type>
+          </AttributeProps></Attribute>
+          <Attribute id="A_CP2"><AttributeProps>
+            <Name>legal_name</Name><Logical_Data_Type>VARCHAR(255)</Logical_Data_Type>
+            <UDP_Instance_Groups>
+              <UDP_Instance id="U_STEWARD">Bob</UDP_Instance>
+            </UDP_Instance_Groups>
+          </AttributeProps></Attribute>
+        </Attribute_Groups>
+        <Key_Group_Groups>
+          <Key_Group id="K_CP"><Key_GroupProps>
+              <Name>pk_counterparty</Name><Key_Group_Type>Primary_Key</Key_Group_Type>
+            </Key_GroupProps>
+            <Key_Group_Member_Groups>
+              <Key_Group_Member id="KM_CP"><Key_Group_MemberProps>
+                <Attribute_Ref>A_CP1</Attribute_Ref>
+              </Key_Group_MemberProps></Key_Group_Member>
+            </Key_Group_Member_Groups>
+          </Key_Group>
+        </Key_Group_Groups>
+      </Entity>
+      <Entity id="E_TR"><EntityProps><Name>Trade</Name></EntityProps>
+        <Attribute_Groups>
+          <Attribute id="A_TR1"><AttributeProps><Name>trade_id</Name></AttributeProps></Attribute>
+          <Attribute id="A_TR2"><AttributeProps>
+            <Name>counterparty_id</Name>
+            <Parent_Relationship_Ref>R1</Parent_Relationship_Ref>
+            <Parent_Attribute_Ref>A_CP1</Parent_Attribute_Ref>
+          </AttributeProps></Attribute>
+        </Attribute_Groups>
+        <Key_Group_Groups>
+          <Key_Group id="K_TR"><Key_GroupProps>
+            <Name>pk_trade</Name><Key_Group_Type>Primary_Key</Key_Group_Type></Key_GroupProps>
+            <Key_Group_Member_Groups><Key_Group_Member id="KM_TR"><Key_Group_MemberProps>
+              <Attribute_Ref>A_TR1</Attribute_Ref>
+            </Key_Group_MemberProps></Key_Group_Member></Key_Group_Member_Groups>
+          </Key_Group>
+        </Key_Group_Groups>
+      </Entity>
+      <Entity id="E_INST"><EntityProps><Name>Institution</Name></EntityProps>
+        <Attribute_Groups><Attribute id="A_INST1"><AttributeProps>
+          <Name>counterparty_id</Name>
+        </AttributeProps></Attribute></Attribute_Groups>
+      </Entity>
+    </Entity_Groups>
+    <Relationship_Groups>
+      <Relationship id="R1"><RelationshipProps>
+        <Name>trade_has_counterparty</Name>
+        <Parent_Entity_Ref>E_CP</Parent_Entity_Ref><Child_Entity_Ref>E_TR</Child_Entity_Ref>
+        <Cardinality>Zero_One_or_More</Cardinality>
+        <Parent_To_Child_Verb_Phrase>is party to</Parent_To_Child_Verb_Phrase>
+        <Child_To_Parent_Verb_Phrase>is with</Child_To_Parent_Verb_Phrase>
+      </RelationshipProps></Relationship>
+      <Relationship id="R2"><RelationshipProps>
+        <Name>cpty_is_institution</Name><Type>Subtype_Complete</Type>
+        <Parent_Entity_Ref>E_CP</Parent_Entity_Ref><Child_Entity_Ref>E_INST</Child_Entity_Ref>
+        <Subtype_Discriminator_Ref>A_CP2</Subtype_Discriminator_Ref>
+      </RelationshipProps></Relationship>
+    </Relationship_Groups>
+    <Subject_Area_Groups>
+      <Subject_Area id="S1"><Subject_AreaProps>
+        <Name>Trading</Name>
+        <User_Attached_Objects_Ref_Array>
+          <User_Attached_Objects_Ref index="0">E_CP</User_Attached_Objects_Ref>
+          <User_Attached_Objects_Ref index="1">E_TR</User_Attached_Objects_Ref>
+        </User_Attached_Objects_Ref_Array>
+      </Subject_AreaProps></Subject_Area>
+    </Subject_Area_Groups>
+    <View_Groups><View id="V1"><ViewProps><Name>v_active_trades</Name></ViewProps></View></View_Groups>
+    <ER_Diagram_Groups><ER_Diagram id="ERD1"><ER_DiagramProps>
+      <Name>Main</Name></ER_DiagramProps></ER_Diagram></ER_Diagram_Groups>
+  </Model>
+</erwin>

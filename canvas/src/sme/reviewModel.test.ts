@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { makeDiff } from "../test/diffFixture";
+import type { ModelDiffDoc, ObjectChangeDoc } from "../types";
 import {
   allFieldKeys,
   fieldKey,
   filterCounts,
+  filterImportChanges,
   filterObjects,
+  includedEntityNames,
   includedUlids,
   objectFieldKeys,
   objectIncluded,
@@ -87,5 +90,74 @@ describe("per-field selection", () => {
       sel = toggleField(k, sel);
     }
     expect(includedUlids(diff, sel).sort()).toEqual(["E_ADD", "E_DEL", "E_REN"]);
+  });
+});
+
+describe("import write-filter (apply only the kept entities, by name)", () => {
+  // a minimal import command list like model_to_commands emits
+  const changes = [
+    { op: "create_subject_area", payload: { id: "SA1", name: "Core" } },
+    { op: "create_entity", payload: { id: "e_cp", name: "counterparty" } },
+    { op: "add_attribute", payload: { entity_id: "e_cp", id: "a1", name: "cp_id" } },
+    { op: "create_entity", payload: { id: "e_tr", name: "trade" } },
+    { op: "add_attribute", payload: { entity_id: "e_tr", id: "a2", name: "trade_id" } },
+    { op: "create_relationship", payload: { id: "r1", from_entity: "e_tr", to_entity: "e_cp" } },
+  ];
+
+  it("keeps scaffolding + the kept entity + its attributes; drops the rest", () => {
+    const out = filterImportChanges(changes, new Set(["counterparty"]));
+    const ids = out.map((c) => `${c.op}:${c.payload.id}`);
+    expect(ids).toContain("create_subject_area:SA1");
+    expect(ids).toContain("create_entity:e_cp");
+    expect(ids).toContain("add_attribute:a1"); // counterparty's attr (id a1)
+    // trade and its attribute are dropped
+    expect(ids).not.toContain("create_entity:e_tr");
+    expect(ids).not.toContain("add_attribute:a2");
+    // the relationship references trade (dropped) -> dropped
+    expect(out.some((c) => c.op === "create_relationship")).toBe(false);
+  });
+
+  it("keeps a relationship only when BOTH endpoints are kept", () => {
+    const out = filterImportChanges(changes, new Set(["counterparty", "trade"]));
+    expect(out.some((c) => c.op === "create_relationship")).toBe(true);
+  });
+
+  it("nothing selected writes nothing", () => {
+    expect(filterImportChanges(changes, new Set())).toHaveLength(0);
+  });
+
+  it("includedEntityNames reads kept logical-entity names from the diff", () => {
+    const entity = (ulid: string, name: string): ObjectChangeDoc => ({
+      ulid, object_kind: "logical_entity", object_kind_label: "entity",
+      change: "added", name_before: null, name_after: name, renamed: false,
+      severity: "additive", path: null,
+      fields: [{ field: "*", kind: "added", severity: "additive", label: "", detail: "", before: null, after: null }],
+      children: [],
+    });
+    const diff = {
+      ok: true, base: { ref: "", sha: "", label: "" }, head: { ref: null, label: "" },
+      counts: {}, max_severity: "additive", has_breaking: false,
+      objects: [entity("x", "counterparty"), entity("y", "trade")], config: [],
+    } as unknown as ModelDiffDoc;
+    const all = allFieldKeys(diff);
+    expect([...includedEntityNames(diff, all)].sort()).toEqual(["counterparty", "trade"]);
+  });
+
+  it("includedEntityNames excludes a MODIFIED (already-existing) entity", () => {
+    const obj = (ulid: string, name: string, change: "added" | "modified"): ObjectChangeDoc => ({
+      ulid, object_kind: "logical_entity", object_kind_label: "entity",
+      change, name_before: change === "added" ? null : name, name_after: name, renamed: false,
+      severity: "additive", path: null,
+      fields: [{ field: "*", kind: change, severity: "additive", label: "", detail: "", before: null, after: null }],
+      children: [],
+    });
+    const diff = {
+      ok: true, base: { ref: "", sha: "", label: "" }, head: { ref: null, label: "" },
+      counts: {}, max_severity: "additive", has_breaking: false,
+      objects: [obj("x", "counterparty", "modified"), obj("y", "trade", "added")], config: [],
+    } as unknown as ModelDiffDoc;
+    const all = allFieldKeys(diff);
+    // counterparty already exists (modified) -> not created; only the new entity is kept
+    expect([...includedEntityNames(diff, all)]).toEqual(["trade"]);
   });
 });

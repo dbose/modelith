@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  type ImportPreviewDoc,
+  applyImportBatch,
   classifyStaged,
   fetchGlossary,
   fetchGlossaryConfig,
   fetchModel,
+  importStashGet,
   previewChanges,
   sendCommand,
 } from "../api";
@@ -26,7 +29,7 @@ import { ModelWorkspace } from "./ModelWorkspace";
 import { SubjectAreaEditor } from "./SubjectAreaEditor";
 import { ProposalsList } from "./ProposalsList";
 import { ProposeDialog } from "./ProposeDialog";
-import { fieldKey } from "./reviewModel";
+import { allFieldKeys, fieldKey, filterImportChanges, includedEntityNames } from "./reviewModel";
 import { ReviewScreen } from "./ReviewScreen";
 import { TermCard } from "./TermCard";
 import { TermEditor } from "./TermEditor";
@@ -52,13 +55,34 @@ export function SmeApp() {
   const [editing, setEditing] = useState(false);
   const [pending, setPending] = useState<PendingChange[]>([]);
   const [proposeOpen, setProposeOpen] = useState(false);
+  // `?import=1` (VS Code "Review Erwin import") starts on the Model view with the import panel
+  // open, so an erwin import flows straight into the pre-write review. `?import=<token>` (the
+  // host read a local .xml and stashed it) additionally pre-fills the panel with that content.
+  const importParam = useMemo(
+    () => new URLSearchParams(window.location.search).get("import"),
+    [],
+  );
+  const openImport = !!importParam;
+  const importStashToken = importParam && importParam !== "1" ? importParam : null;
+  // content fetched from the host's one-shot stash (when ?import=<token>)
+  const [prefillImport, setPrefillImport] = useState<string>("");
+  useEffect(() => {
+    if (!importStashToken) return;
+    importStashGet(importStashToken)
+      .then((r) => r.ok && r.content && setPrefillImport(r.content))
+      .catch(() => {});
+  }, [importStashToken]);
   // browse | review | proposals. Written to location.hash so a view is linkable
   // (app.py serves sme.html for `sme` and any `sme/...`, so no server change).
   const [view, setView] = useState<"browse" | "model" | "areas" | "review" | "proposals">(
-    window.location.hash === "#proposals" ? "proposals" : "browse",
+    openImport ? "model" : window.location.hash === "#proposals" ? "proposals" : "browse",
   );
   // objects the SME has unticked in the review screen (selective proposal)
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
+  // When an erwin import is being reviewed BEFORE it lands, this holds its preview doc +
+  // change list; the review screen then shows an "Apply import" action instead of propose.
+  // Cleared when the review is left. (Reuses the "review" view, no new route.)
+  const [importReview, setImportReview] = useState<ImportPreviewDoc | null>(null);
   const [user, setUser] = useState(() => localStorage.getItem("mdl.sme.user") ?? "");
   // Server-established identity (spec §17). When the source is proxy or git, the
   // acting user is known and trustworthy — the propose dialog greets them instead
@@ -211,9 +235,17 @@ export function SmeApp() {
   }, []);
 
   // keep the view in step with the hash, so a deep link and the back button work
+  const firstHash = useRef(true);
   useEffect(() => {
     const onHash = () => {
       const h = window.location.hash;
+      // On the very first load with ?import=1 and no hash yet, stay on the Model view (set by
+      // the initializer) so the import panel opens; a hash navigation always wins thereafter.
+      if (firstHash.current && !h && openImport) {
+        firstHash.current = false;
+        return;
+      }
+      firstHash.current = false;
       setView(
         h === "#proposals"
           ? "proposals"
@@ -356,8 +388,8 @@ export function SmeApp() {
 
       {view === "review" ? (
         <ReviewScreen
-          stagedDiff={reviewDiff}
-          stagedRoute={reviewRoute}
+          stagedDiff={importReview ?? reviewDiff}
+          stagedRoute={importReview ? null : reviewRoute}
           user={user}
           selectable={selectable}
           excluded={excluded}
@@ -370,11 +402,39 @@ export function SmeApp() {
               return next;
             })
           }
-          onBack={() => goto("browse")}
+          onBack={() => {
+            setImportReview(null);
+            setExcluded(new Set());
+            goto("browse");
+          }}
           onSubmit={(cl) => {
             setRouteAdvice(cl);
             setProposeOpen(true);
           }}
+          action={
+            importReview
+              ? {
+                  id: "apply-import",
+                  label: "Apply import →",
+                  primary: true,
+                  apply: async () => {
+                    // write only the ENTITIES the reviewer kept ticked (by name — the diff doc
+                    // carries remapped ULIDs, so name is the stable join to the import commands)
+                    const diff = importReview as ModelDiffDoc;
+                    const selected = new Set(
+                      [...allFieldKeys(diff)].filter((k) => !excluded.has(k)),
+                    );
+                    const keepNames = includedEntityNames(diff, selected);
+                    const changes = filterImportChanges(importReview.changes, keepNames);
+                    await applyImportBatch(changes, true); // tolerate shared scaffolding
+                    setImportReview(null);
+                    setExcluded(new Set());
+                    goto("browse");
+                    await fetchModel(subjectArea || undefined).then(setModelDoc);
+                  },
+                }
+              : undefined
+          }
         />
       ) : view === "model" ? (
         // The previewed model when anything is staged, so an edit is visible
@@ -388,6 +448,13 @@ export function SmeApp() {
             canEdit={canEdit}
             direct={direct}
             onImported={() => goto("review")}
+            onImportPreview={(doc) => {
+              setExcluded(new Set());
+              setImportReview(doc);
+              goto("review");
+            }}
+            openImport={openImport}
+            prefillImport={prefillImport}
             query={query}
             busy={staging.busy}
           />

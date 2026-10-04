@@ -145,11 +145,15 @@ text diff of `mdl model render` to the webview review over `diff_models_by_name`
 
 ## Phasing (each phase shippable)
 
-1. **Per-field selection + filters + pluggable actions** on the existing 2-pane `ReviewView`, wired to
-   flows that ALREADY produce `ModelDiffDoc` (preview, propose, git-diff/refs). Immediate UX win, no
-   adapters. Modernizes the SME review on its own.
-2. **Import pre-write review** (import adapter + canvas route + VS Code command) — highest-value new
-   flow; erwin import becomes "review before it lands," reusing phase 1.
+1. **[SHIPPED] Per-field selection + filters + pluggable actions** on the existing 2-pane `ReviewView`,
+   wired to flows that ALREADY produce `ModelDiffDoc` (preview, propose, git-diff/refs). Immediate UX
+   win, no adapters. Modernizes the SME review on its own.
+2. **[SHIPPED] Import pre-write review** (import adapter + canvas route + VS Code command) — highest-value
+   new flow; erwin import becomes "review before it lands," reusing phase 1. Delivered as
+   `POST /api/import/preview` (parse-without-write → enriched `ModelDiffDoc`), the `ReviewScreen`
+   `action` prop + "Apply import" (writes only selected new objects), and the `modelith.reviewImport`
+   command framed in the Reverse Review view, with a one-shot `/api/import/stash` channel so a VS Code
+   `.xml` pre-fills the review.
 3. **Drift review** (drift adapter + `/api/drift` + canvas route + VS Code command + tree "Open in
    review").
 4. **Decisions review** (decisions adapter + route + VS Code).
