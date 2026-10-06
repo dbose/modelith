@@ -92,6 +92,152 @@ def test_update_entity_unknown_is_error(model_dir):
     assert "error" in r
 
 
+def test_write_tools_registered(model_dir):
+    names = _tool_names(build_server(model_dir))
+    assert {
+        "create_subject_area",
+        "create_relationship",
+        "create_key_group",
+        "mint_ulid",
+    } <= names
+
+
+def test_create_subject_area_writes_and_returns_id(model_dir):
+    srv = build_server(model_dir)
+    r = _call(srv, "create_subject_area", {"name": "Reference Data", "definition": "Shared lookups."})
+    assert r["ok"] is True
+    assert r["created_id"]
+    # the new area can immediately home an entity
+    e = _call(srv, "create_entity", {"name": "region", "subject_area": r["created_id"]})
+    assert e["ok"] is True
+
+
+def _entity_id(srv, name):
+    return _call(srv, "get_entity", {"name": name})["id"]
+
+
+def test_create_relationship_between_existing_entities(model_dir):
+    srv = build_server(model_dir)
+    # a fresh entity to relate to trade (the fixture already links trade→counterparty)
+    _call(srv, "create_entity", {"name": "book"})
+    book = _entity_id(srv, "book")
+    trade = _entity_id(srv, "trade")
+    r = _call(
+        srv,
+        "create_relationship",
+        {"from_entity": trade, "to_entity": book, "name": "trade_booked_in", "create_from_fk": True},
+    )
+    assert r["ok"] is True
+    assert r["created_id"]
+    # the one-gesture FK minted a column on the source entity
+    e = _call(srv, "get_entity", {"name": "trade"})
+    assert any("book" in a["name"] for a in e["attributes"])
+
+
+def test_create_relationship_bad_endpoint_is_error(model_dir):
+    srv = build_server(model_dir)
+    trade = _entity_id(srv, "trade")
+    r = _call(srv, "create_relationship", {"from_entity": trade, "to_entity": "01BOGUSULIDNOTREAL00000000"})
+    assert "error" in r
+
+
+def test_create_key_group_over_added_attribute(model_dir):
+    srv = build_server(model_dir)
+    _call(srv, "create_entity", {"name": "region"})
+    region = _entity_id(srv, "region")
+    # add an attribute and reuse the id it returns — no guessed ULID
+    upd = _call(
+        srv,
+        "update_entity",
+        {"name": "region", "changes": {"add_attribute": {"name": "region_code", "domain": "string"}}},
+    )
+    assert upd["ok"] is True
+    attr_id = upd["attribute_id"]
+    assert attr_id
+    kg = _call(
+        srv,
+        "create_key_group",
+        {"entity": region, "name": "region_pk", "members": [attr_id], "type": "pk"},
+    )
+    assert kg["ok"] is True
+    assert kg["created_id"]
+
+
+def test_create_key_group_rejects_foreign_attribute(model_dir):
+    srv = build_server(model_dir)
+    _call(srv, "create_entity", {"name": "region"})
+    region = _entity_id(srv, "region")
+    # a trade attribute is not a member of region → rejected, nothing written
+    trade = _call(srv, "get_entity", {"name": "trade"})
+    foreign_attr = trade["attributes"][0]["id"]
+    kg = _call(
+        srv,
+        "create_key_group",
+        {"entity": region, "name": "bad", "members": [foreign_attr]},
+    )
+    assert "error" in kg
+
+
+def test_mint_ulid_returns_valid_ids(model_dir):
+    from mdl_core.ids import is_ulid
+
+    srv = build_server(model_dir)
+    r = _call(srv, "mint_ulid", {"count": 3})
+    assert len(r["ids"]) == 3
+    assert all(is_ulid(u) for u in r["ids"])
+    # a pre-minted id is accepted by a create tool (no hand-written ULIDs ever)
+    one = _call(srv, "mint_ulid", {})["ids"][0]
+    assert is_ulid(one)
+
+
+def test_update_entity_surfaces_diagnostics(model_dir):
+    srv = build_server(model_dir)
+    _call(srv, "create_entity", {"name": "region"})
+    r = _call(
+        srv,
+        "update_entity",
+        {"name": "region", "changes": {"add_attribute": {"name": "region_code", "domain": "string"}}},
+    )
+    # diagnostics from the post-write validate are now threaded through (were dropped before)
+    assert "diagnostics" in r
+
+
+def test_create_relationship_fk_domain_mismatch_hinted(model_dir):
+    """A foreign key whose minted column domain disagrees with the referenced key's
+    domain trips MDL-E114; the write tool surfaces it as a domain_hint inline."""
+    srv = build_server(model_dir)
+    # counterparty.counterparty_id has domain id_bigint; give the FK a mismatched domain
+    # by pre-adding a string column and wiring the relationship to it.
+    cpty = _entity_id(srv, "counterparty")
+    trade = _entity_id(srv, "trade")
+    # the counterparty business key is id_bigint; create an FK col on trade with a
+    # different domain and point the relationship ends at the mismatched pair.
+    upd = _call(
+        srv,
+        "update_entity",
+        {"name": "trade", "changes": {"add_attribute": {"name": "cpty_ref", "domain": "string"}}},
+    )
+    fk = upd["attribute_id"]
+    cpty_bk = next(
+        a["id"] for a in _call(srv, "get_entity", {"name": "counterparty"})["attributes"]
+        if a["name"] == "counterparty_id"
+    )
+    r = _call(
+        srv,
+        "create_relationship",
+        {
+            "from_entity": trade,
+            "to_entity": cpty,
+            "name": "trade_cpty_ref",
+            "from_attribute": fk,
+            "to_attribute": cpty_bk,
+        },
+    )
+    assert r["ok"] is True
+    assert r.get("domain_hints"), "expected an MDL-E114 domain mismatch hint"
+    assert any("domain" in h.lower() for h in r["domain_hints"])
+
+
 def test_validate_tool_reports_ok(model_dir):
     srv = build_server(model_dir)
     r = _call(srv, "validate", {})

@@ -2,10 +2,14 @@
 
 Reads (`list_entities`, `get_entity`, `search_ontology`, `get_model_context`,
 `validate`, `explain_drift`, `explain_reverse_config`, `suggest_reverse_config`) come
-from the shared query/reverse layers; writes (`create_entity`, `update_entity`) go
-through `mdl_core.commands.apply_command`, and `apply_reverse_config` merges into the
-reverse: block validated-before-write — so every write is validated and guarded exactly
-like a canvas or CLI edit.
+from the shared query/reverse layers; writes (`create_entity`, `update_entity`,
+`create_subject_area`, `create_relationship`, `create_key_group`) go through
+`mdl_core.commands.apply_command`, and `apply_reverse_config` merges into the reverse:
+block validated-before-write — so every write is validated and guarded exactly like a
+canvas or CLI edit. The write tools mint their own ULIDs and return them (`created_id`);
+`mint_ulid` is there only for the pre-mint-then-reference pattern (so an agent never
+hand-writes an id). Write responses carry the post-write diagnostics, with foreign-key
+domain mismatches (MDL-E114) surfaced as `domain_hints`.
 
 Direct local write is intentional (spec §1): this runs against the engineer's own
 checkout, a different trust boundary than the SME app's propose-as-PR flow.
@@ -47,17 +51,19 @@ def build_server(repo_dir: Path) -> FastMCP:
 
     @mcp.tool()
     def list_entities(subject_area: str | None = None) -> str:
-        """List the model's logical entities (name, definition, attribute count,
-        subject area). Grounding: call this first to see what already exists.
+        """List the model's logical entities (id, name, definition, attribute count,
+        subject area). Grounding: call this first to see what already exists; the `id`
+        is the entity ULID you pass to create_relationship / create_key_group.
         Optionally scope to a subject area by name or ULID."""
         return _json(query.list_entities(_model(), subject_area))
 
     @mcp.tool()
     def get_entity(name: str) -> str:
-        """Full detail for one entity by name (or ULID): its attributes with types
-        and ontology alignment, its key groups (pk / unique / alternate), the
-        conceptual layer, and the relationships it takes part in. Returns an error
-        object if no entity matches."""
+        """Full detail for one entity by name (or ULID): its `id` (entity ULID), its
+        attributes (each with its own `id`, type and ontology alignment), its key groups
+        (pk / unique / alternate), the conceptual layer, and the relationships it takes
+        part in. Use these ids as relationship endpoints and key-group members — never
+        guess a ULID. Returns an error object if no entity matches."""
         hit = query.get_entity(_model(), name)
         if hit is None:
             return _json({"error": f"no entity named {name!r}"})
@@ -244,6 +250,95 @@ def build_server(repo_dir: Path) -> FastMCP:
         return _apply_updates(repo_dir, le.id, le.realises, changes)
 
     @mcp.tool()
+    def create_subject_area(name: str, definition: str | None = None) -> str:
+        """Create a subject area (a named grouping of entities). Writes to the local
+        model on disk (validated before it lands). Returns the new subject area's ULID
+        (as `created_id`) or an error object — pass that ULID as `subject_area` when
+        creating entities, or to `set_subject_area_members`."""
+        return _write(repo_dir, "create_subject_area", {"name": name, "definition": definition})
+
+    @mcp.tool()
+    def create_relationship(
+        from_entity: str,
+        to_entity: str,
+        name: str | None = None,
+        from_attribute: str | None = None,
+        to_attribute: str | None = None,
+        cardinality: str = "many_to_one",
+        optionality: str | None = None,
+        create_from_fk: bool = False,
+        from_fk_name: str | None = None,
+    ) -> str:
+        """Relate two logical entities. `from_entity`/`to_entity` are entity ULIDs (get
+        them from `list_entities`/`get_entity`). `from_attribute`/`to_attribute` are the
+        joining attribute ULIDs, if known. `cardinality` is one_to_one|one_to_many|
+        many_to_one|many_to_many (default many_to_one).
+
+        One-gesture foreign key: pass `create_from_fk=True` to mint the FK column on the
+        source entity automatically, named after the target's business key (override with
+        `from_fk_name`) and typed from it — so you do NOT need a separate add_attribute
+        call. Writes to disk, validated before it lands. Returns the relationship's ULID
+        (as `created_id`) or an error object."""
+        return _write(
+            repo_dir,
+            "create_relationship",
+            {
+                "from_entity": from_entity,
+                "to_entity": to_entity,
+                "name": name,
+                "from_attribute": from_attribute,
+                "to_attribute": to_attribute,
+                "cardinality": cardinality,
+                "optionality": optionality,
+                # pass create_from_fk only when set — the handler reads it truthily
+                "create_from_fk": create_from_fk or None,
+                "from_fk_name": from_fk_name,
+            },
+        )
+
+    @mcp.tool()
+    def create_key_group(
+        entity: str,
+        name: str,
+        members: list[str],
+        type: str = "pk",
+        definition: str | None = None,
+    ) -> str:
+        """Create a named key on a logical entity: `entity` is the entity ULID, `members`
+        is the ORDERED list of attribute ULIDs the key is made of (order is semantic for
+        composite keys), `type` is pk|alternate|unique|index (default pk; an entity may
+        have only one pk). Each member must already be an attribute of `entity` — add the
+        attributes first (via update_entity add_attribute, whose created_id you reuse here).
+        Writes to disk, validated before it lands. Returns the key group's ULID (as
+        `created_id`) or an error object."""
+        return _write(
+            repo_dir,
+            "create_key_group",
+            {
+                "entity": entity,
+                "name": name,
+                "members": members,
+                "type": type,
+                "definition": definition,
+            },
+        )
+
+    @mcp.tool()
+    def mint_ulid(count: int = 1) -> str:
+        """Mint one or more fresh ULIDs for use as object identifiers. Use this ONLY when
+        you must reference an object's id before creating it — e.g. to add attributes and
+        then group them into a key in one plan: mint the attribute ids, pass each as `id`
+        where the create tool accepts one, then reference them in create_key_group. Never
+        hand-write or guess a ULID: a malformed or colliding id silently corrupts diff and
+        merge, which key off ULID uniqueness. Returns {ids: [...]}. (The create tools
+        already mint and return ids on their own — reach for this only for the
+        pre-mint-then-reference pattern.)"""
+        from mdl_core import new_ulid
+
+        n = max(1, min(int(count), 64))
+        return _json({"ids": [new_ulid() for _ in range(n)]})
+
+    @mcp.tool()
     def apply_reverse_config(block: dict[str, Any], replace: bool = False) -> str:
         """Merge a partial reverse: config `block` (layers/exclude/exempt/conventions/
         model_map/target_form) into mdl-project.yaml. Guarded: the merged result is
@@ -285,25 +380,35 @@ def _apply_updates(
     fixed order; each goes through apply_command, so validation runs after every
     step and a bad change stops the sequence. Definition and subject area live on the
     CONCEPTUAL node, so those ops take the conceptual ULID; rename and attributes are
-    logical."""
+    logical.
+
+    Each apply_command re-validates the WHOLE model and returns the diagnostics; the
+    last result therefore carries the model's current health. We surface those (and
+    the id minted by add_attribute) so the agent sees problems — a domain mismatch on
+    a freshly wired foreign key (MDL-E114), say — inline, instead of only on a later
+    explicit `validate`."""
     applied: list[str] = []
+    result = None
+    attr_id: str | None = None
     try:
         if "definition" in changes:
             if conceptual_id is None:
                 return _json({"error": "entity has no conceptual layer to set a definition on"})
-            apply_command(
+            result = apply_command(
                 repo_dir,
                 "set_definition",
                 {"id": conceptual_id, "definition": changes["definition"]},
             )
             applied.append("definition")
         if "rename" in changes:
-            apply_command(repo_dir, "rename_entity", {"id": entity_id, "name": changes["rename"]})
+            result = apply_command(
+                repo_dir, "rename_entity", {"id": entity_id, "name": changes["rename"]}
+            )
             applied.append("rename")
         if "subject_area" in changes:
             if conceptual_id is None:
                 return _json({"error": "entity has no conceptual layer to home in a subject area"})
-            apply_command(
+            result = apply_command(
                 repo_dir,
                 "set_subject_area",
                 {"id": conceptual_id, "subject_area": changes["subject_area"]},
@@ -313,7 +418,8 @@ def _apply_updates(
             attr = changes["add_attribute"]
             if not isinstance(attr, dict) or "name" not in attr:
                 return _json({"error": "add_attribute must be an object with at least a name"})
-            apply_command(repo_dir, "add_attribute", {"entity_id": entity_id, **attr})
+            result = apply_command(repo_dir, "add_attribute", {"entity_id": entity_id, **attr})
+            attr_id = result.created_id
             applied.append(f"add_attribute:{attr['name']}")
     except StaleModelError as e:
         return _json({"error": f"model changed on disk mid-update: {e}", "applied": applied})
@@ -321,7 +427,23 @@ def _apply_updates(
         return _json({"error": str(e), "applied": applied})
     if not applied:
         return _json({"error": "no recognised keys in changes", "applied": []})
-    return _json({"ok": True, "applied": applied})
+    out: dict[str, Any] = {"ok": True, "applied": applied}
+    if attr_id is not None:
+        # so the agent can reference the new column in create_key_group without a re-read
+        out["attribute_id"] = attr_id
+    if result is not None:
+        out["diagnostics"] = result.diagnostics
+        hints = _domain_hints(result.diagnostics)
+        if hints:
+            out["domain_hints"] = hints
+    return _json(out)
+
+
+def _domain_hints(diagnostics: list[dict]) -> list[str]:
+    """Pull foreign-key domain-mismatch messages (MDL-E114) out of a diagnostic list,
+    so a domain problem on a just-wired FK is called out plainly rather than buried in
+    the full diagnostic set. Returns the messages; empty when there are none."""
+    return [d["message"] for d in diagnostics if d.get("code") == "MDL-E114"]
 
 
 def _write(repo_dir: Path, op: str, payload: dict) -> str:
@@ -333,16 +455,20 @@ def _write(repo_dir: Path, op: str, payload: dict) -> str:
         return _json({"error": f"model changed on disk: {e}"})
     except (CommandError, FileNotFoundError, ValueError) as e:
         return _json({"error": str(e)})
-    return _json(
-        {
-            "ok": result.ok,
-            "created_id": result.created_id,
-            # CommandResult.diagnostics is already a list of {code, severity, message}
-            # dicts (validated on the reload apply_command does after each write).
-            "diagnostics": result.diagnostics,
-            "error": result.error,
-        }
-    )
+    out = {
+        "ok": result.ok,
+        "created_id": result.created_id,
+        # CommandResult.diagnostics is already a list of {code, severity, message}
+        # dicts (validated on the reload apply_command does after each write).
+        "diagnostics": result.diagnostics,
+        "error": result.error,
+    }
+    # Call out a foreign-key domain mismatch plainly — e.g. a create_relationship with
+    # create_from_fk whose minted column's domain disagrees with the key it references.
+    hints = _domain_hints(result.diagnostics)
+    if hints:
+        out["domain_hints"] = hints
+    return _json(out)
 
 
 @lru_cache(maxsize=8)
