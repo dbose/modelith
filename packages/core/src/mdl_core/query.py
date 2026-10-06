@@ -67,6 +67,9 @@ def list_entities(model: Model, subject_area: str | None = None) -> list[dict]:
         )
         out.append(
             {
+                # the entity's ULID — what create_relationship / create_key_group need
+                # as an endpoint. Surfaced so a caller never has to guess an id.
+                "id": le.id,
                 "name": le.name,
                 "definition": (le.definition or (ce.definition if ce else None)),
                 "attribute_count": len(le.attributes),
@@ -117,6 +120,9 @@ def get_entity(model: Model, name: str) -> dict | None:
 
     attributes = [
         {
+            # the attribute's ULID — reference it directly in create_key_group members
+            # or as a relationship end, instead of guessing an id.
+            "id": a.id,
             "name": a.name,
             "definition": a.definition,
             "domain": a.domain,
@@ -143,6 +149,7 @@ def get_entity(model: Model, name: str) -> dict | None:
         )
 
     return {
+        "id": le.id,
         "name": le.name,
         "definition": le.definition or (ce.definition if ce else None),
         "pattern": le.pattern,
