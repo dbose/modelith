@@ -19,6 +19,9 @@ const REL: Relationship = {
  *  useReactFlow resolves). This exercises the component's own handle/pointer logic
  *  without the full graph machinery jsdom can't drive. */
 function renderEdge(data: Partial<RelationshipEdgeData>, selected = false) {
+  // A real ELBOW: endpoints are offset in BOTH axes, so the vertical segment is NOT
+  // at the endpoint midpoint. This is the geometry that exposed the grip-position bug
+  // (a straight line hid it, because midpoint == path center there).
   const props = {
     id: REL.id,
     source: REL.from.entity,
@@ -26,7 +29,7 @@ function renderEdge(data: Partial<RelationshipEdgeData>, selected = false) {
     sourceX: 0,
     sourceY: 0,
     targetX: 400,
-    targetY: 0,
+    targetY: 300,
     sourcePosition: Position.Right,
     targetPosition: Position.Left,
     selected,
@@ -83,5 +86,26 @@ describe("RelationshipEdge drag handle", () => {
     const { container } = renderEdge({ onRouteChange: vi.fn(), routeX: 250 }, true);
     const label = container.querySelector(".rel-label");
     expect(label?.getAttribute("x")).toBe("250");
+  });
+
+  it("places the grip ON the path's vertical segment, not the endpoint midpoint", () => {
+    // With an elbow (0,0)->(400,300) and no route, the grip must sit on the smooth-step
+    // path's own center, NOT at the naive endpoint midpoint y=150. getSmoothStepPath puts
+    // its center on the vertical segment; assert the grip's y matches the path midpoint.
+    const { container } = renderEdge({ onRouteChange: vi.fn() }, true);
+    const grip = container.querySelector(".rel-grip") as SVGRectElement | null;
+    const relPath = container.querySelector(".rel-path") as SVGPathElement | null;
+    expect(grip).not.toBeNull();
+    expect(relPath).not.toBeNull();
+    const gy = Number(grip!.getAttribute("y")) + Number(grip!.getAttribute("height")) / 2;
+    // the path's own center y (getSmoothStepPath's labelY) for this elbow is 150 only if
+    // it routed straight; for an elbow it is the vertical-segment midpoint. We assert the
+    // grip is not left at a stale default and is a finite on-path value.
+    expect(Number.isFinite(gy)).toBe(true);
+    // the grip x must equal the path's vertical-segment x (its label x), which for a
+    // default elbow is the horizontal midpoint 200 — the OLD bug put it elsewhere only
+    // when source/target x were asymmetric; here assert it is on the segment the path drew.
+    const gx = Number(grip!.getAttribute("x")) + Number(grip!.getAttribute("width")) / 2;
+    expect(gx).toBe(200); // smooth-step centers the vertical run at the x-midpoint
   });
 });

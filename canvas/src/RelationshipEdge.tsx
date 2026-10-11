@@ -95,13 +95,15 @@ export const RelationshipEdge = memo(function RelationshipEdge({
   const composite = (data?.memberCount ?? 0) > 1;
   const onHover = data?.onHoverEdge;
 
-  // handle sits at the mid-height of the vertical segment, at its x.
-  const handleX = routeX ?? (sourceX + targetX) / 2;
-  const handleY = (sourceY + targetY) / 2;
-  // labels follow the vertical segment once a route is set, else the smooth-step's
-  // own label point.
-  const labelX = routeX != null ? routeX : autoLabelX;
-  const labelY = routeX != null ? handleY : autoLabelY;
+  // The handle sits on the MIDDLE of the actual vertical segment. getSmoothStepPath
+  // returns the path's own center point (autoLabelX/Y) which lies exactly on that
+  // segment — use it, not the naive endpoint midpoint, which can be far off the real
+  // elbow (that bug made the grip float in empty space beside the line). Once a route
+  // is set, the segment is at `routeX`, so the handle rides there.
+  const handleX = routeX != null ? routeX : autoLabelX;
+  const handleY = autoLabelY;
+  const labelX = handleX;
+  const labelY = handleY;
 
   const commit = useCallback(
     (x: number | null) => onRouteChange && rel && onRouteChange(rel.id, x),
