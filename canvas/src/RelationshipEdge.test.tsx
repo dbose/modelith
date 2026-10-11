@@ -45,7 +45,12 @@ describe("RelationshipEdge drag handle", () => {
   it("shows the grip when selected and draggable", () => {
     const { container } = renderEdge({ onRouteChange: vi.fn() }, true);
     expect(container.querySelector(".rel-handle")).not.toBeNull();
-    expect(container.querySelector(".rel-grip")).not.toBeNull();
+    const grip = container.querySelector(".rel-grip");
+    expect(grip).not.toBeNull();
+    // grip must have a real, non-collapsed size (it rendered at ~1px when the
+    // sizing was zoom-naive — a constant on-screen size is the fix). At the test's
+    // default zoom (1) the SVG width is 9/zoom = 9.
+    expect(Number(grip!.getAttribute("width"))).toBeGreaterThanOrEqual(6);
   });
 
   it("hides the grip when not selected", () => {

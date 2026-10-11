@@ -255,9 +255,11 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
 .rel-edge:hover .rel-glyph, .rel-edge.selected .rel-glyph { stroke: var(--accent); }
 .rel-edge.dimmed { opacity: 0.12; }
 .rel-label { fill: var(--text); font-size: 11px; text-anchor: middle; paint-order: stroke; stroke: var(--bg); stroke-width: 4px; }
-/* draggable edge route handle (grip on the vertical segment) */
-.rel-handle .rel-grip { fill: var(--accent); stroke: var(--bg); stroke-width: 1; opacity: 0.9; }
-.rel-handle:hover .rel-grip { opacity: 1; }
+/* draggable edge route handle (grip on the vertical segment). Sizes are set
+   per-zoom in the component (zoom-invariant), so here we only style colour. */
+.rel-handle .rel-grip { fill: var(--accent); stroke: var(--bg); opacity: 0.95; }
+.rel-handle .rel-grip-dot { fill: var(--bg); }
+.rel-handle:hover .rel-grip { fill: var(--accent); filter: brightness(1.15); }
 .layout-menu-sep { height: 1px; margin: 4px 0; background: var(--border); }
 
 /* ---------- detail panel ---------- */

@@ -1,5 +1,5 @@
 import { memo, useCallback, useRef, useState } from "react";
-import { getSmoothStepPath, Position, useReactFlow, type EdgeProps } from "reactflow";
+import { getSmoothStepPath, Position, useReactFlow, useStore, type EdgeProps } from "reactflow";
 import type { Relationship } from "./types";
 
 export interface RelationshipEdgeData {
@@ -53,6 +53,11 @@ export const RelationshipEdge = memo(function RelationshipEdge({
   selected,
 }: EdgeProps<RelationshipEdgeData>) {
   const { screenToFlowPosition } = useReactFlow();
+  // The canvas zoom. The handle is drawn in flow coordinates inside a scaled <g>,
+  // so a fixed SVG size shrinks to nothing when zoomed out (a 3px grip became ~1px
+  // on screen at the default 0.33x zoom). Divide sizes by the zoom so the grip keeps
+  // a constant on-screen size and stays grabbable at any zoom.
+  const zoom = useStore((s) => s.transform[2]);
   // while dragging, the live route is kept here so we do NOT rebuild all edges
   // per move; the committed value rides in data.routeX.
   const [dragX, setDragX] = useState<number | null>(null);
@@ -175,18 +180,20 @@ export const RelationshipEdge = memo(function RelationshipEdge({
         fill="none"
         strokeDasharray={identifying ? undefined : "6 4"}
       />
-      {/* wider invisible path for easier hover/click */}
+      {/* wider invisible path for easier hover/click — kept ~16px on screen at any zoom */}
       <path
         d={path}
         fill="none"
-        strokeWidth={14}
+        strokeWidth={16 / zoom}
         stroke="transparent"
         onMouseEnter={onHover ? () => onHover(rel!.id) : undefined}
         onMouseLeave={onHover ? () => onHover(null) : undefined}
       />
       <EndGlyph x={sourceX} y={sourceY} side={sourcePosition} many={srcMany} optional={optional} />
       <EndGlyph x={targetX} y={targetY} side={targetPosition} many={tgtMany} optional={false} />
-      {/* drag handle on the vertical segment — only when draggable and hovered/selected */}
+      {/* drag handle on the vertical segment — only when draggable and hovered/selected.
+          Sizes are divided by the zoom so the grip keeps a constant ON-SCREEN size and
+          stays visible + grabbable however far the canvas is zoomed out. */}
       {draggable && (selected || dragX != null) && (
         <g
           className="rel-handle"
@@ -195,16 +202,27 @@ export const RelationshipEdge = memo(function RelationshipEdge({
           onClickCapture={onClickCapture}
           onDoubleClick={onDoubleClick}
         >
-          {/* a fat transparent target around the grip for easy grabbing */}
-          <rect x={handleX - 6} y={handleY - 10} width={12} height={20} fill="transparent" />
+          {/* a fat transparent target (~22px on screen) around the grip for easy grabbing */}
+          <rect
+            x={handleX - 11 / zoom}
+            y={handleY - 16 / zoom}
+            width={22 / zoom}
+            height={32 / zoom}
+            fill="transparent"
+          />
+          {/* the visible grip: a rounded pill (~9x18px on screen) */}
           <rect
             className="rel-grip"
-            x={handleX - 1.5}
-            y={handleY - 7}
-            width={3}
-            height={14}
-            rx={1.5}
+            x={handleX - 4.5 / zoom}
+            y={handleY - 9 / zoom}
+            width={9 / zoom}
+            height={18 / zoom}
+            rx={4 / zoom}
+            strokeWidth={1.5 / zoom}
           />
+          {/* two dots to read as a drag affordance */}
+          <circle className="rel-grip-dot" cx={handleX} cy={handleY - 3 / zoom} r={1.1 / zoom} />
+          <circle className="rel-grip-dot" cx={handleX} cy={handleY + 3 / zoom} r={1.1 / zoom} />
         </g>
       )}
       {(selected || composite) && rel && (
