@@ -8,6 +8,7 @@ import {
   fetchDiagnostics,
   fetchModel,
   gitStatus,
+  httpLayoutStore,
   sendCommand,
 } from "./api";
 import { directCapabilities } from "./exec";
@@ -92,6 +93,9 @@ function Canvas() {
   // The architect canvas writes straight to disk; its capabilities follow the
   // server's read-only flag exactly.
   const caps = useMemo(() => directCapabilities(readOnly), [readOnly]);
+  // The architect canvas persists node positions + edge routes (visual only). The
+  // SME/catalog shells pass no store, so staged/previewed models never persist.
+  const layoutStore = useMemo(() => httpLayoutStore(), []);
   const urlParams = useMemo(() => new URLSearchParams(window.location.search), []);
   const minimal = urlParams.get("minimal") === "1";
   // The preview pane (minimal) opens collapsed so a big warehouse is readable at a glance;
@@ -267,6 +271,7 @@ function Canvas() {
         onToggleCollapse={() => setCollapseDetail((v) => !v)}
         onFitView={() => canvasRef.current?.fitView()}
         onRelayout={(mode, dir) => canvasRef.current?.relayout(mode, dir)}
+        onResetLayout={() => canvasRef.current?.resetLayout()}
         onRefresh={refresh}
         readOnly={readOnly}
         dirty={dirty}
@@ -297,6 +302,7 @@ function Canvas() {
           activeAreas={activeAreas}
           onError={setToast}
           handleRef={canvasRef}
+          layoutStore={layoutStore}
         />
         {!minimal && (
           <CanvasDrawer

@@ -157,6 +157,54 @@ def create_app(
         doc["read_only"] = read_only
         return JSONResponse(doc)
 
+    # --- visual layout sidecar (.mdl/layout.json) ----------------------------
+    # Node positions + edge routes, per canvas view. VISUAL ONLY: never a model
+    # mutation — these routes do not go through apply_command, do not bump the
+    # fingerprint, do not clear the repo cache, and write no audit record. The
+    # GET is always available (a readable model always returns 200, empty when
+    # absent); PUT/DELETE are gated under the read_only block below.
+
+    @app.get("/api/layout")
+    def get_layout(view: str = "__all__") -> JSONResponse:
+        from mdl_server import layout_store
+
+        return JSONResponse(layout_store.get_view(model_dir, view))
+
+    @app.put("/api/layout")
+    def put_layout(body: dict, request: Request) -> JSONResponse:
+        """Replace one view's node positions + edge routes. 403 under read_only
+        (the canvas treats that as 'session only', no error). Not a model write:
+        no fingerprint bump, no cache bust, no audit."""
+        from mdl_server import layout_store
+
+        if read_only:
+            return JSONResponse({"ok": False, "error": "read-only"}, status_code=403)
+        clen = request.headers.get("content-length")
+        if clen and clen.isdigit() and int(clen) > layout_store.MAX_BYTES:
+            return JSONResponse({"ok": False, "error": "layout too large"}, status_code=422)
+        model = _load().model
+        try:
+            layout_store.put_view(
+                model_dir,
+                body.get("view") or "",
+                body.get("nodes"),
+                body.get("edges"),
+                entity_ids={e.id for e in model.logical_entities.values()},
+                relationship_ids=set(model.relationships),
+            )
+        except layout_store.LayoutError as e:
+            return JSONResponse({"ok": False, "error": str(e)}, status_code=422)
+        return JSONResponse({"ok": True})
+
+    @app.delete("/api/layout")
+    def delete_layout(view: str | None = None) -> JSONResponse:
+        from mdl_server import layout_store
+
+        if read_only:
+            return JSONResponse({"ok": False, "error": "read-only"}, status_code=403)
+        layout_store.delete_view(model_dir, view)
+        return JSONResponse({"ok": True})
+
     # --- ER interchange import/export (Model-tab toolbar) ---------------------
     # Reads: always available. Export writes nothing; import returns a change list
     # the client previews and proposes (it does not write the model itself).

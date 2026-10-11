@@ -1,5 +1,5 @@
-import { memo } from "react";
-import { getSmoothStepPath, Position, type EdgeProps } from "reactflow";
+import { memo, useCallback, useRef, useState } from "react";
+import { getSmoothStepPath, Position, useReactFlow, type EdgeProps } from "reactflow";
 import type { Relationship } from "./types";
 
 export interface RelationshipEdgeData {
@@ -9,7 +9,21 @@ export interface RelationshipEdgeData {
   memberCount?: number;
   /** hover the line -> the canvas highlights both endpoint attribute rows */
   onHoverEdge?: (relId: string | null) => void;
+  /** the x of the vertical segment, in flow coords. Undefined = automatic routing. */
+  routeX?: number;
+  /** commit a new route (or null to reset to automatic). Absent = not draggable. */
+  onRouteChange?: (relId: string, routeX: number | null) => void;
+  /** endpoint card rectangles (flow coords), for clamping the route out of cards */
+  sourceCard?: { left: number; right: number };
+  targetCard?: { left: number; right: number };
 }
+
+// Keep in sync with edgeRouting.ts; imported there, inlined here to avoid a cycle
+// of concerns (this file owns the pointer handling, edgeRouting owns the math).
+import { adjustRouteX } from "./edgeRouting";
+
+/** a press that moves less than this many px counts as a click, not a drag */
+const CLICK_SLOP = 3;
 
 /**
  * Crow's-foot notation (erwin-style), drawn as small glyph groups at each end of
@@ -21,6 +35,11 @@ export interface RelationshipEdgeData {
  *
  * identifying (IDEF1X): the parent's key is part of the child's identity, drawn
  * as a SOLID line; non-identifying is DASHED. erwin draws the same distinction.
+ *
+ * The vertical segment is draggable: its x (`routeX`) is the only free degree of
+ * freedom (ports are on the left/right of a card only). A handle appears on hover
+ * or select; dragging slides the segment while both ends stay glued to their
+ * attribute handles. See edgeRouting.ts for the snap/magnet/clamp geometry.
  */
 export const RelationshipEdge = memo(function RelationshipEdge({
   id,
@@ -33,7 +52,20 @@ export const RelationshipEdge = memo(function RelationshipEdge({
   data,
   selected,
 }: EdgeProps<RelationshipEdgeData>) {
-  const [path] = getSmoothStepPath({
+  const { screenToFlowPosition } = useReactFlow();
+  // while dragging, the live route is kept here so we do NOT rebuild all edges
+  // per move; the committed value rides in data.routeX.
+  const [dragX, setDragX] = useState<number | null>(null);
+  const draggingRef = useRef(false);
+  const movedRef = useRef(0);
+
+  const onRouteChange = data?.onRouteChange;
+  const draggable = !!onRouteChange;
+
+  // effective vertical-segment x: live drag wins, else the committed route.
+  const routeX = dragX ?? data?.routeX;
+
+  const [path, autoLabelX, autoLabelY] = getSmoothStepPath({
     sourceX,
     sourceY,
     sourcePosition,
@@ -41,6 +73,7 @@ export const RelationshipEdge = memo(function RelationshipEdge({
     targetY,
     targetPosition,
     borderRadius: 10,
+    ...(routeX != null ? { centerX: routeX } : {}),
   });
 
   const rel = data?.relationship;
@@ -56,6 +89,82 @@ export const RelationshipEdge = memo(function RelationshipEdge({
   const cls = "rel-edge" + (selected ? " selected" : "") + (dimmed ? " dimmed" : "");
   const composite = (data?.memberCount ?? 0) > 1;
   const onHover = data?.onHoverEdge;
+
+  // handle sits at the mid-height of the vertical segment, at its x.
+  const handleX = routeX ?? (sourceX + targetX) / 2;
+  const handleY = (sourceY + targetY) / 2;
+  // labels follow the vertical segment once a route is set, else the smooth-step's
+  // own label point.
+  const labelX = routeX != null ? routeX : autoLabelX;
+  const labelY = routeX != null ? handleY : autoLabelY;
+
+  const commit = useCallback(
+    (x: number | null) => onRouteChange && rel && onRouteChange(rel.id, x),
+    [onRouteChange, rel],
+  );
+
+  const onPointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      if (!draggable || e.button !== 0) return;
+      e.stopPropagation();
+      (e.target as Element).setPointerCapture?.(e.pointerId);
+      draggingRef.current = true;
+      movedRef.current = 0;
+      const start = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+      const startX = start.x;
+      let raf = 0;
+      let latest = routeX ?? handleX;
+
+      const onMove = (ev: PointerEvent) => {
+        const p = screenToFlowPosition({ x: ev.clientX, y: ev.clientY });
+        movedRef.current = Math.max(movedRef.current, Math.abs(p.x - startX));
+        latest = adjustRouteX(p.x, {
+          shift: ev.shiftKey,
+          source: data?.sourceCard ?? { left: sourceX, right: sourceX },
+          target: data?.targetCard ?? { left: targetX, right: targetX },
+        });
+        if (!raf) {
+          raf = requestAnimationFrame(() => {
+            raf = 0;
+            setDragX(latest);
+          });
+        }
+      };
+      const onUp = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        if (raf) cancelAnimationFrame(raf);
+        draggingRef.current = false;
+        setDragX(null);
+        if (movedRef.current >= CLICK_SLOP) commit(latest);
+        // a sub-slop press is a click; swallow the click that follows a real drag
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [draggable, screenToFlowPosition, routeX, handleX, data, sourceX, targetX, commit],
+  );
+
+  // Swallow the click that fires right after a real drag, so it does not open the
+  // edit modal (a true click — sub-slop press — is allowed through).
+  const onClickCapture = useCallback(
+    (e: React.MouseEvent) => {
+      if (movedRef.current >= CLICK_SLOP) {
+        e.stopPropagation();
+        movedRef.current = 0;
+      }
+    },
+    [],
+  );
+
+  const onDoubleClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (!draggable) return;
+      e.stopPropagation();
+      commit(null); // reset to automatic routing
+    },
+    [draggable, commit],
+  );
 
   return (
     <g className={cls}>
@@ -77,8 +186,29 @@ export const RelationshipEdge = memo(function RelationshipEdge({
       />
       <EndGlyph x={sourceX} y={sourceY} side={sourcePosition} many={srcMany} optional={optional} />
       <EndGlyph x={targetX} y={targetY} side={targetPosition} many={tgtMany} optional={false} />
+      {/* drag handle on the vertical segment — only when draggable and hovered/selected */}
+      {draggable && (selected || dragX != null) && (
+        <g
+          className="rel-handle"
+          style={{ cursor: "ew-resize" }}
+          onPointerDown={onPointerDown}
+          onClickCapture={onClickCapture}
+          onDoubleClick={onDoubleClick}
+        >
+          {/* a fat transparent target around the grip for easy grabbing */}
+          <rect x={handleX - 6} y={handleY - 10} width={12} height={20} fill="transparent" />
+          <rect
+            className="rel-grip"
+            x={handleX - 1.5}
+            y={handleY - 7}
+            width={3}
+            height={14}
+            rx={1.5}
+          />
+        </g>
+      )}
       {(selected || composite) && rel && (
-        <text className="rel-label" x={(sourceX + targetX) / 2} y={(sourceY + targetY) / 2 - 8}>
+        <text className="rel-label" x={labelX} y={labelY - 8}>
           {/* erwin verb phrase reads "<parent> <verb> <child>"; fall back to the name */}
           {selected ? rel.verb_phrase || rel.name : ""}
           {composite ? `${selected ? " " : ""}(${data!.memberCount})` : ""}

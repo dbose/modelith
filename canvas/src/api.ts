@@ -18,7 +18,10 @@ import type {
   StackDoc,
   TermCard,
   TermDetail,
+  LayoutDoc,
+  ViewLayout,
 } from "./types";
+import type { LayoutStore } from "./layoutStore";
 
 /** API base prefix. The same canvas bundle is served both at `/` (private `mdl serve`)
  * and under `/view/<slug>/` (a catalog-materialised model). When mounted under `/view/`,
@@ -253,3 +256,40 @@ export const expandSubjectArea = (
   id: string,
   body: { seeds: string[]; direction: string; levels: number },
 ) => post<ExpandDoc>(`/api/glossary/subject-area/${id}/expand`, body);
+
+/**
+ * HTTP-backed layout store (the architect app). Saves are fire-and-forget: a
+ * failure (e.g. 403 under read-only) resolves without surfacing an error, so the
+ * canvas falls back to session-only layout. Load tolerates a missing/empty file.
+ */
+export function httpLayoutStore(): LayoutStore {
+  return {
+    async load(view: string): Promise<ViewLayout> {
+      try {
+        const d = await get<LayoutDoc>(`/api/layout?view=${encodeURIComponent(view)}`);
+        return { nodes: d.nodes ?? {}, edges: d.edges ?? {} };
+      } catch {
+        return { nodes: {}, edges: {} };
+      }
+    },
+    async save(view: string, layout: ViewLayout): Promise<void> {
+      try {
+        await fetch(url("/api/layout"), {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ view, nodes: layout.nodes, edges: layout.edges }),
+        });
+      } catch {
+        // session-only: a save failure is never an error to the user
+      }
+    },
+    async reset(view?: string): Promise<void> {
+      try {
+        const q = view ? `?view=${encodeURIComponent(view)}` : "";
+        await fetch(url(`/api/layout${q}`), { method: "DELETE" });
+      } catch {
+        // ignore
+      }
+    },
+  };
+}

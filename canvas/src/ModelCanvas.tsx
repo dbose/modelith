@@ -24,10 +24,11 @@ import {
 } from "./EntityNode";
 import type { Capabilities, Exec } from "./exec";
 import { Inspector } from "./Inspector";
-import { type LayoutDir, type LayoutMode, layoutGraph } from "./layout";
+import { type LayoutDir, type LayoutMode, NODE_WIDTH, layoutGraph, nodeHeight } from "./layout";
+import type { LayoutStore } from "./layoutStore";
 import { AlignModal, NewEntityModal, RelEditModal, RelModal, TermMapModal } from "./modals";
 import { RelationshipEdge, type RelationshipEdgeData } from "./RelationshipEdge";
-import type { Entity, ModelDoc } from "./types";
+import type { Entity, ModelDoc, ViewLayout } from "./types";
 
 const nodeTypes: NodeTypes = { entity: EntityNode };
 const edgeTypes: EdgeTypes = { relationship: RelationshipEdge };
@@ -36,6 +37,33 @@ const edgeTypes: EdgeTypes = { relationship: RelationshipEdge };
 // spans warm-to-cool hues so groups stay distinguishable on the warm-charcoal ground.
 export const PALETTE = ["#e0a63a", "#e8825a", "#d98ba8", "#c4a3e0", "#7fb0d8", "#7fc9a0", "#e6c14a"];
 export const NO_SA_COLOR = "#8a7d6a";
+
+/** Nudge a card down until it no longer overlaps any occupied rectangle, so a
+ * newly-auto-placed entity (e.g. one Copilot just created) does not land on top
+ * of a restored card. Simple vertical push; good enough for the rare new node. */
+function nudgeOffOverlaps(
+  pos: { x: number; y: number },
+  h: number,
+  occupied: { x: number; y: number; w: number; h: number }[],
+): { x: number; y: number } {
+  const GAP = 16;
+  const w = NODE_WIDTH;
+  let { x, y } = pos;
+  let moved = true;
+  let guard = 0;
+  while (moved && guard++ < 200) {
+    moved = false;
+    for (const o of occupied) {
+      const overlap =
+        x < o.x + o.w + GAP && x + w + GAP > o.x && y < o.y + o.h + GAP && y + h + GAP > o.y;
+      if (overlap) {
+        y = o.y + o.h + GAP; // push below the card it hit
+        moved = true;
+      }
+    }
+  }
+  return { x, y };
+}
 
 /** Which React Flow handle each end of a relationship anchors to (issue #5).
  *
@@ -66,6 +94,10 @@ export interface ModelCanvasHandle {
   focusEntity: (id: string) => void;
   /** Open the New Entity modal — a shell gesture (toolbar button, `n` shortcut). */
   newEntity: () => void;
+  /** Clear the saved layout for the current view and re-run auto-layout. */
+  resetLayout: () => void;
+  /** Restore the positions replaced by the last Re-layout (session undo). */
+  undoRelayout: () => void;
 }
 
 export interface ModelCanvasProps {
@@ -90,6 +122,9 @@ export interface ModelCanvasProps {
   /** Surfaced by the shell however it likes (a toast, a banner). */
   onError?: (message: string) => void;
   handleRef?: React.Ref<ModelCanvasHandle>;
+  /** Persist node positions + edge routes (visual only). Absent on the SME/catalog
+   *  shells, so a staged or previewed model never persists layout. See layoutStore.ts. */
+  layoutStore?: LayoutStore;
 }
 
 /** The ER canvas plus its editing surface: the graph, the inspector, and the five
@@ -114,11 +149,56 @@ export function ModelCanvas({
   activeAreas,
   onError,
   handleRef,
+  layoutStore,
 }: ModelCanvasProps) {
   const { fitView, fitBounds, getNodes } = useReactFlow();
   const [nodes, setNodes] = useState<Node<EntityNodeData>[]>([]);
   const [edges, setEdges] = useState<Edge<RelationshipEdgeData>[]>([]);
   const layoutedRef = useRef(false);
+
+  // --- saved layout (visual only) -------------------------------------------
+  // The view key: "__all__" for the unfiltered canvas, else "sa:" + the sorted
+  // active-area ids joined with "+". Each view keeps its own arrangement because
+  // the canvas re-lays-out the visible subset per filter.
+  const viewKey = useMemo(() => {
+    const areas = activeAreas && activeAreas.size > 0 ? [...activeAreas].sort() : null;
+    return areas ? "sa:" + areas.join("+") : "__all__";
+  }, [activeAreas]);
+  // the saved arrangement for the CURRENT view; null until loaded (or when none).
+  const savedRef = useRef<ViewLayout | null>(null);
+  const [savedTick, setSavedTick] = useState(0); // bump to re-run the derivation after a load
+  // per-view in-memory cache so switching the filter back is instant and offline.
+  const loadedViews = useRef<Map<string, ViewLayout>>(new Map());
+  // Re-layout undo: the positions replaced by the last Re-layout, for a session toast.
+  const undoRef = useRef<Record<string, { x: number; y: number }> | null>(null);
+
+  // Load the saved layout whenever the view changes. A missing store or a failed
+  // load leaves savedRef null (pure auto-layout). layoutedRef is reset so the
+  // derivation re-applies positions for the new view.
+  useEffect(() => {
+    if (!layoutStore) {
+      savedRef.current = null;
+      return;
+    }
+    const cached = loadedViews.current.get(viewKey);
+    if (cached) {
+      savedRef.current = cached;
+      layoutedRef.current = false;
+      setSavedTick((t) => t + 1);
+      return;
+    }
+    let cancelled = false;
+    layoutStore.load(viewKey).then((layout) => {
+      if (cancelled) return;
+      loadedViews.current.set(viewKey, layout);
+      savedRef.current = layout;
+      layoutedRef.current = false;
+      setSavedTick((t) => t + 1);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [layoutStore, viewKey]);
 
   const [alignFor, setAlignFor] = useState<Entity | null>(null);
   const [mapFor, setMapFor] = useState<Entity | null>(null);
@@ -134,8 +214,48 @@ export function ModelCanvas({
   // and canvas-local; it feeds the existing dimmed/highlighted computation.
   const [hoveredAttr, setHoveredAttr] = useState<string | null>(null);
   const [hoveredEdge, setHoveredEdge] = useState<string | null>(null);
+  // committed edge routes for the current view (relId -> routeX). The live drag
+  // is kept inside the edge component; this holds only committed values.
+  const routesRef = useRef<Record<string, number>>({});
 
   const readOnly = !caps.canEdit;
+
+  // --- persist layout (debounced; whole view) -------------------------------
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const saveLayout = useCallback(() => {
+    if (!layoutStore) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      const posNodes: ViewLayout["nodes"] = {};
+      for (const n of getNodes()) {
+        if (!n.hidden) posNodes[n.id] = { x: Math.round(n.position.x), y: Math.round(n.position.y) };
+      }
+      const edgeRoutes: ViewLayout["edges"] = {};
+      for (const [relId, routeX] of Object.entries(routesRef.current)) {
+        edgeRoutes[relId] = { routeX: Math.round(routeX) };
+      }
+      const layout: ViewLayout = { nodes: posNodes, edges: edgeRoutes };
+      loadedViews.current.set(viewKey, layout);
+      savedRef.current = layout;
+      layoutStore.save(viewKey, layout);
+    }, 800);
+  }, [layoutStore, getNodes, viewKey]);
+
+  // Commit a dragged edge route (or null to reset to automatic). Updates the edge
+  // data in place (identity-preserving, so only that one edge re-renders) and saves.
+  const onRouteCommit = useCallback(
+    (relId: string, routeX: number | null) => {
+      if (routeX == null) delete routesRef.current[relId];
+      else routesRef.current[relId] = routeX;
+      setEdges((prev) =>
+        prev.map((e) =>
+          e.id === relId ? { ...e, data: { ...e.data!, routeX: routeX ?? undefined } } : e,
+        ),
+      );
+      saveLayout();
+    },
+    [saveLayout],
+  );
 
   const saColors = useMemo(() => {
     const m = new Map<string, string>();
@@ -278,6 +398,14 @@ export function ModelCanvas({
         };
       });
 
+    // seed committed routes for this view from the saved layout
+    const saved = savedRef.current;
+    routesRef.current = {};
+    if (saved) {
+      for (const [relId, r] of Object.entries(saved.edges)) routesRef.current[relId] = r.routeX;
+    }
+
+    let mergedForCards: Node<EntityNodeData>[] = newNodes;
     setNodes((prev) => {
       const posById = new Map(prev.map((n) => [n.id, n.position]));
       const known = newNodes.every((n) => posById.has(n.id));
@@ -286,21 +414,63 @@ export function ModelCanvas({
       // Otherwise keep known positions so a re-derivation (search, selection) doesn't reflow.
       const filtering = (activeAreas?.size ?? 0) > 0;
       if (layoutedRef.current && known && prev.length >= newNodes.length && !filtering) {
-        return newNodes.map((n) => ({ ...n, position: posById.get(n.id) ?? n.position }));
+        const kept = newNodes.map((n) => ({ ...n, position: posById.get(n.id) ?? n.position }));
+        mergedForCards = kept;
+        return kept;
       }
       const toLay = filtering ? newNodes.filter((n) => !n.hidden) : newNodes;
       const laid = layoutGraph(toLay, newEdges, entityIndex, "auto", areaByEntity);
       const laidPos = new Map(laid.map((n) => [n.id, n.position]));
+      // Prefer a SAVED position over the auto-layout result. Entities without a saved
+      // position (new ones, e.g. just created via MCP) keep auto-layout, then get a
+      // simple overlap nudge so they don't land on top of an existing card.
+      const savedPos = saved?.nodes ?? {};
+      const hasSaved = Object.keys(savedPos).length > 0;
+      const occupied: { x: number; y: number; w: number; h: number }[] = [];
       const merged = newNodes.map((n) => {
+        const sp = savedPos[n.id];
+        if (sp) {
+          const pos = { x: sp.x, y: sp.y };
+          occupied.push({ x: pos.x, y: pos.y, w: NODE_WIDTH, h: nodeHeight(n.data.entity) });
+          return { ...n, position: pos };
+        }
         if (laidPos.has(n.id)) return { ...n, position: laidPos.get(n.id)! };
-        // a hidden node keeps its prior position (it isn't shown, so it doesn't matter)
         return posById.has(n.id) && layoutedRef.current ? { ...n, position: posById.get(n.id)! } : n;
       });
+      // nudge auto-placed cards off any saved card they overlap
+      if (hasSaved) {
+        for (const n of merged) {
+          if (savedPos[n.id] || n.hidden) continue;
+          n.position = nudgeOffOverlaps(n.position, nodeHeight(n.data.entity), occupied);
+          occupied.push({ x: n.position.x, y: n.position.y, w: NODE_WIDTH, h: nodeHeight(n.data.entity) });
+        }
+      }
       layoutedRef.current = true;
-      requestAnimationFrame(() => fitView({ padding: 0.15, duration: 300 }));
+      // Only auto-fit when there is NO saved layout — a restored arrangement must not
+      // be re-zoomed away.
+      if (!hasSaved) requestAnimationFrame(() => fitView({ padding: 0.15, duration: 300 }));
+      mergedForCards = merged;
       return merged;
     });
-    setEdges(newEdges);
+
+    // card rectangles (flow coords) so each edge can clamp its route out of its
+    // endpoint cards; attached to edge data to avoid a per-move node-store read.
+    const cardById = new Map<string, { left: number; right: number }>();
+    for (const n of mergedForCards) {
+      cardById.set(n.id, { left: n.position.x, right: n.position.x + NODE_WIDTH });
+    }
+    setEdges(
+      newEdges.map((e) => ({
+        ...e,
+        data: {
+          ...e.data!,
+          routeX: routesRef.current[e.id],
+          onRouteChange: layoutStore ? onRouteCommit : undefined,
+          sourceCard: cardById.get(e.source),
+          targetCard: cardById.get(e.target),
+        },
+      })),
+    );
   }, [
     doc,
     query,
@@ -316,6 +486,9 @@ export function ModelCanvas({
     activeAreas,
     endpointAttrsByEntity,
     fitView,
+    layoutStore,
+    onRouteCommit,
+    savedTick,
   ]);
 
   // --- lightweight hover overlay (issue #5) ---------------------------------------
@@ -449,11 +622,42 @@ export function ModelCanvas({
 
   const relayout = useCallback(
     (mode: LayoutMode = "auto", dir: LayoutDir = "LR") => {
+      // Re-layout is destructive of manual placement; remember the positions it
+      // replaces so the session can offer Undo, then persist the new arrangement.
+      undoRef.current = Object.fromEntries(
+        getNodes().map((n) => [n.id, { x: n.position.x, y: n.position.y }]),
+      );
       setNodes((prev) => layoutGraph(prev, edges, entityIndex, mode, areaByEntity, dir));
       requestAnimationFrame(() => fitView({ padding: 0.15, duration: 300 }));
+      saveLayout();
     },
-    [edges, entityIndex, areaByEntity, fitView],
+    [edges, entityIndex, areaByEntity, fitView, getNodes, saveLayout],
   );
+
+  const undoRelayout = useCallback(() => {
+    const prevPos = undoRef.current;
+    if (!prevPos) return;
+    setNodes((prev) =>
+      prev.map((n) => (prevPos[n.id] ? { ...n, position: prevPos[n.id] } : n)),
+    );
+    undoRef.current = null;
+    saveLayout();
+  }, [saveLayout]);
+
+  const resetLayout = useCallback(() => {
+    layoutStore?.reset(viewKey);
+    loadedViews.current.delete(viewKey);
+    savedRef.current = null;
+    routesRef.current = {};
+    layoutedRef.current = false;
+    // re-run auto-layout for the current view and drop all edge routes
+    setEdges((prev) => prev.map((e) => ({ ...e, data: { ...e.data!, routeX: undefined } })));
+    setNodes((prev) => {
+      const laid = layoutGraph(prev, edges, entityIndex, "auto", areaByEntity);
+      requestAnimationFrame(() => fitView({ padding: 0.15, duration: 300 }));
+      return laid;
+    });
+  }, [layoutStore, viewKey, edges, entityIndex, areaByEntity, fitView]);
 
   const focusEntity = useCallback(
     (id: string) => {
@@ -474,8 +678,10 @@ export function ModelCanvas({
       fitView: () => fitView({ padding: 0.15, duration: 300 }),
       focusEntity,
       newEntity: () => setNewEntityOpen(true),
+      resetLayout,
+      undoRelayout,
     }),
-    [relayout, fitView, focusEntity],
+    [relayout, fitView, focusEntity, resetLayout, undoRelayout],
   );
 
   const onConnect = useCallback(
@@ -528,9 +734,10 @@ export function ModelCanvas({
           onSelect(null);
           setRelEdit(null);
         }}
-        onNodeDragStop={(_, n) =>
-          setNodes((prev) => prev.map((p) => (p.id === n.id ? { ...p, position: n.position } : p)))
-        }
+        onNodeDragStop={(_, n) => {
+          setNodes((prev) => prev.map((p) => (p.id === n.id ? { ...p, position: n.position } : p)));
+          saveLayout();
+        }}
         onConnect={onConnect}
         nodesConnectable={!readOnly}
         minZoom={0.05}

@@ -479,3 +479,29 @@ export interface ExpandDoc {
   added: string[];
   error?: string;
 }
+
+// --- visual layout (node positions + edge routes), persisted per canvas view --
+
+/** One saved node position (flow coordinates). */
+export interface NodePos {
+  x: number;
+  y: number;
+}
+
+/** One saved edge route: the x of its draggable vertical segment. */
+export interface EdgeRoute {
+  routeX: number;
+}
+
+/** One view's saved arrangement. `__all__` is the unfiltered canvas; a filtered
+ * view is keyed `sa:` + the sorted active-area ids joined with `+`. */
+export interface ViewLayout {
+  nodes: Record<string, NodePos>;
+  edges: Record<string, EdgeRoute>;
+}
+
+/** The `GET /api/layout?view=` response. */
+export interface LayoutDoc extends ViewLayout {
+  version: number;
+  view: string;
+}
