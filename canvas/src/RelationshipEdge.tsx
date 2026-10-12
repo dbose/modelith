@@ -206,27 +206,31 @@ export const RelationshipEdge = memo(function RelationshipEdge({
           onClickCapture={onClickCapture}
           onDoubleClick={onDoubleClick}
         >
-          {/* a fat transparent target (~22px on screen) around the grip for easy grabbing */}
+          {/* Grab target spanning the WHOLE vertical segment (not just a window at the
+              midpoint), ~40px wide on screen, so you can grab the line anywhere along its
+              run — you no longer have to aim at the grip itself. React Flow edge-interaction
+              guidance: a generous (20-75px) hit area. */}
           <rect
-            x={handleX - 11 / zoom}
-            y={handleY - 16 / zoom}
-            width={22 / zoom}
-            height={32 / zoom}
+            x={handleX - 20 / zoom}
+            y={Math.min(sourceY, targetY)}
+            width={40 / zoom}
+            height={Math.max(Math.abs(targetY - sourceY), 24 / zoom)}
             fill="transparent"
           />
-          {/* the visible grip: a rounded pill (~9x18px on screen) */}
+          {/* the visible grip: a rounded pill (~11x22px on screen) */}
           <rect
             className="rel-grip"
-            x={handleX - 4.5 / zoom}
-            y={handleY - 9 / zoom}
-            width={9 / zoom}
-            height={18 / zoom}
-            rx={4 / zoom}
+            x={handleX - 5.5 / zoom}
+            y={handleY - 11 / zoom}
+            width={11 / zoom}
+            height={22 / zoom}
+            rx={5 / zoom}
             strokeWidth={1.5 / zoom}
           />
-          {/* two dots to read as a drag affordance */}
-          <circle className="rel-grip-dot" cx={handleX} cy={handleY - 3 / zoom} r={1.1 / zoom} />
-          <circle className="rel-grip-dot" cx={handleX} cy={handleY + 3 / zoom} r={1.1 / zoom} />
+          {/* three dots to read as a drag affordance */}
+          <circle className="rel-grip-dot" cx={handleX} cy={handleY - 4.5 / zoom} r={1.1 / zoom} />
+          <circle className="rel-grip-dot" cx={handleX} cy={handleY} r={1.1 / zoom} />
+          <circle className="rel-grip-dot" cx={handleX} cy={handleY + 4.5 / zoom} r={1.1 / zoom} />
         </g>
       )}
       {(selected || composite) && rel && (

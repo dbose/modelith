@@ -584,8 +584,15 @@ export function ModelCanvas({
         // the hovered edge shows its drag handle (so it is grabbable without a click,
         // which now double-clicks to open the editor)
         const hovered = hoveredEdge === r.id;
-        if (r.data?.dimmed === dimmed && r.data?.hovered === hovered) return r;
-        return { ...r, data: { ...r.data!, dimmed, hovered } };
+        const selected = selectedId !== null && rel !== undefined &&
+          (rel.from.entity === selectedId || rel.to.entity === selectedId);
+        // Lift the hovered/selected edge ABOVE the node cards (default edges render
+        // behind them) so its route and crow's-foot markers are never hidden while
+        // you work it. Other edges stay behind the cards for a clean diagram.
+        const zIndex = hovered || selected ? 1000 : 0;
+        if (r.data?.dimmed === dimmed && r.data?.hovered === hovered && r.zIndex === zIndex)
+          return r;
+        return { ...r, zIndex, data: { ...r.data!, dimmed, hovered } };
       }),
     );
   }, [hover, hoveredEdge, query, selectedId, doc]);
