@@ -1,5 +1,6 @@
 import { memo, useCallback, useRef, useState } from "react";
 import { getSmoothStepPath, Position, useReactFlow, useStore, type EdgeProps } from "reactflow";
+import { adjustRouteX, orthogonalPath } from "./edgeRouting";
 import type { Relationship } from "./types";
 
 export interface RelationshipEdgeData {
@@ -16,14 +17,12 @@ export interface RelationshipEdgeData {
   routeX?: number;
   /** commit a new route (or null to reset to automatic). Absent = not draggable. */
   onRouteChange?: (relId: string, routeX: number | null) => void;
-  /** endpoint card rectangles (flow coords), for clamping the route out of cards */
-  sourceCard?: { left: number; right: number };
-  targetCard?: { left: number; right: number };
+  /** endpoint card rectangles (flow coords), for clamping the route out of cards and for
+   *  side-aware orthogonal routing (top/bottom entry) */
+  sourceCard?: { left: number; right: number; top: number; bottom: number };
+  targetCard?: { left: number; right: number; top: number; bottom: number };
 }
 
-// Keep in sync with edgeRouting.ts; imported there, inlined here to avoid a cycle
-// of concerns (this file owns the pointer handling, edgeRouting owns the math).
-import { adjustRouteX } from "./edgeRouting";
 
 /** a press that moves less than this many px counts as a click, not a drag */
 const CLICK_SLOP = 3;
@@ -73,7 +72,7 @@ export const RelationshipEdge = memo(function RelationshipEdge({
   // effective vertical-segment x: live drag wins, else the committed route.
   const routeX = dragX ?? data?.routeX;
 
-  const [path, autoLabelX, autoLabelY] = getSmoothStepPath({
+  const [smoothPath, autoLabelX, autoLabelY] = getSmoothStepPath({
     sourceX,
     sourceY,
     sourcePosition,
@@ -83,6 +82,25 @@ export const RelationshipEdge = memo(function RelationshipEdge({
     borderRadius: 10,
     ...(routeX != null ? { centerX: routeX } : {}),
   });
+
+  // When a route is set AND we know the card rectangles, use the side-aware orthogonal
+  // router so a run dragged over a node enters it from the top/bottom (and the crow's-foot
+  // follows). Otherwise keep the smooth-step path (the clean default / auto routing).
+  const sCard = data?.sourceCard;
+  const tCard = data?.targetCard;
+  const routed =
+    routeX != null && sCard && tCard
+      ? orthogonalPath(
+          { x: sourceX, y: sourceY },
+          { x: targetX, y: targetY },
+          routeX,
+          sourcePosition === Position.Left ? -1 : 1,
+          targetPosition === Position.Left ? -1 : 1,
+          sCard,
+          tCard,
+        )
+      : null;
+  const path = routed ? routed.path : smoothPath;
 
   const rel = data?.relationship;
   const dimmed = data?.dimmed ?? false;
@@ -107,6 +125,19 @@ export const RelationshipEdge = memo(function RelationshipEdge({
   const handleY = autoLabelY;
   const labelX = handleX;
   const labelY = handleY;
+
+  // Crow's-foot orientation + position follow the edge's ACTUAL approach at each end.
+  // When the orthogonal router sends the line into a node's top/bottom, its out-vector is
+  // vertical and the target glyph sits on that border at routeX (not the side port).
+  const srcOut = routed ? routed.sourceOut : { ox: sourcePosition === Position.Left ? -1 : 1, oy: 0 };
+  const tgtOut = routed ? routed.targetOut : { ox: targetPosition === Position.Left ? -1 : 1, oy: 0 };
+  // glyph anchor points: the source always leaves its side port; the target glyph moves to
+  // the top/bottom border point when the router enters vertically.
+  const srcGlyph = { x: sourceX, y: sourceY };
+  const tgtGlyph =
+    routed && tgtOut.oy !== 0 && tCard
+      ? { x: routeX!, y: tgtOut.oy < 0 ? tCard.top : tCard.bottom }
+      : { x: targetX, y: targetY };
 
   const commit = useCallback(
     (x: number | null) => onRouteChange && rel && onRouteChange(rel.id, x),
@@ -193,8 +224,8 @@ export const RelationshipEdge = memo(function RelationshipEdge({
       />
       {/* wider invisible path for easier hover/click — kept ~16px on screen at any zoom */}
       <path d={path} fill="none" strokeWidth={16 / zoom} stroke="transparent" />
-      <EndGlyph x={sourceX} y={sourceY} side={sourcePosition} many={srcMany} optional={optional} />
-      <EndGlyph x={targetX} y={targetY} side={targetPosition} many={tgtMany} optional={false} />
+      <EndGlyph x={srcGlyph.x} y={srcGlyph.y} out={srcOut} many={srcMany} optional={optional} />
+      <EndGlyph x={tgtGlyph.x} y={tgtGlyph.y} out={tgtOut} many={tgtMany} optional={false} />
       {/* drag handle on the vertical segment — shown while hovered, selected, or mid-drag.
           Sizes are divided by the zoom so the grip keeps a constant ON-SCREEN size and
           stays visible + grabbable however far the canvas is zoomed out. */}
@@ -247,60 +278,56 @@ export const RelationshipEdge = memo(function RelationshipEdge({
 function EndGlyph({
   x,
   y,
-  side,
+  out,
   many,
   optional,
 }: {
   x: number;
   y: number;
-  side: Position;
+  /** outward unit vector: direction the edge leaves the node */
+  out: { ox: number; oy: number };
   many: boolean;
   optional: boolean;
 }) {
-  // dir = +1 when the glyph extends to the right of the anchor (edge leaves a
-  // node's right side or enters from the left); -1 mirrored.
-  const dir = side === Position.Left ? -1 : 1;
-  const s = 7; // glyph scale
-  const foot = 12; // crow's foot depth
+  const s = 7; // glyph half-width (perpendicular to the edge)
+  const foot = 12; // crow's foot depth (along the edge)
+  const { ox, oy } = out;
+  // perpendicular unit vector, for the bar width / crow's-foot spread
+  const px = -oy;
+  const py = ox;
+  // a point `d` px out from the anchor along the edge
+  const at = (d: number) => ({ x: x + ox * d, y: y + oy * d });
+  // a point offset `w` perpendicular at distance `d` out
+  const off = (d: number, w: number) => ({ x: x + ox * d + px * w, y: y + oy * d + py * w });
 
   const parts: JSX.Element[] = [];
   if (many) {
-    // three prongs fanning from a point `foot` px away from the node edge
+    const apex = at(foot);
+    const a = off(0, -s);
+    const b = at(0);
+    const c = off(0, s);
     parts.push(
       <path
         key="foot"
         className="rel-glyph"
-        d={`M ${x + dir * foot} ${y} L ${x} ${y - s} M ${x + dir * foot} ${y} L ${x} ${y} M ${x + dir * foot} ${y} L ${x} ${y + s}`}
+        d={`M ${apex.x} ${apex.y} L ${a.x} ${a.y} M ${apex.x} ${apex.y} L ${b.x} ${b.y} M ${apex.x} ${apex.y} L ${c.x} ${c.y}`}
         fill="none"
       />,
     );
   } else {
+    const a = off(foot - 3, -s);
+    const b = off(foot - 3, s);
     parts.push(
-      <line
-        key="one"
-        className="rel-glyph"
-        x1={x + dir * (foot - 3)}
-        y1={y - s}
-        x2={x + dir * (foot - 3)}
-        y2={y + s}
-      />,
+      <line key="one" className="rel-glyph" x1={a.x} y1={a.y} x2={b.x} y2={b.y} />,
     );
   }
   if (optional) {
-    parts.push(
-      <circle key="opt" className="rel-glyph ring" cx={x + dir * (foot + 6)} cy={y} r={4} />,
-    );
+    const c = at(foot + 6);
+    parts.push(<circle key="opt" className="rel-glyph ring" cx={c.x} cy={c.y} r={4} />);
   } else {
-    parts.push(
-      <line
-        key="mand"
-        className="rel-glyph"
-        x1={x + dir * (foot + 5)}
-        y1={y - s}
-        x2={x + dir * (foot + 5)}
-        y2={y + s}
-      />,
-    );
+    const a = off(foot + 5, -s);
+    const b = off(foot + 5, s);
+    parts.push(<line key="mand" className="rel-glyph" x1={a.x} y1={a.y} x2={b.x} y2={b.y} />);
   }
   return <>{parts}</>;
 }

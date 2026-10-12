@@ -405,7 +405,33 @@ export function ModelCanvas({
       for (const [relId, r] of Object.entries(saved.edges)) routesRef.current[relId] = r.routeX;
     }
 
-    let mergedForCards: Node<EntityNodeData>[] = newNodes;
+    // Build the edges from the FINAL node positions. We do this inside the setNodes
+    // updater (where the laid-out/saved positions exist) because React does not run the
+    // updater synchronously before the code after setNodes — reading positions outside it
+    // gave stale (0,0) card rects, so the side-aware router never saw a real target card.
+    const emitEdges = (ns: Node<EntityNodeData>[]) => {
+      const cardById = new Map<string, { left: number; right: number; top: number; bottom: number }>();
+      for (const n of ns) {
+        cardById.set(n.id, {
+          left: n.position.x,
+          right: n.position.x + NODE_WIDTH,
+          top: n.position.y,
+          bottom: n.position.y + nodeHeight(n.data.entity),
+        });
+      }
+      setEdges(
+        newEdges.map((e) => ({
+          ...e,
+          data: {
+            ...e.data!,
+            routeX: routesRef.current[e.id],
+            onRouteChange: layoutStore ? onRouteCommit : undefined,
+            sourceCard: cardById.get(e.source),
+            targetCard: cardById.get(e.target),
+          },
+        })),
+      );
+    };
     setNodes((prev) => {
       const posById = new Map(prev.map((n) => [n.id, n.position]));
       const known = newNodes.every((n) => posById.has(n.id));
@@ -415,7 +441,7 @@ export function ModelCanvas({
       const filtering = (activeAreas?.size ?? 0) > 0;
       if (layoutedRef.current && known && prev.length >= newNodes.length && !filtering) {
         const kept = newNodes.map((n) => ({ ...n, position: posById.get(n.id) ?? n.position }));
-        mergedForCards = kept;
+        emitEdges(kept);
         return kept;
       }
       const toLay = filtering ? newNodes.filter((n) => !n.hidden) : newNodes;
@@ -449,28 +475,9 @@ export function ModelCanvas({
       // Only auto-fit when there is NO saved layout — a restored arrangement must not
       // be re-zoomed away.
       if (!hasSaved) requestAnimationFrame(() => fitView({ padding: 0.15, duration: 300 }));
-      mergedForCards = merged;
+      emitEdges(merged);
       return merged;
     });
-
-    // card rectangles (flow coords) so each edge can clamp its route out of its
-    // endpoint cards; attached to edge data to avoid a per-move node-store read.
-    const cardById = new Map<string, { left: number; right: number }>();
-    for (const n of mergedForCards) {
-      cardById.set(n.id, { left: n.position.x, right: n.position.x + NODE_WIDTH });
-    }
-    setEdges(
-      newEdges.map((e) => ({
-        ...e,
-        data: {
-          ...e.data!,
-          routeX: routesRef.current[e.id],
-          onRouteChange: layoutStore ? onRouteCommit : undefined,
-          sourceCard: cardById.get(e.source),
-          targetCard: cardById.get(e.target),
-        },
-      })),
-    );
   }, [
     doc,
     query,

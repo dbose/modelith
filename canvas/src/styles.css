@@ -257,6 +257,11 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
 .rel-label { fill: var(--text); font-size: 11px; text-anchor: middle; paint-order: stroke; stroke: var(--bg); stroke-width: 4px; }
 /* draggable edge route handle (grip on the vertical segment). Sizes are set
    per-zoom in the component (zoom-invariant), so here we only style colour. */
+.rel-handle { cursor: ew-resize; }
+/* the whole handle group (grip + its grab zone) shows the resize cursor, overriding
+   the edge's default pointer so you get drag feedback anywhere along the segment,
+   not only on the grip pill. */
+.rel-handle, .rel-handle * { cursor: ew-resize !important; }
 .rel-handle .rel-grip { fill: var(--accent); stroke: var(--bg); opacity: 0.95; }
 .rel-handle .rel-grip-dot { fill: var(--bg); }
 .rel-handle:hover .rel-grip { fill: var(--accent); filter: brightness(1.15); }

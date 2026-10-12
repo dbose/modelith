@@ -57,44 +57,33 @@ function insideCard(x: number, card: CardX): boolean {
 }
 
 /**
- * Keep the vertical segment out of both endpoint cards' horizontal extents.
+ * Keep the vertical segment legal while allowing a VERTICAL entry into the target.
  *
- * - Forward edge (source left of target) with room between the cards: clamp to
- *   `[sourceRight + CARD_MARGIN, targetLeft - CARD_MARGIN]` so the run sits in
- *   the corridor between them.
- * - Otherwise (backward edge, or overlapping cards with no corridor): allow any
- *   x that is outside BOTH cards; if the proposed x landed inside a card, push
- *   it to that card's nearest outer edge ± CARD_MARGIN.
+ * Valid positions for the run:
+ *  - in the corridor outside both cards (horizontal entry), OR
+ *  - aligned OVER the target card's horizontal span (a top/bottom entry — the
+ *    orthogonal router then drops the line onto the target's top/bottom border).
+ * Never inside the SOURCE card (there is no top/bottom port to exit from there).
  *
- * `source`/`target` are the two endpoint cards. Returns a safe x.
+ * So: if x is inside the source card, push it to the source's nearest outer edge.
+ * If x is inside the target card, LEAVE IT (vertical entry). Otherwise x is free.
+ *
+ * `source`/`target` are the two endpoint cards. Returns a legal x.
  */
 export function clampRouteX(x: number, source: CardX, target: CardX): number {
-  const forward = source.right <= target.left;
-  if (forward) {
-    const lo = source.right + CARD_MARGIN;
-    const hi = target.left - CARD_MARGIN;
-    if (lo <= hi) {
-      // There is a corridor between the cards — keep the run inside it.
-      return Math.min(Math.max(x, lo), hi);
-    }
-    // Cards too close for a corridor; fall through to the outside-both rule.
+  // Over the target card -> allow (vertical entry into target).
+  if (insideCard(x, target)) return x;
+  // Inside the source card -> push to its nearest outer edge (+ margin).
+  if (insideCard(x, source)) {
+    const toLeft = x - (source.left - CARD_MARGIN);
+    const toRight = source.right + CARD_MARGIN - x;
+    const candidate =
+      toRight <= toLeft ? source.right + CARD_MARGIN : source.left - CARD_MARGIN;
+    // if that nudges onto the target card, that's fine (vertical entry); else return it
+    return candidate;
   }
-  // Backward edge, or no corridor: any x outside both cards is allowed.
-  if (!insideCard(x, source) && !insideCard(x, target)) return x;
-  // Landed inside a card — move to the nearest outer edge of whichever card
-  // contains it (prefer the one it is actually inside).
-  const offender = insideCard(x, source) ? source : target;
-  const toLeft = x - (offender.left - CARD_MARGIN);
-  const toRight = offender.right + CARD_MARGIN - x;
-  const candidate =
-    toRight <= toLeft ? offender.right + CARD_MARGIN : offender.left - CARD_MARGIN;
-  // The nudged candidate might now sit inside the OTHER card; if so, bounce to
-  // that card's far side instead.
-  const other = offender === source ? target : source;
-  if (insideCard(candidate, other)) {
-    return candidate <= other.left ? other.left - CARD_MARGIN : other.right + CARD_MARGIN;
-  }
-  return candidate;
+  // Outside both cards -> free.
+  return x;
 }
 
 /**
@@ -117,4 +106,109 @@ export function adjustRouteX(
     ? snapped
     : magnetise(snapped, opts.otherSegmentXs ?? [], opts.otherCards ?? []);
   return clampRouteX(magnetised, opts.source, opts.target);
+}
+
+// --- orthogonal edge path with side-aware entry ------------------------------
+
+/** A 2D point in flow coordinates. */
+export interface Pt {
+  x: number;
+  y: number;
+}
+
+/** An endpoint's outward unit vector (direction the edge leaves the node). */
+export interface Out {
+  ox: number;
+  oy: number;
+}
+
+/** The result of routing one edge: the SVG path plus each end's approach vector,
+ * so the crow's-foot glyph can be drawn on the side the line actually crosses. */
+export interface Routed {
+  path: string;
+  sourceOut: Out;
+  targetOut: Out;
+}
+
+const R = 10; // corner radius
+
+/** Round a corner from `prev`→`corner`→`next` with radius `r` (clamped to the shorter
+ * leg), returning the SVG snippet from the entry tangent to the exit tangent. */
+function corner(prev: Pt, c: Pt, next: Pt, r: number): string {
+  const d1 = Math.hypot(c.x - prev.x, c.y - prev.y);
+  const d2 = Math.hypot(next.x - c.x, next.y - c.y);
+  const rr = Math.max(0, Math.min(r, d1 / 2, d2 / 2));
+  const t1 = { x: c.x + ((prev.x - c.x) / (d1 || 1)) * rr, y: c.y + ((prev.y - c.y) / (d1 || 1)) * rr };
+  const t2 = { x: c.x + ((next.x - c.x) / (d2 || 1)) * rr, y: c.y + ((next.y - c.y) / (d2 || 1)) * rr };
+  return `L ${t1.x} ${t1.y} Q ${c.x} ${c.y} ${t2.x} ${t2.y} `;
+}
+
+/** Build an orthogonal SVG path through the given waypoints with rounded corners. */
+function polyline(pts: Pt[]): string {
+  if (pts.length < 2) return "";
+  let d = `M ${pts[0].x} ${pts[0].y} `;
+  for (let i = 1; i < pts.length - 1; i++) d += corner(pts[i - 1], pts[i], pts[i + 1], R);
+  const last = pts[pts.length - 1];
+  d += `L ${last.x} ${last.y}`;
+  return d;
+}
+
+/**
+ * Route an orthogonal edge whose vertical segment sits at `routeX`, choosing which SIDE
+ * of each node the line enters so the crow's-foot lands on the border the line crosses.
+ *
+ * Ports are on the node's left/right (source exits right, target enters left by default).
+ * Cases:
+ *  - routeX in the corridor between the cards → classic 3-segment Z, both ends horizontal.
+ *  - routeX aligned over/under the TARGET card → the line drops straight onto the target's
+ *    top or bottom edge; target approach becomes vertical, so its glyph reorients.
+ *  - likewise for the SOURCE when routeX is over/under it.
+ *
+ * `srcSide`/`tgtSide` are the horizontal port sides (+1 right, -1 left). `cards` give the
+ * vertical extent (top/bottom) and horizontal extent so we can pick the entry border.
+ */
+export function orthogonalPath(
+  s: Pt,
+  t: Pt,
+  routeX: number,
+  srcSide: 1 | -1,
+  tgtSide: 1 | -1,
+  srcCard: { left: number; right: number; top: number; bottom: number },
+  tgtCard: { left: number; right: number; top: number; bottom: number },
+): Routed {
+  const STUB = 12; // minimum horizontal stub out of a port before turning
+
+  // Does routeX fall within a card's horizontal span (i.e. the vertical run is over/under it)?
+  const overTarget = routeX > tgtCard.left && routeX < tgtCard.right;
+  const overSource = routeX > srcCard.left && routeX < srcCard.right;
+
+  const pts: Pt[] = [];
+  let sourceOut: Out = { ox: srcSide, oy: 0 };
+  let targetOut: Out = { ox: tgtSide, oy: 0 };
+
+  // --- SOURCE exit: horizontal stub out of the side port, then vertical at routeX.
+  // (When routeX is over the source, the stub direction is still the port side; the run
+  // then rises/falls at routeX. A vertical source exit would need a top/bottom port, which
+  // we do not have, so the source keeps a horizontal stub.) ---
+  if (overSource) {
+    pts.push({ x: s.x, y: s.y }, { x: s.x + srcSide * STUB, y: s.y }, { x: routeX, y: s.y });
+  } else {
+    pts.push({ x: s.x, y: s.y }, { x: routeX, y: s.y });
+  }
+
+  // --- TARGET entry ---
+  if (overTarget) {
+    // The run drops straight onto the target's nearest horizontal border at routeX.
+    // fromAbove: the vertical run reaches the target from above (source sits higher), so
+    // it lands on the TOP border and the glyph points up; else the BOTTOM border, pointing
+    // down. The endpoint moves to (routeX, border) — a true vertical entry.
+    const fromAbove = s.y <= t.y;
+    const border = fromAbove ? tgtCard.top : tgtCard.bottom;
+    pts.push({ x: routeX, y: border });
+    targetOut = { ox: 0, oy: fromAbove ? -1 : 1 };
+  } else {
+    pts.push({ x: routeX, y: t.y }, { x: t.x, y: t.y });
+  }
+
+  return { path: polyline(pts), sourceOut, targetOut };
 }
