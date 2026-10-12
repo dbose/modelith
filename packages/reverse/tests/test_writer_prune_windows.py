@@ -32,10 +32,15 @@ def test_prune_never_touches_mdl_layout_sidecar(tmp_path):
     sidecar under .mdl/ must survive a re-reverse. Guards the isolation guarantee."""
     (tmp_path / ".mdl").mkdir(parents=True, exist_ok=True)
     layout = tmp_path / ".mdl" / "layout.json"
-    layout.write_text('{"version": 1, "views": {}}', encoding="utf-8")
+    # a rich sidecar (positions + routeX + endpoint anchors) must survive untouched
+    content = (
+        '{"version": 1, "views": {"__all__": {"nodes": {"e": {"x": 1, "y": 2}}, '
+        '"edges": {"r": {"routeX": 5, "sourceAnchor": {"side": "left", "y": 3}}}}}}'
+    )
+    layout.write_text(content, encoding="utf-8")
     write_model(_model(3), tmp_path)  # a fresh write that prunes stale files
     assert layout.exists(), "re-reverse must not delete .mdl/layout.json"
-    assert layout.read_text(encoding="utf-8") == '{"version": 1, "views": {}}'
+    assert layout.read_text(encoding="utf-8") == content, "sidecar content must be untouched"
 
 
 def test_prune_stale_would_fail_with_naive_separator(tmp_path):

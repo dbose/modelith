@@ -188,6 +188,63 @@ def test_export_identical_with_and_without_layout(client, model_dir):
     assert client.get("/api/export/sql").text == before
 
 
+def _write_rich_layout(model_dir: Path) -> None:
+    """A FULLY-populated sidecar: node positions, an edge routeX, and both dragged
+    endpoint anchors. Isolation must hold for every field, not just positions."""
+    from mdl_core.repo import ModelRepo
+
+    model = ModelRepo.load(model_dir).model
+    ent = next(iter(model.logical_entities))
+    rel = next(iter(model.relationships), None)
+    edges = {}
+    if rel:
+        edges[rel] = {
+            "routeX": 480,
+            "sourceAnchor": {"side": "right", "y": 200},
+            "targetAnchor": {"side": "top", "y": 50, "x": 210},
+        }
+    (model_dir / ".mdl").mkdir(parents=True, exist_ok=True)
+    (model_dir / ".mdl" / "layout.json").write_text(
+        json.dumps({"version": 1, "views": {"__all__": {"nodes": {ent: {"x": 120, "y": 340}}, "edges": edges}}})
+    )
+
+
+def test_every_emitter_byte_identical_with_rich_layout(client, model_dir):
+    """The strongest isolation check: validation and EVERY export format produce
+    byte-identical output with and without a full (positions + routeX + anchors)
+    layout sidecar. If any backend ever reads the sidecar, one of these diverges."""
+    formats = [f["id"] for f in client.get("/api/export").json()["formats"]]
+    before = {f: client.get(f"/api/export/{f}").text for f in formats}
+    before_model = client.get("/api/model").json()
+    _write_rich_layout(model_dir)
+    for f in formats:
+        assert client.get(f"/api/export/{f}").text == before[f], f"{f} export changed with layout"
+    assert client.get("/api/model").json() == before_model
+
+
+def test_drift_identical_with_and_without_layout(model_dir):
+    """Drift (model vs compiled dbt manifest) must be identical with/without layout —
+    the user-facing backend feature the sidecar must never perturb."""
+    import sys
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "reverse" / "tests"))
+    from mdl_core.repo import ModelRepo
+    from mdl_reverse.drift import compute_drift
+    from mdl_reverse.manifest import read_manifest_dict
+
+    from manifest_fixtures import manifest_from_model
+
+    proj = read_manifest_dict(manifest_from_model(ModelRepo.load(model_dir).model, "duckdb_dev"))
+
+    def drift_items():
+        rep = compute_drift(ModelRepo.load(model_dir).model, proj, "duckdb_dev")
+        return [(i.kind, i.severity, i.detail) for i in rep.items]
+
+    before = drift_items()
+    _write_rich_layout(model_dir)
+    assert drift_items() == before
+
+
 # --- isolation: git never sees layout as dirty, never deletes it --------------
 
 
