@@ -330,3 +330,51 @@ def test_shared_setting_does_not_leak_into_cli_features(model_dir):
         assert client2.get(f"/api/export/{f}").text == before_exports[f], f
     assert client2.get("/api/model").json() == before_model
     assert commands.dir_fingerprint(model_dir) == before_fp
+
+
+# --- discard / dirtiness: the sidecar survives a model revert, and a layout-only ----
+# `.mdl/` never reads as dirty (the git_api.py filtering paths).
+
+
+def test_discard_reverts_the_model_but_keeps_the_layout_sidecar(model_dir):
+    """`/api/git/discard` reverts MODEL edits (git checkout + clean) yet must preserve the
+    visual layout sidecar — it is excluded with `clean -e .mdl/layout.json`. Guards the
+    'survive a revert' promise in this module's docstring."""
+    _init(model_dir)
+    client = TestClient(create_app(model_dir))
+    ent = client.get("/api/model").json()["entities"][0]["id"]
+    # a real, uncommitted MODEL change the discard should sweep. Use a non-object file
+    # (not under an *.yaml object glob) so writing it doesn't break ModelRepo.load, while
+    # still being an untracked file `git clean` must remove.
+    stray = model_dir / "_stray.txt"
+    stray.write_text("scratch\n", encoding="utf-8")
+    # and a layout the discard must NOT touch
+    client.put("/api/layout", json={"view": "__all__", "nodes": {ent: {"x": 7, "y": 8}}, "edges": {}})
+    layout = model_dir / ".mdl" / "layout.json"
+    assert layout.exists() and stray.exists()
+
+    r = client.post("/api/git/discard")
+    assert r.status_code == 200 and r.json()["ok"] is True
+
+    assert not stray.exists(), "discard must revert the untracked model file"
+    assert layout.exists(), "discard must KEEP the visual layout sidecar"
+    assert client.get("/api/layout?view=__all__").json()["nodes"][ent] == {"x": 7, "y": 8}
+
+
+def test_untracked_layout_only_mdl_dir_is_not_dirty_but_real_mdl_content_is(model_dir):
+    """When the whole `.mdl/` dir is new, `git status --porcelain` collapses it to a single
+    `?? .mdl/` line. That must read as CLEAN when the dir holds only layout artifacts, but
+    DIRTY when it also holds real state (e.g. decisions.yaml) — the `_mdl_only_layout` branch
+    in git_api.py. Here `.mdl/` is created by the first layout write AFTER the initial commit,
+    so it is entirely untracked (the collapsed case)."""
+    _init(model_dir)  # commits the model BEFORE any .mdl/ exists -> .mdl/ is untracked
+    client = TestClient(create_app(model_dir))
+    ent = client.get("/api/model").json()["entities"][0]["id"]
+    client.put("/api/layout", json={"view": "__all__", "nodes": {ent: {"x": 1, "y": 2}}, "edges": {}})
+    st = client.get("/api/git/status").json()
+    assert st["git"] is True and st["clean"] is True, "layout-only .mdl/ must read clean"
+
+    # now add REAL .mdl/ content: the same untracked dir must now read dirty
+    (model_dir / ".mdl" / "decisions.yaml").write_text("decisions: []\n", encoding="utf-8")
+    st2 = client.get("/api/git/status").json()
+    assert st2["clean"] is False, "real .mdl/ content must read dirty even alongside layout"
