@@ -9,6 +9,9 @@ export interface RelationshipEdgeData {
   memberCount?: number;
   /** hover the line -> the canvas highlights both endpoint attribute rows */
   onHoverEdge?: (relId: string | null) => void;
+  /** true while the mouse is over this edge — shows the drag handle so it is grabbable
+   *  without a click (the editor now opens on double-click) */
+  hovered?: boolean;
   /** the x of the vertical segment, in flow coords. Undefined = automatic routing. */
   routeX?: number;
   /** commit a new route (or null to reset to automatic). Absent = not draggable. */
@@ -174,7 +177,13 @@ export const RelationshipEdge = memo(function RelationshipEdge({
   );
 
   return (
-    <g className={cls}>
+    // Hover handlers on the whole group so moving from the line onto the grip keeps the
+    // edge "hovered" (and the handle mounted) instead of flickering off between children.
+    <g
+      className={cls}
+      onMouseEnter={onHover ? () => onHover(rel!.id) : undefined}
+      onMouseLeave={onHover ? () => onHover(null) : undefined}
+    >
       <path
         id={id}
         className="rel-path"
@@ -183,20 +192,13 @@ export const RelationshipEdge = memo(function RelationshipEdge({
         strokeDasharray={identifying ? undefined : "6 4"}
       />
       {/* wider invisible path for easier hover/click — kept ~16px on screen at any zoom */}
-      <path
-        d={path}
-        fill="none"
-        strokeWidth={16 / zoom}
-        stroke="transparent"
-        onMouseEnter={onHover ? () => onHover(rel!.id) : undefined}
-        onMouseLeave={onHover ? () => onHover(null) : undefined}
-      />
+      <path d={path} fill="none" strokeWidth={16 / zoom} stroke="transparent" />
       <EndGlyph x={sourceX} y={sourceY} side={sourcePosition} many={srcMany} optional={optional} />
       <EndGlyph x={targetX} y={targetY} side={targetPosition} many={tgtMany} optional={false} />
-      {/* drag handle on the vertical segment — only when draggable and hovered/selected.
+      {/* drag handle on the vertical segment — shown while hovered, selected, or mid-drag.
           Sizes are divided by the zoom so the grip keeps a constant ON-SCREEN size and
           stays visible + grabbable however far the canvas is zoomed out. */}
-      {draggable && (selected || dragX != null) && (
+      {draggable && (data?.hovered || selected || dragX != null) && (
         <g
           className="rel-handle"
           style={{ cursor: "ew-resize" }}

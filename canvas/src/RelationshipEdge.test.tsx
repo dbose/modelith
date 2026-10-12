@@ -56,9 +56,14 @@ describe("RelationshipEdge drag handle", () => {
     expect(Number(grip!.getAttribute("width"))).toBeGreaterThanOrEqual(6);
   });
 
-  it("hides the grip when not selected", () => {
+  it("hides the grip when neither hovered nor selected", () => {
     const { container } = renderEdge({ onRouteChange: vi.fn() }, false);
     expect(container.querySelector(".rel-handle")).toBeNull();
+  });
+
+  it("shows the grip on hover alone (no selection) so it is grabbable without a click", () => {
+    const { container } = renderEdge({ onRouteChange: vi.fn(), hovered: true }, false);
+    expect(container.querySelector(".rel-handle")).not.toBeNull();
   });
 
   it("is not draggable (no handle) when onRouteChange is absent", () => {

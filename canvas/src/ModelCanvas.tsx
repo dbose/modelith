@@ -581,11 +581,14 @@ export function ModelCanvas({
           rel.from.entity !== selectedId && rel.to.entity !== selectedId;
         const hoverDim = hover.active && !hover.relsForAttr.has(r.id);
         const dimmed = selectDim || hoverDim;
-        if (r.data?.dimmed === dimmed) return r;
-        return { ...r, data: { ...r.data!, dimmed } };
+        // the hovered edge shows its drag handle (so it is grabbable without a click,
+        // which now double-clicks to open the editor)
+        const hovered = hoveredEdge === r.id;
+        if (r.data?.dimmed === dimmed && r.data?.hovered === hovered) return r;
+        return { ...r, data: { ...r.data!, dimmed, hovered } };
       }),
     );
-  }, [hover, query, selectedId, doc]);
+  }, [hover, hoveredEdge, query, selectedId, doc]);
 
   // Frame the matches. In a large model the entities a search hits may be off-screen,
   // so highlighting alone is not enough — pan/zoom to the matched nodes (like Fit, but
@@ -729,7 +732,10 @@ export function ModelCanvas({
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onNodeClick={(_, n) => onSelect(n.id)}
-        onEdgeClick={(_, e) => !readOnly && setRelEdit(e.id)}
+        // Double-click opens the relationship editor; single-click/hover is reserved for
+        // the drag handle (hovering an edge reveals its route grip, and clicking it would
+        // otherwise pop the editor and steal the grab).
+        onEdgeDoubleClick={(_, e) => !readOnly && setRelEdit(e.id)}
         onPaneClick={() => {
           onSelect(null);
           setRelEdit(null);
