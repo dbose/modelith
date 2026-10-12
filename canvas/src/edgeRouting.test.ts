@@ -123,4 +123,18 @@ describe("orthogonalPath", () => {
     expect(r.targetOut).toEqual({ ox: 0, oy: 1 }); // pointing down (bottom entry)
     expect(r.path.trimEnd().endsWith("L 700 620")).toBe(true);
   });
+
+  it("enters the TARGET from the RIGHT port when routeX is to its right", () => {
+    // routeX = 950 is to the right of the target(right=864) -> enter the right side, not
+    // loop back across the card to the left port.
+    const r = orthogonalPath(s, t, 950, 1, -1, src, tgt);
+    expect(r.targetOut).toEqual({ ox: 1, oy: 0 }); // points right
+    expect(r.path.trimEnd().endsWith("L 864 560")).toBe(true); // ends at the RIGHT border
+  });
+
+  it("enters the TARGET from the LEFT port when routeX is to its left", () => {
+    const r = orthogonalPath(s, t, 430, 1, -1, src, tgt);
+    expect(r.targetOut).toEqual({ ox: -1, oy: 0 });
+    expect(r.path.trimEnd().endsWith("L 600 560")).toBe(true); // ends at the LEFT border
+  });
 })

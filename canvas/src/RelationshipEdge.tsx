@@ -127,16 +127,17 @@ export const RelationshipEdge = memo(function RelationshipEdge({
   const labelY = handleY;
 
   // Crow's-foot orientation + position follow the edge's ACTUAL approach at each end.
-  // When the orthogonal router sends the line into a node's top/bottom, its out-vector is
-  // vertical and the target glyph sits on that border at routeX (not the side port).
+  // The router reports the out-vector; the glyph ANCHOR must move to the border the line
+  // actually crosses — the right port when entering from the right, the top/bottom border
+  // when entering vertically — so the marker is never left mid-card.
   const srcOut = routed ? routed.sourceOut : { ox: sourcePosition === Position.Left ? -1 : 1, oy: 0 };
   const tgtOut = routed ? routed.targetOut : { ox: targetPosition === Position.Left ? -1 : 1, oy: 0 };
-  // glyph anchor points: the source always leaves its side port; the target glyph moves to
-  // the top/bottom border point when the router enters vertically.
   const srcGlyph = { x: sourceX, y: sourceY };
   const tgtGlyph =
-    routed && tgtOut.oy !== 0 && tCard
-      ? { x: routeX!, y: tgtOut.oy < 0 ? tCard.top : tCard.bottom }
+    routed && tCard
+      ? tgtOut.oy !== 0
+        ? { x: routeX!, y: tgtOut.oy < 0 ? tCard.top : tCard.bottom } // top/bottom entry
+        : { x: tgtOut.ox > 0 ? tCard.right : tCard.left, y: targetY } // right/left port
       : { x: targetX, y: targetY };
 
   const commit = useCallback(

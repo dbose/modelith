@@ -196,18 +196,21 @@ export function orthogonalPath(
     pts.push({ x: s.x, y: s.y }, { x: routeX, y: s.y });
   }
 
-  // --- TARGET entry ---
+  // --- TARGET entry: pick the side the route actually approaches from, so the line
+  //     never crosses the card body to reach a far port. ---
   if (overTarget) {
-    // The run drops straight onto the target's nearest horizontal border at routeX.
-    // fromAbove: the vertical run reaches the target from above (source sits higher), so
-    // it lands on the TOP border and the glyph points up; else the BOTTOM border, pointing
-    // down. The endpoint moves to (routeX, border) — a true vertical entry.
+    // Vertical: drop straight onto the nearest horizontal border at routeX.
     const fromAbove = s.y <= t.y;
-    const border = fromAbove ? tgtCard.top : tgtCard.bottom;
-    pts.push({ x: routeX, y: border });
+    pts.push({ x: routeX, y: fromAbove ? tgtCard.top : tgtCard.bottom });
     targetOut = { ox: 0, oy: fromAbove ? -1 : 1 };
+  } else if (routeX >= tgtCard.right) {
+    // Route is to the RIGHT of the target -> enter the RIGHT port (glyph points right).
+    pts.push({ x: routeX, y: t.y }, { x: tgtCard.right, y: t.y });
+    targetOut = { ox: 1, oy: 0 };
   } else {
-    pts.push({ x: routeX, y: t.y }, { x: t.x, y: t.y });
+    // Route is to the LEFT -> enter the LEFT port (glyph points left).
+    pts.push({ x: routeX, y: t.y }, { x: tgtCard.left, y: t.y });
+    targetOut = { ox: -1, oy: 0 };
   }
 
   return { path: polyline(pts), sourceOut, targetOut };
