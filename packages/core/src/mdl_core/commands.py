@@ -39,18 +39,49 @@ def dir_fingerprint(model_dir: Path) -> str:
     fired on EVERY edit on Windows — the canvas/LSP was effectively read-only. We now hash
     each file's content read in text mode (universal-newline normalises CRLF->LF), sorted
     by relative path for determinism, so the fingerprint depends on content, not on how
-    git happened to translate line endings."""
+    git happened to translate line endings.
+
+    The project file's `layout` key is a VISUAL-tooling preference (opt-in team sharing of
+    the canvas layout sidecar), never model content. It is stripped before hashing so that
+    toggling `layout: {shared: true}` does NOT move the fingerprint — the same isolation the
+    layout sidecar gets by living in JSON outside every `*.yaml` glob. Whatever the setting
+    is, every model-change detector (drift, the staleness guard) sees an identical model."""
     h = hashlib.sha256()
     for p in sorted(Path(model_dir).rglob("*.yaml"), key=lambda q: q.as_posix()):
         try:
             text = p.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
+        if p.name == PROJECT_FILE:
+            text = _project_text_without_layout(text)
         h.update(p.relative_to(model_dir).as_posix().encode("utf-8"))
         h.update(b"\0")
         h.update(text.encode("utf-8"))
         h.update(b"\0")
     return h.hexdigest()
+
+
+def _project_text_without_layout(text: str) -> str:
+    """A canonical form of the project file with any `layout` key removed, so a visual-only
+    setting cannot shift the fingerprint.
+
+    The canonicalisation (parse → drop `layout` → re-dump) is applied WHETHER OR NOT the key
+    is present, so a file that gains or loses only `layout` hashes identically: the with-key
+    and without-key texts both reduce to the same dumped form. Falls back to the raw text if
+    the file does not parse as a mapping, so a corrupt file still fingerprints
+    deterministically."""
+    try:
+        from mdl_core.yaml_io import dump_str, load_str
+
+        doc = load_str(text)
+        if not isinstance(doc, dict):
+            return text
+        stripped = {k: v for k, v in doc.items() if k != "layout"}
+        # Normalise trailing blank lines: removing `layout` can leave a blank line that
+        # ruamel preserves as an extra trailing newline, which would still move the hash.
+        return dump_str(stripped).rstrip("\n") + "\n"
+    except Exception:  # noqa: BLE001 - never let fingerprinting crash over a parse quirk
+        return text
 
 
 class StaleModelError(Exception):

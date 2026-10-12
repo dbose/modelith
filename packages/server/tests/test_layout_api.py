@@ -276,3 +276,57 @@ def test_gitignore_not_created_outside_git(model_dir):
     client.put("/api/layout", json={"view": "__all__", "nodes": {ent: {"x": 1, "y": 2}}, "edges": {}})
     assert not (model_dir / ".mdl" / ".gitignore").exists()
     assert (model_dir / ".mdl" / "layout.json").exists()  # file still written
+
+
+# --- team sharing: `layout: {shared: true}` opt-in -----------------------------
+
+
+def _set_shared(model_dir: Path) -> None:
+    p = model_dir / "mdl-project.yaml"
+    p.write_text(p.read_text() + "\nlayout:\n  shared: true\n")
+
+
+def test_shared_layout_is_not_gitignored(model_dir):
+    """With `layout: {shared: true}`, the sidecar is NOT ignored, so a team can commit it."""
+    _init(model_dir)
+    _set_shared(model_dir)
+    client = TestClient(create_app(model_dir))
+    ent = client.get("/api/model").json()["entities"][0]["id"]
+    client.put("/api/layout", json={"view": "__all__", "nodes": {ent: {"x": 1, "y": 2}}, "edges": {}})
+    gi = model_dir / ".mdl" / ".gitignore"
+    # no ignore of layout.json -> committable
+    assert not (gi.exists() and "layout.json" in gi.read_text().splitlines())
+
+
+def test_switching_to_shared_removes_auto_ignore(model_dir):
+    """A project that was ignoring layout (solo) and later opts into sharing: the next
+    write drops OUR auto-added ignore line so the file becomes committable."""
+    _init(model_dir)
+    client = TestClient(create_app(model_dir))
+    ent = client.get("/api/model").json()["entities"][0]["id"]
+    client.put("/api/layout", json={"view": "__all__", "nodes": {ent: {"x": 1, "y": 2}}, "edges": {}})
+    assert "layout.json" in (model_dir / ".mdl" / ".gitignore").read_text().splitlines()
+    _set_shared(model_dir)
+    client.put("/api/layout", json={"view": "__all__", "nodes": {ent: {"x": 3, "y": 4}}, "edges": {}})
+    gi = model_dir / ".mdl" / ".gitignore"
+    assert not (gi.exists() and "layout.json" in gi.read_text().splitlines())
+
+
+def test_shared_setting_does_not_leak_into_cli_features(model_dir):
+    """THE guardrail the user named: whatever the sharing setting is, layout stays
+    invisible to every functional CLI feature. With `shared: true` AND a rich committed
+    sidecar, validate / every export / drift / the model doc are all identical to a model
+    with no layout and no setting."""
+    client = TestClient(create_app(model_dir))
+    formats = [f["id"] for f in client.get("/api/export").json()["formats"]]
+    before_exports = {f: client.get(f"/api/export/{f}").text for f in formats}
+    before_model = client.get("/api/model").json()
+    before_fp = commands.dir_fingerprint(model_dir)
+    # opt into sharing AND write a rich sidecar
+    _set_shared(model_dir)
+    _write_rich_layout(model_dir)
+    client2 = TestClient(create_app(model_dir))
+    for f in formats:
+        assert client2.get(f"/api/export/{f}").text == before_exports[f], f
+    assert client2.get("/api/model").json() == before_model
+    assert commands.dir_fingerprint(model_dir) == before_fp

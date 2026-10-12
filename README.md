@@ -236,6 +236,15 @@ invisible to `mdl validate`, drift, `mdl diff`, every emitter and the git status
 never shows up in a review, a diff or the generated dbt. "Reset layout" in the View menu
 clears a view's saved arrangement.
 
+**Sharing a layout with your team.** Set `layout: {shared: true}` in `mdl-project.yaml`
+to opt the sidecar into version control: Modelith then stops git-ignoring
+`.mdl/layout.json` (dropping the auto-added ignore line) so you can commit it, and anyone
+who opens the canvas on that checkout sees the same arrangement. The setting is a
+visual-tooling preference only — whatever its value, the layout (and the setting itself)
+stays invisible to every functional CLI feature: `mdl validate`, drift, `mdl diff` and the
+emitters produce byte-identical output, and the model fingerprint is unchanged, whether
+the layout is shared or ignored.
+
 ![The ER canvas with a relationship line running from one entity's foreign-key attribute row to the referenced entity's primary-key row, with crow's-foot cardinality](docs/assets/canvas.png)
 
 ## Documentation

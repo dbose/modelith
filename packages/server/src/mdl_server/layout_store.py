@@ -187,12 +187,48 @@ def delete_view(model_dir: Path, view: str | None) -> None:
         _write_doc(model_dir, doc)
 
 
+def _layout_shared(model_dir: Path) -> bool:
+    """Opt-in team sharing: `layout: {shared: true}` in mdl-project.yaml. When set, the
+    sidecar is NOT git-ignored so a team can commit it. Read directly from the project
+    file (never through the model graph), so `layout` stays invisible to every CLI
+    feature — validate/drift/export are identical whatever this setting is. Any read
+    error or missing key means the safe default: not shared (ignored)."""
+    try:
+        from mdl_core.yaml_io import load_file
+
+        doc = load_file(model_dir / "mdl-project.yaml") or {}
+        layout = doc.get("layout") if isinstance(doc, dict) else None
+        return isinstance(layout, dict) and layout.get("shared") is True
+    except Exception:  # noqa: BLE001 - never fail a layout write over the project file
+        return False
+
+
 def _ensure_gitignore(model_dir: Path) -> None:
-    """On first write, make sure layout.json is git-ignored. Create
-    `<model_dir>/.mdl/.gitignore` with `layout.json` when it is not already
-    ignored. Only inside a git work tree, and never beyond creating this file."""
+    """Make the sidecar's git status match the project's sharing setting.
+
+    Default (not shared): ensure `<model_dir>/.mdl/.gitignore` ignores `layout.json`, so
+    a solo user gets no noisy diffs. When `layout: {shared: true}` is set, do NOT ignore
+    it (and remove our own auto-added ignore line if present) so the team can commit it.
+    Only touches git state inside a work tree, and never edits a user's ignore file beyond
+    our one `layout.json` line."""
     mdl = model_dir / ".mdl"
     gi = mdl / ".gitignore"
+
+    if _layout_shared(model_dir):
+        # Shared: unlock committing by dropping OUR auto-added ignore line if it is there.
+        if gi.exists():
+            try:
+                lines = gi.read_text(encoding="utf-8").splitlines()
+                if "layout.json" in lines:
+                    kept = [ln for ln in lines if ln.strip() != "layout.json"]
+                    if kept:
+                        gi.write_text("\n".join(kept) + "\n", encoding="utf-8")
+                    else:
+                        gi.unlink()  # the file only held our line
+            except OSError:
+                pass
+        return
+
     if gi.exists():
         try:
             if "layout.json" in gi.read_text(encoding="utf-8").splitlines():
