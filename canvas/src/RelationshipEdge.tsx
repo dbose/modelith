@@ -51,6 +51,8 @@ const CLICK_SLOP = 3;
  */
 export const RelationshipEdge = memo(function RelationshipEdge({
   id,
+  source,
+  target,
   sourceX,
   sourceY,
   targetX,
@@ -66,6 +68,12 @@ export const RelationshipEdge = memo(function RelationshipEdge({
   // on screen at the default 0.33x zoom). Divide sizes by the zoom so the grip keeps
   // a constant on-screen size and stays grabbable at any zoom.
   const zoom = useStore((s) => s.transform[2]);
+  // LIVE source/target card rects, read from the store so they track a node as it moves
+  // (the data.sourceCard/targetCard snapshot goes stale on a node drag, which left an
+  // anchored endpoint floating at the card's OLD position). A node's rect is its absolute
+  // position + measured size; fall back to the data snapshot if the store has no size yet.
+  const liveSrcRect = useStore((s) => rectOf(s.nodeInternals.get(source)), rectEq);
+  const liveTgtRect = useStore((s) => rectOf(s.nodeInternals.get(target)), rectEq);
   // while dragging, the live route is kept here so we do NOT rebuild all edges
   // per move; the committed value rides in data.routeX.
   const [dragX, setDragX] = useState<number | null>(null);
@@ -82,8 +90,9 @@ export const RelationshipEdge = memo(function RelationshipEdge({
 
   // Effective endpoints: a dragged/stored anchor overrides the attribute-row port, so the
   // line visually meets the box where the anchor sits (the data still links the real rows).
-  const srcCardR = data?.sourceCard;
-  const tgtCardR = data?.targetCard;
+  // Prefer the LIVE store rect (tracks node moves); fall back to the data snapshot.
+  const srcCardR = liveSrcRect ?? data?.sourceCard;
+  const tgtCardR = liveTgtRect ?? data?.targetCard;
   const liveSrcAnchor =
     dragAnchor?.end === "source" ? dragAnchor.a : data?.sourceAnchor;
   const liveTgtAnchor =
@@ -124,8 +133,8 @@ export const RelationshipEdge = memo(function RelationshipEdge({
   // When a route is set AND we know the card rectangles, use the side-aware orthogonal
   // router so a run dragged over a node enters it from the top/bottom (and the crow's-foot
   // follows). Otherwise keep the smooth-step path (the clean default / auto routing).
-  const sCard = data?.sourceCard;
-  const tCard = data?.targetCard;
+  const sCard = srcCardR;
+  const tCard = tgtCardR;
   const routed =
     routeX != null && sCard && tCard
       ? orthogonalPath(
@@ -258,7 +267,7 @@ export const RelationshipEdge = memo(function RelationshipEdge({
   // handle resets that end to its attribute-row port.
   const onEndpointDown = useCallback(
     (end: "source" | "target") => (e: React.PointerEvent) => {
-      const card = end === "source" ? data?.sourceCard : data?.targetCard;
+      const card = end === "source" ? srcCardR : tgtCardR;
       if (!onAnchorChange || !rel || !card || e.button !== 0) return;
       e.stopPropagation();
       (e.target as Element).setPointerCapture?.(e.pointerId);
@@ -287,7 +296,7 @@ export const RelationshipEdge = memo(function RelationshipEdge({
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
     },
-    [onAnchorChange, rel, data, screenToFlowPosition],
+    [onAnchorChange, rel, srcCardR, tgtCardR, screenToFlowPosition],
   );
   const onEndpointDouble = useCallback(
     (end: "source" | "target") => (e: React.MouseEvent) => {
@@ -384,6 +393,26 @@ export const RelationshipEdge = memo(function RelationshipEdge({
     </g>
   );
 });
+
+type Rect4 = { left: number; right: number; top: number; bottom: number } | null;
+/** Equality for the useStore rect selector, so the edge re-renders only when its node's
+ * rect actually changes (not on every unrelated store tick). */
+function rectEq(a: Rect4, b: Rect4): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return a.left === b.left && a.right === b.right && a.top === b.top && a.bottom === b.bottom;
+}
+
+/** The live rect of a React Flow node from the store (absolute position + measured size),
+ * or null when it is not yet measured. Used so an anchored endpoint tracks the node as it
+ * moves, instead of resolving against a stale snapshot. */
+function rectOf(
+  n: { positionAbsolute?: { x: number; y: number }; width?: number | null; height?: number | null } | undefined,
+): { left: number; right: number; top: number; bottom: number } | null {
+  if (!n?.positionAbsolute || n.width == null || n.height == null) return null;
+  const { x, y } = n.positionAbsolute;
+  return { left: x, right: x + n.width, top: y, bottom: y + n.height };
+}
 
 /** A small circular grip at an edge endpoint; drag it to slide the endpoint along the
  * entity's border. Zoom-invariant, like the route grip. */
