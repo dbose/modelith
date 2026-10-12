@@ -215,3 +215,66 @@ export function orthogonalPath(
 
   return { path: polyline(pts), sourceOut, targetOut };
 }
+
+// --- draggable endpoint anchors (slide the endpoint along an entity's border) ---
+
+/** A card's full rectangle in flow coordinates. */
+export interface Rect {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+/** Which border a dragged endpoint snaps to, and where on it. The endpoint slides
+ * freely along a border; `side` is the nearest border to the drop point, `x`/`y` the
+ * point on it (`x` only matters on top/bottom). Purely visual — the model still links
+ * the real attribute rows. Matches the stored EdgeAnchor wire type. */
+export interface Anchor {
+  side: "left" | "right" | "top" | "bottom";
+  x?: number;
+  y: number;
+}
+
+const ANCHOR_INSET = 8; // keep the anchor this far from a corner
+
+/**
+ * Resolve a free drag point `(px, py)` to an anchor ON the card's border: pick the
+ * nearest side, then clamp the point to that side's span (minus a small corner inset).
+ * This lets the endpoint slide smoothly along whichever edge the cursor is closest to.
+ */
+export function anchorOnBorder(px: number, py: number, card: Rect): Anchor {
+  const dLeft = Math.abs(px - card.left);
+  const dRight = Math.abs(px - card.right);
+  const dTop = Math.abs(py - card.top);
+  const dBottom = Math.abs(py - card.bottom);
+  const min = Math.min(dLeft, dRight, dTop, dBottom);
+  const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
+  if (min === dLeft) {
+    return { side: "left", x: card.left, y: clamp(py, card.top + ANCHOR_INSET, card.bottom - ANCHOR_INSET) };
+  }
+  if (min === dRight) {
+    return { side: "right", x: card.right, y: clamp(py, card.top + ANCHOR_INSET, card.bottom - ANCHOR_INSET) };
+  }
+  if (min === dTop) {
+    return { side: "top", x: clamp(px, card.left + ANCHOR_INSET, card.right - ANCHOR_INSET), y: card.top };
+  }
+  return { side: "bottom", x: clamp(px, card.left + ANCHOR_INSET, card.right - ANCHOR_INSET), y: card.bottom };
+}
+
+/** Re-resolve a stored anchor against the card's CURRENT rect (the card may have moved
+ * or resized since the anchor was saved), keeping it on the same side at the same
+ * relative position. Returns the point + outward unit vector for the glyph. */
+export function resolveAnchor(a: Anchor, card: Rect): { x: number; y: number; out: Out } {
+  const clamp = (v: number, lo: number, hi: number) => Math.min(Math.max(v, lo), hi);
+  switch (a.side) {
+    case "left":
+      return { x: card.left, y: clamp(a.y, card.top, card.bottom), out: { ox: -1, oy: 0 } };
+    case "right":
+      return { x: card.right, y: clamp(a.y, card.top, card.bottom), out: { ox: 1, oy: 0 } };
+    case "top":
+      return { x: clamp(a.x ?? (card.left + card.right) / 2, card.left, card.right), y: card.top, out: { ox: 0, oy: -1 } };
+    default:
+      return { x: clamp(a.x ?? (card.left + card.right) / 2, card.left, card.right), y: card.bottom, out: { ox: 0, oy: 1 } };
+  }
+}

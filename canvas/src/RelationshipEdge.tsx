@@ -1,6 +1,6 @@
 import { memo, useCallback, useRef, useState } from "react";
 import { getSmoothStepPath, Position, useReactFlow, useStore, type EdgeProps } from "reactflow";
-import { adjustRouteX, orthogonalPath } from "./edgeRouting";
+import { type Anchor, adjustRouteX, anchorOnBorder, orthogonalPath, resolveAnchor } from "./edgeRouting";
 import type { Relationship } from "./types";
 
 export interface RelationshipEdgeData {
@@ -21,6 +21,12 @@ export interface RelationshipEdgeData {
    *  side-aware orthogonal routing (top/bottom entry) */
   sourceCard?: { left: number; right: number; top: number; bottom: number };
   targetCard?: { left: number; right: number; top: number; bottom: number };
+  /** endpoints dragged ALONG the entity's border (visual only; the data still links the
+   *  real attribute rows). Undefined = the natural attribute-row port. */
+  sourceAnchor?: Anchor;
+  targetAnchor?: Anchor;
+  /** commit a dragged endpoint anchor (or null to reset to the attribute-row port). */
+  onAnchorChange?: (relId: string, end: "source" | "target", anchor: Anchor | null) => void;
 }
 
 
@@ -63,6 +69,8 @@ export const RelationshipEdge = memo(function RelationshipEdge({
   // while dragging, the live route is kept here so we do NOT rebuild all edges
   // per move; the committed value rides in data.routeX.
   const [dragX, setDragX] = useState<number | null>(null);
+  // live endpoint-anchor drag (per end), kept local so a drag does not rebuild all edges.
+  const [dragAnchor, setDragAnchor] = useState<{ end: "source" | "target"; a: Anchor } | null>(null);
   const draggingRef = useRef(false);
   const movedRef = useRef(0);
 
@@ -72,13 +80,43 @@ export const RelationshipEdge = memo(function RelationshipEdge({
   // effective vertical-segment x: live drag wins, else the committed route.
   const routeX = dragX ?? data?.routeX;
 
+  // Effective endpoints: a dragged/stored anchor overrides the attribute-row port, so the
+  // line visually meets the box where the anchor sits (the data still links the real rows).
+  const srcCardR = data?.sourceCard;
+  const tgtCardR = data?.targetCard;
+  const liveSrcAnchor =
+    dragAnchor?.end === "source" ? dragAnchor.a : data?.sourceAnchor;
+  const liveTgtAnchor =
+    dragAnchor?.end === "target" ? dragAnchor.a : data?.targetAnchor;
+  const srcPt =
+    liveSrcAnchor && srcCardR
+      ? resolveAnchor(liveSrcAnchor, srcCardR)
+      : { x: sourceX, y: sourceY, out: null as null | { ox: number; oy: number } };
+  const tgtPt =
+    liveTgtAnchor && tgtCardR
+      ? resolveAnchor(liveTgtAnchor, tgtCardR)
+      : { x: targetX, y: targetY, out: null as null | { ox: number; oy: number } };
+  const eSourceX = srcPt.x;
+  const eSourceY = srcPt.y;
+  const eTargetX = tgtPt.x;
+  const eTargetY = tgtPt.y;
+  // when an endpoint is anchored, its port side follows the anchor's side.
+  const eSourcePos =
+    liveSrcAnchor?.side === "right" ? Position.Right
+    : liveSrcAnchor?.side === "left" ? Position.Left
+    : sourcePosition;
+  const eTargetPos =
+    liveTgtAnchor?.side === "right" ? Position.Right
+    : liveTgtAnchor?.side === "left" ? Position.Left
+    : targetPosition;
+
   const [smoothPath, autoLabelX, autoLabelY] = getSmoothStepPath({
-    sourceX,
-    sourceY,
-    sourcePosition,
-    targetX,
-    targetY,
-    targetPosition,
+    sourceX: eSourceX,
+    sourceY: eSourceY,
+    sourcePosition: eSourcePos,
+    targetX: eTargetX,
+    targetY: eTargetY,
+    targetPosition: eTargetPos,
     borderRadius: 10,
     ...(routeX != null ? { centerX: routeX } : {}),
   });
@@ -91,11 +129,11 @@ export const RelationshipEdge = memo(function RelationshipEdge({
   const routed =
     routeX != null && sCard && tCard
       ? orthogonalPath(
-          { x: sourceX, y: sourceY },
-          { x: targetX, y: targetY },
+          { x: eSourceX, y: eSourceY },
+          { x: eTargetX, y: eTargetY },
           routeX,
-          sourcePosition === Position.Left ? -1 : 1,
-          targetPosition === Position.Left ? -1 : 1,
+          eSourcePos === Position.Left ? -1 : 1,
+          eTargetPos === Position.Left ? -1 : 1,
           sCard,
           tCard,
         )
@@ -130,15 +168,21 @@ export const RelationshipEdge = memo(function RelationshipEdge({
   // The router reports the out-vector; the glyph ANCHOR must move to the border the line
   // actually crosses — the right port when entering from the right, the top/bottom border
   // when entering vertically — so the marker is never left mid-card.
-  const srcOut = routed ? routed.sourceOut : { ox: sourcePosition === Position.Left ? -1 : 1, oy: 0 };
-  const tgtOut = routed ? routed.targetOut : { ox: targetPosition === Position.Left ? -1 : 1, oy: 0 };
-  const srcGlyph = { x: sourceX, y: sourceY };
+  // out-vectors + glyph anchor points. Priority: the orthogonal router (when a route is
+  // set) > a dragged endpoint anchor > the natural attribute-row port.
+  const srcOut = routed
+    ? routed.sourceOut
+    : srcPt.out ?? { ox: eSourcePos === Position.Left ? -1 : 1, oy: 0 };
+  const tgtOut = routed
+    ? routed.targetOut
+    : tgtPt.out ?? { ox: eTargetPos === Position.Left ? -1 : 1, oy: 0 };
+  const srcGlyph = { x: eSourceX, y: eSourceY };
   const tgtGlyph =
     routed && tCard
       ? tgtOut.oy !== 0
         ? { x: routeX!, y: tgtOut.oy < 0 ? tCard.top : tCard.bottom } // top/bottom entry
-        : { x: tgtOut.ox > 0 ? tCard.right : tCard.left, y: targetY } // right/left port
-      : { x: targetX, y: targetY };
+        : { x: tgtOut.ox > 0 ? tCard.right : tCard.left, y: eTargetY } // right/left port
+      : { x: eTargetX, y: eTargetY };
 
   const commit = useCallback(
     (x: number | null) => onRouteChange && rel && onRouteChange(rel.id, x),
@@ -208,6 +252,52 @@ export const RelationshipEdge = memo(function RelationshipEdge({
     [draggable, commit],
   );
 
+  const onAnchorChange = data?.onAnchorChange;
+  // Drag an endpoint along its entity's border. `end` picks source/target; the drop point
+  // resolves to the nearest border via anchorOnBorder. Commits on release; double-click a
+  // handle resets that end to its attribute-row port.
+  const onEndpointDown = useCallback(
+    (end: "source" | "target") => (e: React.PointerEvent) => {
+      const card = end === "source" ? data?.sourceCard : data?.targetCard;
+      if (!onAnchorChange || !rel || !card || e.button !== 0) return;
+      e.stopPropagation();
+      (e.target as Element).setPointerCapture?.(e.pointerId);
+      movedRef.current = 0;
+      const start = screenToFlowPosition({ x: e.clientX, y: e.clientY });
+      let raf = 0;
+      let latest: Anchor | null = null;
+      const onMove = (ev: PointerEvent) => {
+        const p = screenToFlowPosition({ x: ev.clientX, y: ev.clientY });
+        movedRef.current = Math.max(movedRef.current, Math.hypot(p.x - start.x, p.y - start.y));
+        latest = anchorOnBorder(p.x, p.y, card);
+        if (!raf) {
+          raf = requestAnimationFrame(() => {
+            raf = 0;
+            setDragAnchor({ end, a: latest! });
+          });
+        }
+      };
+      const onUp = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        if (raf) cancelAnimationFrame(raf);
+        setDragAnchor(null);
+        if (movedRef.current >= CLICK_SLOP && latest) onAnchorChange(rel.id, end, latest);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [onAnchorChange, rel, data, screenToFlowPosition],
+  );
+  const onEndpointDouble = useCallback(
+    (end: "source" | "target") => (e: React.MouseEvent) => {
+      if (!onAnchorChange || !rel) return;
+      e.stopPropagation();
+      onAnchorChange(rel.id, end, null); // reset to the attribute-row port
+    },
+    [onAnchorChange, rel],
+  );
+
   return (
     // Hover handlers on the whole group so moving from the line onto the grip keeps the
     // edge "hovered" (and the handle mounted) instead of flickering off between children.
@@ -227,6 +317,25 @@ export const RelationshipEdge = memo(function RelationshipEdge({
       <path d={path} fill="none" strokeWidth={16 / zoom} stroke="transparent" />
       <EndGlyph x={srcGlyph.x} y={srcGlyph.y} out={srcOut} many={srcMany} optional={optional} />
       <EndGlyph x={tgtGlyph.x} y={tgtGlyph.y} out={tgtOut} many={tgtMany} optional={false} />
+      {/* endpoint handles — drag an end ALONG its entity's border. Shown on hover/select. */}
+      {!!onAnchorChange && (data?.hovered || selected || dragAnchor != null) && (
+        <>
+          <EndpointHandle
+            x={srcGlyph.x}
+            y={srcGlyph.y}
+            zoom={zoom}
+            onPointerDown={onEndpointDown("source")}
+            onDoubleClick={onEndpointDouble("source")}
+          />
+          <EndpointHandle
+            x={tgtGlyph.x}
+            y={tgtGlyph.y}
+            zoom={zoom}
+            onPointerDown={onEndpointDown("target")}
+            onDoubleClick={onEndpointDouble("target")}
+          />
+        </>
+      )}
       {/* drag handle on the vertical segment — shown while hovered, selected, or mid-drag.
           Sizes are divided by the zoom so the grip keeps a constant ON-SCREEN size and
           stays visible + grabbable however far the canvas is zoomed out. */}
@@ -244,9 +353,9 @@ export const RelationshipEdge = memo(function RelationshipEdge({
               guidance: a generous (20-75px) hit area. */}
           <rect
             x={handleX - 20 / zoom}
-            y={Math.min(sourceY, targetY)}
+            y={Math.min(eSourceY, eTargetY)}
             width={40 / zoom}
-            height={Math.max(Math.abs(targetY - sourceY), 24 / zoom)}
+            height={Math.max(Math.abs(eTargetY - eSourceY), 24 / zoom)}
             fill="transparent"
           />
           {/* the visible grip: a rounded pill (~11x22px on screen) */}
@@ -275,6 +384,36 @@ export const RelationshipEdge = memo(function RelationshipEdge({
     </g>
   );
 });
+
+/** A small circular grip at an edge endpoint; drag it to slide the endpoint along the
+ * entity's border. Zoom-invariant, like the route grip. */
+function EndpointHandle({
+  x,
+  y,
+  zoom,
+  onPointerDown,
+  onDoubleClick,
+}: {
+  x: number;
+  y: number;
+  zoom: number;
+  onPointerDown: (e: React.PointerEvent) => void;
+  onDoubleClick: (e: React.MouseEvent) => void;
+}) {
+  return (
+    <g
+      className="rel-endpoint"
+      style={{ cursor: "move" }}
+      onPointerDown={onPointerDown}
+      onDoubleClick={onDoubleClick}
+    >
+      {/* fat transparent grab target (~20px on screen) */}
+      <circle cx={x} cy={y} r={10 / zoom} fill="transparent" />
+      {/* visible dot (~7px on screen) */}
+      <circle className="rel-endpoint-dot" cx={x} cy={y} r={3.5 / zoom} strokeWidth={1.5 / zoom} />
+    </g>
+  );
+}
 
 function EndGlyph({
   x,

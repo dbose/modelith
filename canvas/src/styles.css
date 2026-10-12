@@ -265,6 +265,10 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
 .rel-handle .rel-grip { fill: var(--accent); stroke: var(--bg); opacity: 0.95; }
 .rel-handle .rel-grip-dot { fill: var(--bg); }
 .rel-handle:hover .rel-grip { fill: var(--accent); filter: brightness(1.15); }
+/* draggable endpoint grips (slide an edge end along an entity's border) */
+.rel-endpoint, .rel-endpoint * { cursor: move !important; }
+.rel-endpoint .rel-endpoint-dot { fill: var(--accent); stroke: var(--bg); opacity: 0.95; }
+.rel-endpoint:hover .rel-endpoint-dot { filter: brightness(1.2); }
 .layout-menu-sep { height: 1px; margin: 4px 0; background: var(--border); }
 
 /* ---------- detail panel ---------- */

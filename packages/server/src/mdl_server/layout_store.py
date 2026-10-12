@@ -102,8 +102,27 @@ def _clean_nodes(nodes: Any, valid_ids: set[str]) -> dict[str, dict[str, int]]:
     return out
 
 
-def _clean_edges(edges: Any, valid_ids: set[str]) -> dict[str, dict[str, int]]:
-    out: dict[str, dict[str, int]] = {}
+_SIDES = {"left", "right", "top", "bottom"}
+
+
+def _clean_anchor(a: Any) -> dict[str, Any] | None:
+    """A dragged-endpoint anchor: {side, y, x?}. None when absent/invalid-shape (dropped,
+    not fatal); raises only on a present-but-non-finite number."""
+    if not isinstance(a, dict):
+        return None
+    side = a.get("side")
+    if side not in _SIDES or not _finite(a.get("y")):
+        raise LayoutError("anchor: side must be left/right/top/bottom and y finite")
+    out: dict[str, Any] = {"side": side, "y": round(a["y"])}
+    if a.get("x") is not None:
+        if not _finite(a["x"]):
+            raise LayoutError("anchor x must be finite")
+        out["x"] = round(a["x"])
+    return out
+
+
+def _clean_edges(edges: Any, valid_ids: set[str]) -> dict[str, dict[str, Any]]:
+    out: dict[str, dict[str, Any]] = {}
     if not isinstance(edges, dict):
         return out
     for eid, route in edges.items():
@@ -111,9 +130,21 @@ def _clean_edges(edges: Any, valid_ids: set[str]) -> dict[str, dict[str, int]]:
             raise LayoutError(f"edge id too long: {eid[:16]}…")
         if eid not in valid_ids:
             continue
-        if not isinstance(route, dict) or not _finite(route.get("routeX")):
-            raise LayoutError(f"edge {eid}: routeX must be a finite number")
-        out[eid] = {"routeX": round(route["routeX"])}
+        if not isinstance(route, dict):
+            raise LayoutError(f"edge {eid}: route must be an object")
+        rec: dict[str, Any] = {}
+        if route.get("routeX") is not None:
+            if not _finite(route["routeX"]):
+                raise LayoutError(f"edge {eid}: routeX must be a finite number")
+            rec["routeX"] = round(route["routeX"])
+        sa = _clean_anchor(route.get("sourceAnchor"))
+        if sa:
+            rec["sourceAnchor"] = sa
+        ta = _clean_anchor(route.get("targetAnchor"))
+        if ta:
+            rec["targetAnchor"] = ta
+        if rec:  # drop empty edge records
+            out[eid] = rec
     return out
 
 

@@ -28,7 +28,7 @@ import { type LayoutDir, type LayoutMode, NODE_WIDTH, layoutGraph, nodeHeight } 
 import type { LayoutStore } from "./layoutStore";
 import { AlignModal, NewEntityModal, RelEditModal, RelModal, TermMapModal } from "./modals";
 import { RelationshipEdge, type RelationshipEdgeData } from "./RelationshipEdge";
-import type { Entity, ModelDoc, ViewLayout } from "./types";
+import type { EdgeAnchor, EdgeRoute, Entity, ModelDoc, ViewLayout } from "./types";
 
 const nodeTypes: NodeTypes = { entity: EntityNode };
 const edgeTypes: EdgeTypes = { relationship: RelationshipEdge };
@@ -41,6 +41,11 @@ export const NO_SA_COLOR = "#8a7d6a";
 /** Nudge a card down until it no longer overlaps any occupied rectangle, so a
  * newly-auto-placed entity (e.g. one Copilot just created) does not land on top
  * of a restored card. Simple vertical push; good enough for the rare new node. */
+/** Round an anchor's coordinates for a stable, small saved diff. */
+function roundAnchor(a: EdgeAnchor): EdgeAnchor {
+  return { side: a.side, y: Math.round(a.y), ...(a.x != null ? { x: Math.round(a.x) } : {}) };
+}
+
 function nudgeOffOverlaps(
   pos: { x: number; y: number },
   h: number,
@@ -214,9 +219,10 @@ export function ModelCanvas({
   // and canvas-local; it feeds the existing dimmed/highlighted computation.
   const [hoveredAttr, setHoveredAttr] = useState<string | null>(null);
   const [hoveredEdge, setHoveredEdge] = useState<string | null>(null);
-  // committed edge routes for the current view (relId -> routeX). The live drag
-  // is kept inside the edge component; this holds only committed values.
-  const routesRef = useRef<Record<string, number>>({});
+  // committed edge routes for the current view (relId -> {routeX?, sourceAnchor?,
+  // targetAnchor?}). The live drag is kept inside the edge component; this holds only
+  // committed values.
+  const routesRef = useRef<Record<string, EdgeRoute>>({});
 
   const readOnly = !caps.canEdit;
 
@@ -231,8 +237,12 @@ export function ModelCanvas({
         if (!n.hidden) posNodes[n.id] = { x: Math.round(n.position.x), y: Math.round(n.position.y) };
       }
       const edgeRoutes: ViewLayout["edges"] = {};
-      for (const [relId, routeX] of Object.entries(routesRef.current)) {
-        edgeRoutes[relId] = { routeX: Math.round(routeX) };
+      for (const [relId, r] of Object.entries(routesRef.current)) {
+        const out: EdgeRoute = {};
+        if (r.routeX != null) out.routeX = Math.round(r.routeX);
+        if (r.sourceAnchor) out.sourceAnchor = roundAnchor(r.sourceAnchor);
+        if (r.targetAnchor) out.targetAnchor = roundAnchor(r.targetAnchor);
+        if (out.routeX != null || out.sourceAnchor || out.targetAnchor) edgeRoutes[relId] = out;
       }
       const layout: ViewLayout = { nodes: posNodes, edges: edgeRoutes };
       loadedViews.current.set(viewKey, layout);
@@ -245,11 +255,33 @@ export function ModelCanvas({
   // data in place (identity-preserving, so only that one edge re-renders) and saves.
   const onRouteCommit = useCallback(
     (relId: string, routeX: number | null) => {
-      if (routeX == null) delete routesRef.current[relId];
-      else routesRef.current[relId] = routeX;
+      const cur = routesRef.current[relId] ?? {};
+      if (routeX == null) delete cur.routeX;
+      else cur.routeX = routeX;
+      routesRef.current[relId] = cur;
       setEdges((prev) =>
         prev.map((e) =>
           e.id === relId ? { ...e, data: { ...e.data!, routeX: routeX ?? undefined } } : e,
+        ),
+      );
+      saveLayout();
+    },
+    [saveLayout],
+  );
+
+  // Commit a dragged endpoint anchor (or null to reset that end to its attribute-row port).
+  const onAnchorCommit = useCallback(
+    (relId: string, end: "source" | "target", anchor: EdgeAnchor | null) => {
+      const cur = routesRef.current[relId] ?? {};
+      const key = end === "source" ? "sourceAnchor" : "targetAnchor";
+      if (anchor == null) delete cur[key];
+      else cur[key] = anchor;
+      routesRef.current[relId] = cur;
+      setEdges((prev) =>
+        prev.map((e) =>
+          e.id === relId
+            ? { ...e, data: { ...e.data!, [key]: anchor ?? undefined } }
+            : e,
         ),
       );
       saveLayout();
@@ -402,7 +434,13 @@ export function ModelCanvas({
     const saved = savedRef.current;
     routesRef.current = {};
     if (saved) {
-      for (const [relId, r] of Object.entries(saved.edges)) routesRef.current[relId] = r.routeX;
+      for (const [relId, r] of Object.entries(saved.edges)) {
+        routesRef.current[relId] = {
+          ...(r.routeX != null ? { routeX: r.routeX } : {}),
+          ...(r.sourceAnchor ? { sourceAnchor: r.sourceAnchor } : {}),
+          ...(r.targetAnchor ? { targetAnchor: r.targetAnchor } : {}),
+        };
+      }
     }
 
     // Build the edges from the FINAL node positions. We do this inside the setNodes
@@ -420,16 +458,22 @@ export function ModelCanvas({
         });
       }
       setEdges(
-        newEdges.map((e) => ({
-          ...e,
-          data: {
-            ...e.data!,
-            routeX: routesRef.current[e.id],
-            onRouteChange: layoutStore ? onRouteCommit : undefined,
-            sourceCard: cardById.get(e.source),
-            targetCard: cardById.get(e.target),
-          },
-        })),
+        newEdges.map((e) => {
+          const r = routesRef.current[e.id] ?? {};
+          return {
+            ...e,
+            data: {
+              ...e.data!,
+              routeX: r.routeX,
+              sourceAnchor: r.sourceAnchor,
+              targetAnchor: r.targetAnchor,
+              onRouteChange: layoutStore ? onRouteCommit : undefined,
+              onAnchorChange: layoutStore ? onAnchorCommit : undefined,
+              sourceCard: cardById.get(e.source),
+              targetCard: cardById.get(e.target),
+            },
+          };
+        }),
       );
     };
     setNodes((prev) => {
@@ -495,6 +539,7 @@ export function ModelCanvas({
     fitView,
     layoutStore,
     onRouteCommit,
+    onAnchorCommit,
     savedTick,
   ]);
 

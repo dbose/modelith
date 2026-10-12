@@ -60,6 +60,35 @@ def test_put_then_get_roundtrips(client, model_dir):
         assert got["edges"][rel] == {"routeX": 481}
 
 
+def test_edge_endpoint_anchors_roundtrip(client):
+    """Dragged endpoint anchors (visual only) persist: {side, y, x?}, rounded, and a
+    route record may carry routeX + anchors together."""
+    model = client.get("/api/model").json()
+    rel = model["relationships"][0]["id"]
+    edges = {
+        rel: {
+            "routeX": 300.4,
+            "sourceAnchor": {"side": "right", "y": 140.7},
+            "targetAnchor": {"side": "top", "y": 50.2, "x": 210.9},
+        }
+    }
+    r = client.put("/api/layout", json={"view": "__all__", "nodes": {}, "edges": edges})
+    assert r.status_code == 200, r.text
+    got = client.get("/api/layout?view=__all__").json()["edges"][rel]
+    assert got["routeX"] == 300
+    assert got["sourceAnchor"] == {"side": "right", "y": 141}
+    assert got["targetAnchor"] == {"side": "top", "y": 50, "x": 211}
+
+
+def test_bad_anchor_side_422(client):
+    rel = client.get("/api/model").json()["relationships"][0]["id"]
+    r = client.put(
+        "/api/layout",
+        json={"view": "__all__", "nodes": {}, "edges": {rel: {"sourceAnchor": {"side": "nope", "y": 1}}}},
+    )
+    assert r.status_code == 422
+
+
 def test_file_is_key_sorted_integers(client, model_dir):
     model = client.get("/api/model").json()
     e0, e1 = model["entities"][0]["id"], model["entities"][1]["id"]

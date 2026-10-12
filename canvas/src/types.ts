@@ -488,9 +488,21 @@ export interface NodePos {
   y: number;
 }
 
-/** One saved edge route: the x of its draggable vertical segment. */
+/** One saved edge route (all optional, visual-only):
+ *  - `routeX`: x of the draggable vertical segment.
+ *  - `sourceAnchor`/`targetAnchor`: the endpoint's position dragged ALONG the entity's
+ *    border, as `{ side, y }` where `side` is which border it sits on and `y` the flow-y
+ *    on that border. The data still links the real attribute rows; this is only where the
+ *    line visually meets the box. */
+export interface EdgeAnchor {
+  side: "left" | "right" | "top" | "bottom";
+  y: number;
+  x?: number;
+}
 export interface EdgeRoute {
-  routeX: number;
+  routeX?: number;
+  sourceAnchor?: EdgeAnchor;
+  targetAnchor?: EdgeAnchor;
 }
 
 /** One view's saved arrangement. `__all__` is the unfiltered canvas; a filtered

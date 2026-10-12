@@ -7,6 +7,8 @@ import {
   clampRouteX,
   magnetise,
   orthogonalPath,
+  anchorOnBorder,
+  resolveAnchor,
   snapRouteX,
   type CardX,
 } from "./edgeRouting";
@@ -138,3 +140,36 @@ describe("orthogonalPath", () => {
     expect(r.path.trimEnd().endsWith("L 600 560")).toBe(true); // ends at the LEFT border
   });
 })
+
+describe("anchorOnBorder", () => {
+  const card = { left: 100, right: 300, top: 50, bottom: 250 };
+  it("snaps to the nearest side and clamps along it", () => {
+    // near the left edge, mid-height -> left side at that y
+    expect(anchorOnBorder(96, 140, card)).toEqual({ side: "left", x: 100, y: 140 });
+    // near the right edge
+    expect(anchorOnBorder(305, 140, card)).toEqual({ side: "right", x: 300, y: 140 });
+    // near the top
+    expect(anchorOnBorder(200, 45, card)).toEqual({ side: "top", x: 200, y: 50 });
+    // near the bottom
+    expect(anchorOnBorder(200, 255, card)).toEqual({ side: "bottom", x: 200, y: 250 });
+  });
+  it("clamps away from the corners (inset)", () => {
+    const a = anchorOnBorder(96, 0, card); // way above -> clamp to top+inset
+    expect(a.side).toBe("left");
+    expect(a.y).toBe(50 + 8);
+  });
+});
+
+describe("resolveAnchor", () => {
+  const card = { left: 100, right: 300, top: 50, bottom: 250 };
+  it("returns the border point + outward vector per side", () => {
+    expect(resolveAnchor({ side: "left", x: 100, y: 140 }, card)).toEqual({ x: 100, y: 140, out: { ox: -1, oy: 0 } });
+    expect(resolveAnchor({ side: "right", x: 300, y: 140 }, card)).toEqual({ x: 300, y: 140, out: { ox: 1, oy: 0 } });
+    expect(resolveAnchor({ side: "top", x: 200, y: 50 }, card)).toEqual({ x: 200, y: 50, out: { ox: 0, oy: -1 } });
+    expect(resolveAnchor({ side: "bottom", x: 200, y: 250 }, card)).toEqual({ x: 200, y: 250, out: { ox: 0, oy: 1 } });
+  });
+  it("re-clamps y if the card shrank", () => {
+    const r = resolveAnchor({ side: "left", x: 100, y: 999 }, card);
+    expect(r.y).toBe(250); // clamped to bottom
+  });
+});
