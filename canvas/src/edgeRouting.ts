@@ -143,9 +143,39 @@ function corner(prev: Pt, c: Pt, next: Pt, r: number): string {
   return `L ${t1.x} ${t1.y} Q ${c.x} ${c.y} ${t2.x} ${t2.y} `;
 }
 
+/** Drop consecutive-identical and collinear waypoints, so a degenerate run (e.g. a
+ * horizontal edge whose source and target share a y, giving a zero-length vertical
+ * segment) collapses to a clean straight line instead of emitting zero-length corner
+ * curves that render as a kink or a stray mark. */
+function simplify(pts: Pt[]): Pt[] {
+  const out: Pt[] = [];
+  for (const p of pts) {
+    const prev = out[out.length - 1];
+    if (prev && Math.abs(prev.x - p.x) < 0.5 && Math.abs(prev.y - p.y) < 0.5) continue; // dup
+    out.push(p);
+  }
+  // remove collinear middles (a-b-c where b lies on the a→c line)
+  const res: Pt[] = [];
+  for (let i = 0; i < out.length; i++) {
+    const a = res[res.length - 1];
+    const b = out[i];
+    const c = out[i + 1];
+    if (a && c) {
+      const abx = b.x - a.x, aby = b.y - a.y, bcx = c.x - b.x, bcy = c.y - b.y;
+      // both segments horizontal, or both vertical -> b is redundant
+      if ((Math.abs(aby) < 0.5 && Math.abs(bcy) < 0.5) || (Math.abs(abx) < 0.5 && Math.abs(bcx) < 0.5)) {
+        continue;
+      }
+    }
+    res.push(b);
+  }
+  return res;
+}
+
 /** Build an orthogonal SVG path through the given waypoints with rounded corners. */
-function polyline(pts: Pt[]): string {
-  if (pts.length < 2) return "";
+function polyline(raw: Pt[]): string {
+  const pts = simplify(raw);
+  if (pts.length < 2) return pts.length === 1 ? `M ${pts[0].x} ${pts[0].y}` : "";
   let d = `M ${pts[0].x} ${pts[0].y} `;
   for (let i = 1; i < pts.length - 1; i++) d += corner(pts[i - 1], pts[i], pts[i + 1], R);
   const last = pts[pts.length - 1];

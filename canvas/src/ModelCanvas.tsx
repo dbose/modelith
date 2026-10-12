@@ -219,6 +219,9 @@ export function ModelCanvas({
   // and canvas-local; it feeds the existing dimmed/highlighted computation.
   const [hoveredAttr, setHoveredAttr] = useState<string | null>(null);
   const [hoveredEdge, setHoveredEdge] = useState<string | null>(null);
+  // a single click SELECTS a relationship (persistently shows its drag handles, so the
+  // user does not have to hover-fight the thin line); double-click still opens the editor.
+  const [selectedEdge, setSelectedEdge] = useState<string | null>(null);
   // committed edge routes for the current view (relId -> {routeX?, sourceAnchor?,
   // targetAnchor?}). The live drag is kept inside the edge component; this holds only
   // committed values.
@@ -633,21 +636,29 @@ export function ModelCanvas({
           rel.from.entity !== selectedId && rel.to.entity !== selectedId;
         const hoverDim = hover.active && !hover.relsForAttr.has(r.id);
         const dimmed = selectDim || hoverDim;
-        // the hovered edge shows its drag handle (so it is grabbable without a click,
-        // which now double-clicks to open the editor)
+        // Show an edge's drag handles when it is hovered OR directly selected (clicked),
+        // so the user can click once and keep the handles up instead of hover-fighting the
+        // thin line. `edgeSelected` is the clicked edge; `nearSelected` is connected to the
+        // selected ENTITY (for z-lift only).
         const hovered = hoveredEdge === r.id;
-        const selected = selectedId !== null && rel !== undefined &&
+        const edgeSelected = selectedEdge === r.id;
+        const nearSelected = selectedId !== null && rel !== undefined &&
           (rel.from.entity === selectedId || rel.to.entity === selectedId);
         // Lift the hovered/selected edge ABOVE the node cards (default edges render
         // behind them) so its route and crow's-foot markers are never hidden while
         // you work it. Other edges stay behind the cards for a clean diagram.
-        const zIndex = hovered || selected ? 1000 : 0;
-        if (r.data?.dimmed === dimmed && r.data?.hovered === hovered && r.zIndex === zIndex)
+        const zIndex = hovered || edgeSelected || nearSelected ? 1000 : 0;
+        if (
+          r.data?.dimmed === dimmed &&
+          r.data?.hovered === hovered &&
+          r.data?.edgeSelected === edgeSelected &&
+          r.zIndex === zIndex
+        )
           return r;
-        return { ...r, zIndex, data: { ...r.data!, dimmed, hovered } };
+        return { ...r, zIndex, data: { ...r.data!, dimmed, hovered, edgeSelected } };
       }),
     );
-  }, [hover, hoveredEdge, query, selectedId, doc]);
+  }, [hover, hoveredEdge, selectedEdge, query, selectedId, doc]);
 
   // Frame the matches. In a large model the entities a search hits may be off-screen,
   // so highlighting alone is not enough — pan/zoom to the matched nodes (like Fit, but
@@ -790,13 +801,16 @@ export function ModelCanvas({
         edges={edges}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
-        onNodeClick={(_, n) => onSelect(n.id)}
-        // Double-click opens the relationship editor; single-click/hover is reserved for
-        // the drag handle (hovering an edge reveals its route grip, and clicking it would
-        // otherwise pop the editor and steal the grab).
+        onNodeClick={(_, n) => {
+          onSelect(n.id);
+          setSelectedEdge(null);
+        }}
+        // Single-click SELECTS the edge (its handles stay up); double-click opens the editor.
+        onEdgeClick={(_, e) => setSelectedEdge(e.id)}
         onEdgeDoubleClick={(_, e) => !readOnly && setRelEdit(e.id)}
         onPaneClick={() => {
           onSelect(null);
+          setSelectedEdge(null);
           setRelEdit(null);
         }}
         onNodeDragStop={(_, n) => {

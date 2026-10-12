@@ -173,3 +173,13 @@ describe("resolveAnchor", () => {
     expect(r.y).toBe(250); // clamped to bottom
   });
 });
+
+describe("orthogonalPath degenerate cases", () => {
+  it("a horizontal edge (same y) is a clean straight line, no stray corners", () => {
+    const sCard = { left: 0, right: 264, top: 600, bottom: 860 };
+    const tCard = { left: 600, right: 864, top: 600, bottom: 860 };
+    const r = orthogonalPath({ x: 264, y: 700 }, { x: 600, y: 700 }, 430, 1, -1, sCard, tCard);
+    expect(r.path).toBe("M 264 700 L 600 700"); // no Q corners
+    expect(r.targetOut).toEqual({ ox: -1, oy: 0 });
+  });
+});

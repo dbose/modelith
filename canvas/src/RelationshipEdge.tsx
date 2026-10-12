@@ -13,6 +13,9 @@ export interface RelationshipEdgeData {
   /** true while the mouse is over this edge — shows the drag handle so it is grabbable
    *  without a click (the editor now opens on double-click) */
   hovered?: boolean;
+  /** true when this edge was clicked (selected) — keeps its handles visible so the user
+   *  does not have to hover the thin line to work it */
+  edgeSelected?: boolean;
   /** the x of the vertical segment, in flow coords. Undefined = automatic routing. */
   routeX?: number;
   /** commit a new route (or null to reset to automatic). Absent = not draggable. */
@@ -159,7 +162,10 @@ export const RelationshipEdge = memo(function RelationshipEdge({
   const srcMany = cardinality === "many_to_one" || cardinality === "many_to_many";
   const tgtMany = cardinality === "one_to_many" || cardinality === "many_to_many";
 
-  const cls = "rel-edge" + (selected ? " selected" : "") + (dimmed ? " dimmed" : "");
+  const cls =
+    "rel-edge" +
+    (selected || data?.edgeSelected ? " selected" : "") +
+    (dimmed ? " dimmed" : "");
   const composite = (data?.memberCount ?? 0) > 1;
   const onHover = data?.onHoverEdge;
 
@@ -327,7 +333,7 @@ export const RelationshipEdge = memo(function RelationshipEdge({
       <EndGlyph x={srcGlyph.x} y={srcGlyph.y} out={srcOut} many={srcMany} optional={optional} />
       <EndGlyph x={tgtGlyph.x} y={tgtGlyph.y} out={tgtOut} many={tgtMany} optional={false} />
       {/* endpoint handles — drag an end ALONG its entity's border. Shown on hover/select. */}
-      {!!onAnchorChange && (data?.hovered || selected || dragAnchor != null) && (
+      {!!onAnchorChange && (data?.hovered || data?.edgeSelected || selected || dragAnchor != null) && (
         <>
           <EndpointHandle
             x={srcGlyph.x}
@@ -348,7 +354,7 @@ export const RelationshipEdge = memo(function RelationshipEdge({
       {/* drag handle on the vertical segment — shown while hovered, selected, or mid-drag.
           Sizes are divided by the zoom so the grip keeps a constant ON-SCREEN size and
           stays visible + grabbable however far the canvas is zoomed out. */}
-      {draggable && (data?.hovered || selected || dragX != null) && (
+      {draggable && (data?.hovered || data?.edgeSelected || selected || dragX != null) && (
         <g
           className="rel-handle"
           style={{ cursor: "ew-resize" }}

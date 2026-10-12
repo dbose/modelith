@@ -262,13 +262,15 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
    the edge's default pointer so you get drag feedback anywhere along the segment,
    not only on the grip pill. */
 .rel-handle, .rel-handle * { cursor: ew-resize !important; }
-.rel-handle .rel-grip { fill: var(--accent); stroke: var(--bg); opacity: 0.95; }
+.rel-handle .rel-grip { fill: var(--accent); stroke: var(--bg); opacity: 1; }
 .rel-handle .rel-grip-dot { fill: var(--bg); }
-.rel-handle:hover .rel-grip { fill: var(--accent); filter: brightness(1.15); }
+.rel-handle:hover .rel-grip { fill: var(--accent); filter: brightness(1.25) drop-shadow(0 0 3px var(--accent)); }
 /* draggable endpoint grips (slide an edge end along an entity's border) */
 .rel-endpoint, .rel-endpoint * { cursor: move !important; }
-.rel-endpoint .rel-endpoint-dot { fill: var(--accent); stroke: var(--bg); opacity: 0.95; }
-.rel-endpoint:hover .rel-endpoint-dot { filter: brightness(1.2); }
+.rel-endpoint .rel-endpoint-dot { fill: var(--accent); stroke: var(--bg); opacity: 1; }
+.rel-endpoint:hover .rel-endpoint-dot { filter: brightness(1.3) drop-shadow(0 0 3px var(--accent)); }
+/* a clicked (selected) edge glows so it is obvious its handles are live */
+.rel-edge.selected .rel-path { stroke-width: 2.2; filter: drop-shadow(0 0 2px var(--accent)); }
 .layout-menu-sep { height: 1px; margin: 4px 0; background: var(--border); }
 
 /* ---------- detail panel ---------- */
