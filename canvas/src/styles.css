@@ -255,6 +255,23 @@ body { font-family: var(--font); background: var(--bg); color: var(--text); }
 .rel-edge:hover .rel-glyph, .rel-edge.selected .rel-glyph { stroke: var(--accent); }
 .rel-edge.dimmed { opacity: 0.12; }
 .rel-label { fill: var(--text); font-size: 11px; text-anchor: middle; paint-order: stroke; stroke: var(--bg); stroke-width: 4px; }
+/* draggable edge route handle (grip on the vertical segment). Sizes are set
+   per-zoom in the component (zoom-invariant), so here we only style colour. */
+.rel-handle { cursor: ew-resize; }
+/* the whole handle group (grip + its grab zone) shows the resize cursor, overriding
+   the edge's default pointer so you get drag feedback anywhere along the segment,
+   not only on the grip pill. */
+.rel-handle, .rel-handle * { cursor: ew-resize !important; }
+.rel-handle .rel-grip { fill: var(--accent); stroke: var(--bg); opacity: 1; }
+.rel-handle .rel-grip-dot { fill: var(--bg); }
+.rel-handle:hover .rel-grip { fill: var(--accent); filter: brightness(1.25) drop-shadow(0 0 3px var(--accent)); }
+/* draggable endpoint grips (slide an edge end along an entity's border) */
+.rel-endpoint, .rel-endpoint * { cursor: move !important; }
+.rel-endpoint .rel-endpoint-dot { fill: var(--accent); stroke: var(--bg); opacity: 1; }
+.rel-endpoint:hover .rel-endpoint-dot { filter: brightness(1.3) drop-shadow(0 0 3px var(--accent)); }
+/* a clicked (selected) edge glows so it is obvious its handles are live */
+.rel-edge.selected .rel-path { stroke-width: 2.2; filter: drop-shadow(0 0 2px var(--accent)); }
+.layout-menu-sep { height: 1px; margin: 4px 0; background: var(--border); }
 
 /* ---------- detail panel ---------- */
 .detail-panel {

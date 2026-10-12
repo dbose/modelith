@@ -479,3 +479,41 @@ export interface ExpandDoc {
   added: string[];
   error?: string;
 }
+
+// --- visual layout (node positions + edge routes), persisted per canvas view --
+
+/** One saved node position (flow coordinates). */
+export interface NodePos {
+  x: number;
+  y: number;
+}
+
+/** One saved edge route (all optional, visual-only):
+ *  - `routeX`: x of the draggable vertical segment.
+ *  - `sourceAnchor`/`targetAnchor`: the endpoint's position dragged ALONG the entity's
+ *    border, as `{ side, y }` where `side` is which border it sits on and `y` the flow-y
+ *    on that border. The data still links the real attribute rows; this is only where the
+ *    line visually meets the box. */
+export interface EdgeAnchor {
+  side: "left" | "right" | "top" | "bottom";
+  y: number;
+  x?: number;
+}
+export interface EdgeRoute {
+  routeX?: number;
+  sourceAnchor?: EdgeAnchor;
+  targetAnchor?: EdgeAnchor;
+}
+
+/** One view's saved arrangement. `__all__` is the unfiltered canvas; a filtered
+ * view is keyed `sa:` + the sorted active-area ids joined with `+`. */
+export interface ViewLayout {
+  nodes: Record<string, NodePos>;
+  edges: Record<string, EdgeRoute>;
+}
+
+/** The `GET /api/layout?view=` response. */
+export interface LayoutDoc extends ViewLayout {
+  version: number;
+  view: string;
+}

@@ -36,6 +36,7 @@ export function TopBar({
   onToggleCollapse,
   onFitView,
   onRelayout,
+  onResetLayout,
   onRefresh,
   readOnly,
   dirty,
@@ -61,6 +62,8 @@ export function TopBar({
   onToggleCollapse: () => void;
   onFitView: () => void;
   onRelayout: (mode?: LayoutMode, dir?: LayoutDir) => void;
+  /** clear the saved layout for the current view and re-run auto-layout */
+  onResetLayout?: () => void;
   onRefresh: () => void;
   readOnly: boolean;
   dirty: boolean;
@@ -215,7 +218,7 @@ export function TopBar({
           >
             <IconCollapse size={15} />
           </button>
-          <LayoutPicker onRelayout={onRelayout} />
+          <LayoutPicker onRelayout={onRelayout} onReset={onResetLayout} />
           <button
             className="grp-btn icon-only"
             onClick={onFitView}
@@ -272,7 +275,13 @@ const DIR_LABEL: Record<LayoutDir, string> = {
  *  opens a menu to force Hierarchical / Clustered / Grid. The arrow button cycles the dagre flow
  *  direction (→ ↓ ← ↑) and re-applies the current layout, so a large model can be arranged either
  *  way and flowed in any direction. Direction persists across relayouts. */
-function LayoutPicker({ onRelayout }: { onRelayout: (mode?: LayoutMode, dir?: LayoutDir) => void }) {
+function LayoutPicker({
+  onRelayout,
+  onReset,
+}: {
+  onRelayout: (mode?: LayoutMode, dir?: LayoutDir) => void;
+  onReset?: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const [dir, setDir] = useState<LayoutDir>("LR");
   // Remember the last chosen layout so cycling the direction re-applies THAT layout, not a reset
@@ -336,6 +345,20 @@ function LayoutPicker({ onRelayout }: { onRelayout: (mode?: LayoutMode, dir?: La
           <button onClick={() => pick("hierarchical")}>Hierarchical</button>
           <button onClick={() => pick("clustered")}>Clustered (by area)</button>
           <button onClick={() => pick("grid")}>Grid</button>
+          {onReset && (
+            <>
+              <div className="layout-menu-sep" role="separator" />
+              <button
+                onClick={() => {
+                  onReset();
+                  setOpen(false);
+                }}
+                title="Clear saved positions and routes for this view"
+              >
+                Reset layout
+              </button>
+            </>
+          )}
         </div>
       )}
     </div>

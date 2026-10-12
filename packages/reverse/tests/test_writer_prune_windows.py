@@ -27,6 +27,22 @@ def test_write_model_keeps_every_file_it_wrote(tmp_path):
     assert len(files) == 52, "write_model must leave all 52 entity files on disk"
 
 
+def test_prune_never_touches_mdl_layout_sidecar(tmp_path):
+    """The reverse prune only sweeps the owned object dirs; the visual layout
+    sidecar under .mdl/ must survive a re-reverse. Guards the isolation guarantee."""
+    (tmp_path / ".mdl").mkdir(parents=True, exist_ok=True)
+    layout = tmp_path / ".mdl" / "layout.json"
+    # a rich sidecar (positions + routeX + endpoint anchors) must survive untouched
+    content = (
+        '{"version": 1, "views": {"__all__": {"nodes": {"e": {"x": 1, "y": 2}}, '
+        '"edges": {"r": {"routeX": 5, "sourceAnchor": {"side": "left", "y": 3}}}}}}'
+    )
+    layout.write_text(content, encoding="utf-8")
+    write_model(_model(3), tmp_path)  # a fresh write that prunes stale files
+    assert layout.exists(), "re-reverse must not delete .mdl/layout.json"
+    assert layout.read_text(encoding="utf-8") == content, "sidecar content must be untouched"
+
+
 def test_prune_stale_would_fail_with_naive_separator(tmp_path):
     """Directly prove the fix: build the prune comparison the OLD way (str with the OS
     separator) vs the NEW way (as_posix), against a forward-slash `written` set. On a

@@ -224,7 +224,26 @@ all first-class in the model.
 Relationship lines anchor to the exact columns that join, not to the entity headers, so
 with composite keys or several relationships between the same pair the diagram still says
 which columns join which; hovering an attribute highlights the relationships it takes part
-in and dims the rest.
+in and dims the rest. Select or hover a relationship to get a drag handle on its vertical
+segment and slide the line sideways (snapping to a grid and to nearby lines) so a dense
+diagram stays readable; double-click the handle to return it to automatic routing.
+
+**Saved layout.** Card positions and relationship routes are remembered per view in a
+`<model>/.mdl/layout.json` sidecar, so reopening the canvas or restarting `mdl serve`
+restores your arrangement exactly. Layout is purely visual: it is JSON (never model YAML),
+it is **git-ignored by default** (a `.mdl/.gitignore` is created on first save), and it is
+invisible to `mdl validate`, drift, `mdl diff`, every emitter and the git status, so it
+never shows up in a review, a diff or the generated dbt. "Reset layout" in the View menu
+clears a view's saved arrangement.
+
+**Sharing a layout with your team.** Set `layout: {shared: true}` in `mdl-project.yaml`
+to opt the sidecar into version control: Modelith then stops git-ignoring
+`.mdl/layout.json` (dropping the auto-added ignore line) so you can commit it, and anyone
+who opens the canvas on that checkout sees the same arrangement. The setting is a
+visual-tooling preference only — whatever its value, the layout (and the setting itself)
+stays invisible to every functional CLI feature: `mdl validate`, drift, `mdl diff` and the
+emitters produce byte-identical output, and the model fingerprint is unchanged, whether
+the layout is shared or ignored.
 
 ![The ER canvas with a relationship line running from one entity's foreign-key attribute row to the referenced entity's primary-key row, with crow's-foot cardinality](docs/assets/canvas.png)
 

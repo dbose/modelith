@@ -42,6 +42,62 @@ def _git(model_dir: Path, *args: str, timeout: int = 30) -> tuple[int, str]:
     return proc.returncode, out.strip()
 
 
+# The visual layout sidecar is not a model change: it must never make the tree
+# look "dirty" (which would block propose/commit), and it must never be removed
+# on a discard/revert. `git status --porcelain` paths here are model-dir-relative
+# (the calls are scoped with `-- .`), so the sidecar shows as `.mdl/layout.json`.
+_LAYOUT_REL = ".mdl/layout.json"
+# The layout feature also auto-creates .mdl/.gitignore (ignoring layout.json). Until
+# a user commits it, it reads as untracked; it is our own isolation artifact, not a
+# model change, so filter it too. When the WHOLE .mdl/ dir is new, porcelain collapses
+# it to `?? .mdl/` — treat that as layout-only iff the dir holds nothing but these two.
+_LAYOUT_ARTIFACTS = frozenset({_LAYOUT_REL, ".mdl/.gitignore"})
+
+
+def _porcelain_lines(out: str, model_dir: Path | None = None) -> list[str]:
+    """Non-blank porcelain lines with the layout sidecar (and its auto-created
+    .gitignore) filtered out. A porcelain line is `XY <path>` (path at column 3);
+    a rename is `XY old -> new`. A collapsed `?? .mdl/` is dropped only when the
+    directory contains nothing but the layout artifacts (so real decisions.yaml /
+    state changes under .mdl/ still read as dirty)."""
+    lines: list[str] = []
+    for line in out.splitlines():
+        if not line.strip():
+            continue
+        path = line[3:].strip()
+        if " -> " in path:  # rename/copy: the destination is what counts
+            path = path.split(" -> ", 1)[1].strip()
+        # porcelain may quote paths with odd chars; strip surrounding quotes
+        if path.startswith('"') and path.endswith('"'):
+            path = path[1:-1]
+        if path in _LAYOUT_ARTIFACTS:
+            continue
+        if path == ".mdl/" and model_dir is not None and _mdl_only_layout(model_dir):
+            continue
+        lines.append(line)
+    return lines
+
+
+def _mdl_only_layout(model_dir: Path) -> bool:
+    """True when `.mdl/` holds nothing but the layout artifacts — so a collapsed
+    `?? .mdl/` is purely layout and can be ignored."""
+    mdl = model_dir / ".mdl"
+    try:
+        present = {p.name for p in mdl.iterdir()}
+    except OSError:
+        return False
+    return present.issubset({"layout.json", "layout.json.tmp", ".gitignore"})
+
+
+def _is_dirty(model_dir: Path) -> bool:
+    """True when the model dir has uncommitted changes OTHER than the layout
+    sidecar. Mirrors `git status --porcelain -- .` but ignores `.mdl/layout.json`."""
+    code, out = _git(model_dir, "status", "--porcelain", "--", ".")
+    if code != 0:
+        return False
+    return bool(_porcelain_lines(out, model_dir))
+
+
 class CommitBody(BaseModel):
     message: str
 
@@ -632,8 +688,7 @@ def _context_response(model_dir: Path, user: str, *, read_only: bool) -> dict:
 
     branch = _current_branch(model_dir)
     base = _base_branch(model_dir)
-    code, dirty_out = _git(model_dir, "status", "--porcelain", "--", ".")
-    dirty = bool(dirty_out.strip()) if code == 0 else False
+    dirty = _is_dirty(model_dir)  # ignores the .mdl/layout.json sidecar
     has_remote, remote = _git(model_dir, "remote", "get-url", "origin")
     ahead, behind = (0, 0)
     if branch and branch != base:
@@ -794,9 +849,8 @@ def git_router(
         if code != 0:
             return JSONResponse({"git": False, "dirty": [], "error": out})
         dirty = []
-        for line in out.splitlines():
-            if not line.strip():
-                continue
+        # the .mdl/layout.json sidecar is visual-only; it must never read as dirty
+        for line in _porcelain_lines(out, model_dir):
             state, path = line[:2].strip() or "??", line[3:].strip()
             dirty.append({"state": state, "path": path})
         return JSONResponse({"git": True, "dirty": dirty, "clean": not dirty})
@@ -900,7 +954,9 @@ def git_router(
                 return JSONResponse({"ok": False, "error": denied}, status_code=403)
             # revert tracked edits + remove untracked files, model dir only
             code1, out1 = _git(model_dir, "checkout", "--", ".")
-            code2, out2 = _git(model_dir, "clean", "-fd", "--", ".")
+            # -e keeps the visual layout sidecar: discard reverts the MODEL, not
+            # the user's canvas arrangement.
+            code2, out2 = _git(model_dir, "clean", "-fd", "-e", _LAYOUT_REL, "--", ".")
             ok = code1 == 0 and code2 == 0
             _audit("discard", ident, "working-tree", "ok" if ok else "error")
             return JSONResponse({"ok": ok, "error": None if ok else f"{out1}\n{out2}"})
@@ -966,8 +1022,8 @@ def git_router(
                     )
 
             # Refuse to run on a dirty tree — we branch from a clean base.
-            code, dirty = _git(model_dir, "status", "--porcelain", "--", ".")
-            if code == 0 and dirty:
+            # The .mdl/layout.json sidecar does not count as dirty.
+            if _is_dirty(model_dir):
                 return JSONResponse(
                     {
                         "ok": False,
@@ -1002,7 +1058,7 @@ def git_router(
                     applied += 1
                 except CommandError as e:
                     _git(model_dir, "checkout", "--", ".")
-                    _git(model_dir, "clean", "-fd", "--", ".")
+                    _git(model_dir, "clean", "-fd", "-e", _LAYOUT_REL, "--", ".")
                     # a failed propose must be a complete no-op
                     _git(model_dir, "checkout", starting_branch)
                     _git(model_dir, "branch", "-D", branch_name)
