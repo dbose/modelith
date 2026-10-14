@@ -487,6 +487,12 @@ export function ModelCanvas({
       // Otherwise keep known positions so a re-derivation (search, selection) doesn't reflow.
       const filtering = (activeAreas?.size ?? 0) > 0;
       if (layoutedRef.current && known && prev.length >= newNodes.length && !filtering) {
+        // The entity SET is unchanged (same ids, no growth), so keep every saved/manual
+        // position — a recolour must never reflow a laid-out diagram (and must not fight the
+        // saved-layout restore). newNodes already carries the fresh subject-area colour; we
+        // only swap in the kept positions. React Flow then re-renders each node whose `data`
+        // reference changed, and EntityNode's memo comparator (which includes `color`) makes
+        // the accent repaint — so a membership change recolours in place without moving cards.
         const kept = newNodes.map((n) => ({ ...n, position: posById.get(n.id) ?? n.position }));
         emitEdges(kept);
         return kept;
