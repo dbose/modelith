@@ -484,19 +484,27 @@ export function ModelCanvas({
       const known = newNodes.every((n) => posById.has(n.id));
       // When a subject-area filter is active, lay out ONLY the visible nodes so the focused
       // domain fills the canvas (a stale full-model layout would leave it in a far corner).
-      // Otherwise keep known positions so a re-derivation (search, selection) doesn't reflow.
-      const filtering = (activeAreas?.size ?? 0) > 0;
-      if (layoutedRef.current && known && prev.length >= newNodes.length && !filtering) {
+      // That re-layout belongs to a VIEW CHANGE (ticking a filter) — which resets
+      // layoutedRef to false via the view-load effect — NOT to every re-derivation. Once a
+      // view is laid out (layoutedRef true), an incidental re-run (search, SELECTING or
+      // closing the Inspector, a recolour) must keep positions and must not re-fit, filter
+      // active or not. Keying only on layoutedRef (not `filtering`) fixes the bug where
+      // closing the Inspector while filtered zoomed out and reset in-filter manual drags:
+      // every entity is always present in newNodes (hidden ones flagged, never removed), so
+      // `known` and the length check hold across a filter switch too — layoutedRef is the
+      // only thing that distinguishes "view changed" from "selection changed".
+      if (layoutedRef.current && known && prev.length >= newNodes.length) {
         // The entity SET is unchanged (same ids, no growth), so keep every saved/manual
-        // position — a recolour must never reflow a laid-out diagram (and must not fight the
-        // saved-layout restore). newNodes already carries the fresh subject-area colour; we
-        // only swap in the kept positions. React Flow then re-renders each node whose `data`
-        // reference changed, and EntityNode's memo comparator (which includes `color`) makes
-        // the accent repaint — so a membership change recolours in place without moving cards.
+        // position — a recolour/selection must never reflow a laid-out diagram (and must not
+        // fight the saved-layout restore). newNodes already carries the fresh subject-area
+        // colour and hidden flags; we only swap in the kept positions. React Flow then
+        // re-renders each node whose `data` reference changed, and EntityNode's memo
+        // comparator (which includes `color`) makes the accent repaint.
         const kept = newNodes.map((n) => ({ ...n, position: posById.get(n.id) ?? n.position }));
         emitEdges(kept);
         return kept;
       }
+      const filtering = (activeAreas?.size ?? 0) > 0;
       const toLay = filtering ? newNodes.filter((n) => !n.hidden) : newNodes;
       const laid = layoutGraph(toLay, newEdges, entityIndex, "auto", areaByEntity);
       const laidPos = new Map(laid.map((n) => [n.id, n.position]));
