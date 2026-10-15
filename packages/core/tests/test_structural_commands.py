@@ -406,6 +406,151 @@ def test_supplied_ulids_work_for_every_creator(tmp_path: Path):
     _clean(tmp_path)
 
 
+# --- deleting an attribute that is a key-group member ---------------------------
+
+
+def _kg_over(tmp_path: Path, ids: dict, members: list[str], type_: str = "pk") -> str:
+    r = apply_command(
+        tmp_path,
+        "create_key_group",
+        {"entity": ids["le"], "name": f"k_{type_}", "type": type_, "members": members},
+    )
+    return r.created_id
+
+
+def test_delete_attribute_in_key_group_refuses_without_optin(tmp_path: Path):
+    """First call REFUSES, names the key group, and spells out the remove_from_key_group
+    retry — and nothing is written (the attribute and the key group both survive)."""
+    ids = write_model(tmp_path)
+    kg = _kg_over(tmp_path, ids, [ids["a1"], ids["a2"]])
+    with pytest.raises(CommandError, match="member of key group .* remove_from_key_group=true"):
+        apply_command(tmp_path, "delete_attribute", {"entity_id": ids["le"], "attribute_id": ids["a2"]})
+    m = _load(tmp_path)
+    assert ids["a2"] in {a.id for a in m.logical_entities[ids["le"]].attributes}  # not deleted
+    assert ids["a2"] in m.key_groups[kg].members  # key group intact
+    _clean(tmp_path)
+
+
+def test_delete_attribute_optin_cascades_out_of_key_group(tmp_path: Path):
+    """With remove_from_key_group=true the attribute is deleted AND dropped from the key
+    group, which keeps its other members. Model stays valid (no dangling MDL-E105)."""
+    ids = write_model(tmp_path)
+    kg = _kg_over(tmp_path, ids, [ids["a1"], ids["a2"]])
+    r = apply_command(
+        tmp_path,
+        "delete_attribute",
+        {"entity_id": ids["le"], "attribute_id": ids["a2"], "remove_from_key_group": True},
+    )
+    assert r.ok
+    assert not any(d["code"] == "MDL-E105" for d in r.diagnostics), r.diagnostics
+    m = _load(tmp_path)
+    assert ids["a2"] not in {a.id for a in m.logical_entities[ids["le"]].attributes}
+    assert m.key_groups[kg].members == [ids["a1"]]  # a2 dropped, a1 kept
+    _clean(tmp_path)
+
+
+def test_delete_last_key_group_member_deletes_the_key_group(tmp_path: Path):
+    """A key group left with no members is itself invalid, so the cascade removes it."""
+    ids = write_model(tmp_path)
+    # a2 (legal_name) is a key-group member but NOT a relationship endpoint, so only the
+    # key-group guard is in play (a1 is an FK endpoint and would hit the relationship guard).
+    kg = _kg_over(tmp_path, ids, [ids["a2"]], type_="alternate")
+    r = apply_command(
+        tmp_path,
+        "delete_attribute",
+        {"entity_id": ids["le"], "attribute_id": ids["a2"], "remove_from_key_group": True},
+    )
+    assert r.ok
+    assert kg not in _load(tmp_path).key_groups  # key group gone
+    assert not (tmp_path / "logical" / "key-groups" / "k_alternate.yaml").exists()
+    _clean(tmp_path)
+
+
+def test_delete_attribute_not_in_any_key_group_is_unaffected(tmp_path: Path):
+    """The guard only triggers for actual members; an unrelated attribute deletes cleanly
+    without needing the opt-in."""
+    ids = write_model(tmp_path)
+    _kg_over(tmp_path, ids, [ids["a1"]])  # a key group that does NOT include a2
+    r = apply_command(tmp_path, "delete_attribute", {"entity_id": ids["le"], "attribute_id": ids["a2"]})
+    assert r.ok
+    assert ids["a2"] not in {a.id for a in _load(tmp_path).logical_entities[ids["le"]].attributes}
+    _clean(tmp_path)
+
+
+# --- primary-key carve-out: emptying a PK needs a second, louder opt-in ----------
+
+
+def test_shrink_composite_pk_needs_no_pk_optin(tmp_path: Path):
+    """Deleting ONE member of a composite primary key just shrinks it (other members remain),
+    so remove_from_key_group alone is enough — the PK gate only guards EMPTYING a pk."""
+    ids = write_model(tmp_path)
+    kg = _kg_over(tmp_path, ids, [ids["a1"], ids["a2"]], type_="pk")
+    r = apply_command(
+        tmp_path,
+        "delete_attribute",
+        {"entity_id": ids["le"], "attribute_id": ids["a2"], "remove_from_key_group": True},
+    )
+    assert r.ok
+    assert _load(tmp_path).key_groups[kg].members == [ids["a1"]]  # PK still exists, shrunk
+    _clean(tmp_path)
+
+
+def test_emptying_a_primary_key_refuses_without_drop_primary_key(tmp_path: Path):
+    """Removing the LAST member of a pk key would delete the primary key — remove_from_key_group
+    is not enough; it refuses with the louder PK message and writes nothing."""
+    ids = write_model(tmp_path)
+    # a2 is the sole PK member and NOT a relationship endpoint, so the PK gate (not the
+    # relationship guard) is what's in play.
+    kg = _kg_over(tmp_path, ids, [ids["a2"]], type_="pk")
+    with pytest.raises(CommandError, match="last member of PRIMARY key .* drop_primary_key=true"):
+        apply_command(
+            tmp_path,
+            "delete_attribute",
+            {"entity_id": ids["le"], "attribute_id": ids["a2"], "remove_from_key_group": True},
+        )
+    m = _load(tmp_path)
+    assert ids["a2"] in {a.id for a in m.logical_entities[ids["le"]].attributes}  # not deleted
+    assert kg in m.key_groups  # PK intact
+    _clean(tmp_path)
+
+
+def test_emptying_a_primary_key_proceeds_with_drop_primary_key(tmp_path: Path):
+    """With drop_primary_key=true the attribute is deleted and the now-empty primary key is
+    removed too. Model stays valid (no dangling MDL-E105)."""
+    ids = write_model(tmp_path)
+    kg = _kg_over(tmp_path, ids, [ids["a2"]], type_="pk")
+    r = apply_command(
+        tmp_path,
+        "delete_attribute",
+        {
+            "entity_id": ids["le"],
+            "attribute_id": ids["a2"],
+            "remove_from_key_group": True,
+            "drop_primary_key": True,
+        },
+    )
+    assert r.ok
+    assert not any(d["code"] == "MDL-E105" for d in r.diagnostics), r.diagnostics
+    m = _load(tmp_path)
+    assert kg not in m.key_groups  # primary key removed
+    assert ids["a2"] not in {a.id for a in m.logical_entities[ids["le"]].attributes}
+    _clean(tmp_path)
+
+
+def test_drop_primary_key_alone_is_not_enough_without_remove_from_key_group(tmp_path: Path):
+    """The two opt-ins are independent gates: drop_primary_key does not imply the
+    remove_from_key_group consent, so a PK member still refuses at the first gate."""
+    ids = write_model(tmp_path)
+    _kg_over(tmp_path, ids, [ids["a2"]], type_="pk")
+    with pytest.raises(CommandError, match="member of key group .* remove_from_key_group=true"):
+        apply_command(
+            tmp_path,
+            "delete_attribute",
+            {"entity_id": ids["le"], "attribute_id": ids["a2"], "drop_primary_key": True},
+        )
+    _clean(tmp_path)
+
+
 # --- bulk attributes -----------------------------------------------------------
 
 

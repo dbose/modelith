@@ -484,13 +484,59 @@ def _delete_attribute(repo: ModelRepo, p: dict) -> None:
     for r in repo.model.relationships.values():
         if aid in r.from_.attributes or aid in r.to.attributes:
             raise CommandError(f"attribute is referenced by relationship {r.name!r}")
+
+    # Key-group membership: deleting the attribute would otherwise leave the key group
+    # pointing at a dead ULID (an MDL-E105 dangling reference) — the model would silently
+    # go invalid. Guard it two-phase, like a confirmation: the first call REFUSES and names
+    # the key group(s); the caller opts in with `remove_from_key_group=True` to cascade. This
+    # keeps an accidental delete from quietly breaking a key, while giving an agent a
+    # deterministic recovery path (the error text spells out the exact retry).
+    member_of = [kg for kg in repo.model.key_groups.values() if aid in kg.members]
+    if member_of and not p.get("remove_from_key_group"):
+        names = ", ".join(repr(kg.name) for kg in member_of)
+        raise CommandError(
+            f"attribute is a member of key group {names} — remove it from the key first, "
+            f"or retry this delete with remove_from_key_group=true to drop it from the key "
+            f"group(s) automatically (a key group left with no members is deleted)"
+        )
+
+    # Primary-key carve-out: `remove_from_key_group` consents to TOUCHING a key, not to
+    # dissolving an entity's identity. Removing the LAST member of a `pk` key would delete
+    # that primary key — leaving the entity with no identity (and orphaning every FK that
+    # migrated from it). That is a larger act than shrinking a key, so it needs its own, louder
+    # opt-in: `drop_primary_key=true`. Shrinking a composite PK (other members remain) and
+    # emptying a non-PK key (alternate/unique/index) are unaffected — they cascade as before.
+    emptied_pks = [
+        kg
+        for kg in member_of
+        if kg.type == "pk" and [m for m in kg.members if m != aid] == []
+    ]
+    if emptied_pks and not p.get("drop_primary_key"):
+        names = ", ".join(repr(kg.name) for kg in emptied_pks)
+        raise CommandError(
+            f"this is the last member of PRIMARY key {names} — deleting it would remove the "
+            f"primary key and leave the entity with no identity. Add another primary-key column "
+            f"first, or retry with drop_primary_key=true to delete the primary key as well"
+        )
+
     _, node = _entity_node(repo, p["entity_id"])
     attrs = node.get("attributes", [])
     for i, attr in enumerate(attrs):
         if attr.get("id") == aid:
             del attrs[i]
-            return
-    raise CommandError(f"no attribute {aid}")
+            break
+    else:
+        raise CommandError(f"no attribute {aid}")
+
+    # Opted in (or no key groups): drop the attribute from each key group's members, and
+    # delete any key group that is now empty (a key with no members is itself invalid).
+    for kg in member_of:
+        rel, kg_node = _node_for(repo, kg.id)
+        remaining = [m for m in kg_node.get("members", []) if m != aid]
+        if remaining:
+            kg_node["members"] = remaining
+        else:
+            repo.remove_file(rel)
 
 
 # --- relationships ---------------------------------------------------------------
