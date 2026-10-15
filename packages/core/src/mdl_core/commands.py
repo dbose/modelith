@@ -500,6 +500,25 @@ def _delete_attribute(repo: ModelRepo, p: dict) -> None:
             f"group(s) automatically (a key group left with no members is deleted)"
         )
 
+    # Primary-key carve-out: `remove_from_key_group` consents to TOUCHING a key, not to
+    # dissolving an entity's identity. Removing the LAST member of a `pk` key would delete
+    # that primary key — leaving the entity with no identity (and orphaning every FK that
+    # migrated from it). That is a larger act than shrinking a key, so it needs its own, louder
+    # opt-in: `drop_primary_key=true`. Shrinking a composite PK (other members remain) and
+    # emptying a non-PK key (alternate/unique/index) are unaffected — they cascade as before.
+    emptied_pks = [
+        kg
+        for kg in member_of
+        if kg.type == "pk" and [m for m in kg.members if m != aid] == []
+    ]
+    if emptied_pks and not p.get("drop_primary_key"):
+        names = ", ".join(repr(kg.name) for kg in emptied_pks)
+        raise CommandError(
+            f"this is the last member of PRIMARY key {names} — deleting it would remove the "
+            f"primary key and leave the entity with no identity. Add another primary-key column "
+            f"first, or retry with drop_primary_key=true to delete the primary key as well"
+        )
+
     _, node = _entity_node(repo, p["entity_id"])
     attrs = node.get("attributes", [])
     for i, attr in enumerate(attrs):
