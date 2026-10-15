@@ -525,14 +525,19 @@ def create_app(
             cache["repo"] = None  # bust the model cache
             _cache_on_align(model_dir, op, payload)
             audit.record("command", target=op, outcome="ok", **_who)
-            return JSONResponse(
-                {
-                    "ok": True,
-                    "fingerprint": result.fingerprint,
-                    "created_id": result.created_id,
-                    "diagnostics": result.diagnostics,
-                }
-            )
+            out = {
+                "ok": True,
+                "fingerprint": result.fingerprint,
+                "created_id": result.created_id,
+                "diagnostics": result.diagnostics,
+            }
+            # A bulk command (create_entity with attributes, add_attributes) mints several
+            # ids in one transaction; surface them all so an API/canvas caller can reference
+            # each new object without a re-read, matching the MCP tools. Single-create
+            # responses are unchanged (created_id alone).
+            if len(result.created_ids) > 1:
+                out["created_ids"] = result.created_ids
+            return JSONResponse(out)
 
     # git_router is mounted unconditionally: its READS (status, branch, diff,
     # classify, conflicts, context, proposals) must work under --read-only, which
