@@ -98,6 +98,10 @@ class CommandResult:
     fingerprint: str
     diagnostics: list[dict] = field(default_factory=list)
     created_id: str | None = None
+    # Bulk handlers (e.g. add_attributes) mint several ids in one validated transaction.
+    # created_id stays the FIRST of these for single-create back-compat; created_ids holds
+    # them all, in creation order, so a caller can reference each new object.
+    created_ids: list[str] = field(default_factory=list)
     error: str | None = None
 
 
@@ -120,8 +124,18 @@ def apply_command(
         raise CommandError(f"unknown command {op!r}")
 
     repo = ModelRepo.load(model_dir)
-    created_id = handler(repo, payload)
+    result = handler(repo, payload)
     repo.save()
+
+    # A handler returns either a single new id (str), several (list[str], a bulk op), or
+    # None. Normalise: created_id is the first id (single-create back-compat), created_ids
+    # is the full list.
+    if isinstance(result, list):
+        created_ids = result
+        created_id = created_ids[0] if created_ids else None
+    else:
+        created_id = result
+        created_ids = [created_id] if created_id else []
 
     diags = validate(ModelRepo.load(model_dir).model)
     return CommandResult(
@@ -132,6 +146,7 @@ def apply_command(
             for d in diags.items
         ],
         created_id=created_id,
+        created_ids=created_ids,
     )
 
 
@@ -218,9 +233,20 @@ def _create_entity(repo: ModelRepo, p: dict) -> str:
         "realises": ce_id,
         "attributes": [],
     }
+    # Optional inline attributes: create the shell AND its columns in one transaction, so a
+    # wide entity is a single create call, not create + N add_attribute round trips. The
+    # same _append_attribute guard rejects a duplicate name within the batch.
+    attr_ids: list[str] = []
+    specs = p.get("attributes")
+    if specs is not None:
+        if not isinstance(specs, list):
+            raise CommandError("attributes must be a list")
+        seen: set[str] = set()
+        attr_ids = [_append_attribute(le, seen, spec) for spec in specs]
     repo.add_file(f"conceptual/entities/{name}.yaml", ce, ce_id)
     repo.add_file(f"logical/entities/{name}.yaml", le, le_id)
-    return le_id
+    # Entity id first (back-compat: created_id stays the entity), then each attribute id.
+    return [le_id, *attr_ids] if attr_ids else le_id
 
 
 def _rename_entity(repo: ModelRepo, p: dict) -> None:
@@ -388,22 +414,48 @@ def _entity_node(repo: ModelRepo, entity_id: str):
     return le, _node_for(repo, le.id)[1]
 
 
-def _add_attribute(repo: ModelRepo, p: dict) -> str:
-    _require(p, "entity_id", "name")
-    le, node = _entity_node(repo, p["entity_id"])
-    name = _slug(p["name"])
-    if any(a.name == name for a in le.attributes):
-        raise CommandError(f"attribute {name!r} already exists on {le.name!r}")
-    attr_id = _id_from(p)
+def _append_attribute(node: dict, existing: set[str], spec: dict) -> str:
+    """Append one attribute to a logical-entity YAML `node`, guarding against a duplicate
+    name (checked against `existing`, which is updated in place so a bulk add also rejects
+    duplicates WITHIN the same batch). Returns the attribute's id. Mints an id unless the
+    spec supplies a valid ULID (`id`), so a preview and its replay share identities."""
+    if not spec.get("name"):
+        raise CommandError("attribute: missing field(s): name")
+    name = _slug(spec["name"])
+    if name in existing:
+        raise CommandError(f"attribute {name!r} already exists on this entity")
+    attr_id = _id_from(spec)
     attr: dict = {
         "id": attr_id,
         "name": name,
-        "domain": p.get("domain", "string"),
-        "role": p.get("role", "attribute"),
-        "nullable": bool(p.get("nullable", True)),
+        "domain": spec.get("domain", "string"),
+        "role": spec.get("role", "attribute"),
+        "nullable": bool(spec.get("nullable", True)),
     }
     node.setdefault("attributes", []).append(attr)
+    existing.add(name)
     return attr_id
+
+
+def _add_attribute(repo: ModelRepo, p: dict) -> str:
+    _require(p, "entity_id", "name")
+    le, node = _entity_node(repo, p["entity_id"])
+    return _append_attribute(node, {a.name for a in le.attributes}, p)
+
+
+def _add_attributes(repo: ModelRepo, p: dict) -> list[str]:
+    """Add MANY attributes to one entity in a single validated transaction, so building a
+    54-column entity is one load->append-all->one save->one validate instead of 54 round
+    trips. `attributes` is an ordered list of {name, domain?, role?, nullable?, id?}. The
+    whole batch is all-or-nothing: a duplicate name (against existing columns or earlier in
+    the same batch) raises before anything is saved. Returns the new ids in list order."""
+    _require(p, "entity_id")
+    specs = p.get("attributes")
+    if not isinstance(specs, list) or not specs:
+        raise CommandError("attributes must be a non-empty list")
+    le, node = _entity_node(repo, p["entity_id"])
+    existing = {a.name for a in le.attributes}
+    return [_append_attribute(node, existing, spec) for spec in specs]
 
 
 def _update_attribute(repo: ModelRepo, p: dict) -> None:
@@ -1213,6 +1265,7 @@ _HANDLERS = {
     "set_subject_area_members": _set_subject_area_members,
     "create_term": _create_term,
     "add_attribute": _add_attribute,
+    "add_attributes": _add_attributes,
     "update_attribute": _update_attribute,
     "delete_attribute": _delete_attribute,
     "create_relationship": _create_relationship,

@@ -160,6 +160,7 @@ _PROPOSABLE_OPS = frozenset(
         "rename_entity",
         "delete_entity",
         "add_attribute",
+        "add_attributes",
         "update_attribute",
         "delete_attribute",
         "create_relationship",
