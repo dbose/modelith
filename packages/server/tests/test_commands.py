@@ -291,3 +291,33 @@ def test_command_endpoint_and_read_only(model_dir):
     resp = ro.post("/api/command", json={"op": "create_entity", "payload": {"name": "y"}})
     assert resp.status_code in (404, 405)  # router not mounted
     assert ro.get("/api/model").json()["read_only"] is True
+
+
+def test_command_endpoint_surfaces_bulk_created_ids(model_dir):
+    """A bulk create_entity (with inline attributes) must return EVERY minted id over HTTP,
+    so an API/canvas caller can reference the new columns without a re-read. A single create
+    still returns created_id alone (no created_ids noise)."""
+    from fastapi.testclient import TestClient
+    from mdl_server import create_app
+
+    c = TestClient(create_app(model_dir))
+    # single create: created_id only
+    single = c.post("/api/command", json={"op": "create_entity", "payload": {"name": "lonely"}})
+    assert single.json()["created_id"]
+    assert "created_ids" not in single.json()
+
+    # bulk create: entity id + each attribute id, in order
+    bulk = c.post(
+        "/api/command",
+        json={
+            "op": "create_entity",
+            "payload": {
+                "name": "wide_entity",
+                "attributes": [{"name": "c1"}, {"name": "c2"}, {"name": "c3"}],
+            },
+        },
+    )
+    body = bulk.json()
+    assert body["ok"]
+    assert body["created_ids"][0] == body["created_id"]  # entity first
+    assert len(body["created_ids"]) == 4  # entity + 3 columns
