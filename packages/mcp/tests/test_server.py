@@ -335,3 +335,93 @@ def test_apply_reverse_config_tool_validates(model_dir):
         srv, "apply_reverse_config", {"block": {"layers": [{"name": "x", "role": "nope"}]}}
     )
     assert "error" in bad
+
+
+def test_create_entity_with_inline_attributes_one_call(model_dir):
+    """A wide entity is one create_entity call, not create + N add_attribute calls."""
+    srv = build_server(model_dir)
+    r = _call(
+        srv,
+        "create_entity",
+        {
+            "name": "adverse_event",
+            "attributes": [
+                {"name": "usubjid", "domain": "string", "nullable": False},
+                {"name": "aeseq", "domain": "integer"},
+                {"name": "aeterm"},
+            ],
+        },
+    )
+    assert r["ok"] is True
+    assert r["created_id"]
+    # all minted ids come back: entity first, then each column, in order
+    assert len(r["created_ids"]) == 4
+    assert r["created_ids"][0] == r["created_id"]
+    e = _call(srv, "get_entity", {"name": "adverse_event"})
+    assert [a["name"] for a in e["attributes"]] == ["usubjid", "aeseq", "aeterm"]
+
+
+def test_update_entity_add_many_attributes_in_a_list(model_dir):
+    """update_entity add_attribute accepts a LIST to widen an entity in one transaction."""
+    srv = build_server(model_dir)
+    _call(srv, "create_entity", {"name": "lab"})
+    r = _call(
+        srv,
+        "update_entity",
+        {
+            "name": "lab",
+            "changes": {
+                "add_attribute": [
+                    {"name": "lbseq", "domain": "integer"},
+                    {"name": "lbtestcd"},
+                    {"name": "lborres"},
+                ]
+            },
+        },
+    )
+    assert r["ok"] is True
+    assert len(r["attribute_ids"]) == 3  # every new column id, in order
+    e = _call(srv, "get_entity", {"name": "lab"})
+    names = {a["name"] for a in e["attributes"]}
+    assert {"lbseq", "lbtestcd", "lborres"} <= names
+
+
+def test_bulk_add_attribute_duplicate_is_all_or_nothing(model_dir):
+    """A duplicate in the list rejects the whole batch — the entity is unchanged."""
+    srv = build_server(model_dir)
+    _call(srv, "create_entity", {"name": "vitals", "attributes": [{"name": "vsseq"}]})
+    r = _call(
+        srv,
+        "update_entity",
+        {"name": "vitals", "changes": {"add_attribute": [{"name": "vstestcd"}, {"name": "vsseq"}]}},
+    )
+    assert "error" in r
+    e = _call(srv, "get_entity", {"name": "vitals"})
+    # only the original column survives; neither of the batch's columns landed
+    assert [a["name"] for a in e["attributes"]] == ["vsseq"]
+
+
+def test_bulk_attributes_then_key_group_in_one_plan(model_dir):
+    """The money path: create a wide entity, then build a composite key from the returned
+    attribute ids with no intervening re-read."""
+    srv = build_server(model_dir)
+    r = _call(
+        srv,
+        "create_entity",
+        {
+            "name": "exposure",
+            "attributes": [
+                {"name": "studyid"},
+                {"name": "usubjid"},
+                {"name": "exseq", "domain": "integer"},
+            ],
+        },
+    )
+    entity_id = r["created_id"]
+    member_ids = r["created_ids"][1:]  # the three attribute ids, in order
+    kg = _call(
+        srv,
+        "create_key_group",
+        {"entity": entity_id, "name": "pk_exposure", "type": "pk", "members": member_ids},
+    )
+    assert kg["ok"] is True and kg["created_id"]

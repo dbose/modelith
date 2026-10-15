@@ -404,3 +404,106 @@ def test_supplied_ulids_work_for_every_creator(tmp_path: Path):
     )
     assert kg in _load(tmp_path).key_groups
     _clean(tmp_path)
+
+
+# --- bulk attributes -----------------------------------------------------------
+
+
+def test_create_entity_with_inline_attributes(tmp_path: Path):
+    """create_entity can build the shell AND its columns in one validated transaction."""
+    write_model(tmp_path)  # seed the project so there is a model to create into
+    r = apply_command(
+        tmp_path,
+        "create_entity",
+        {
+            "name": "adverse_event",
+            "definition": "An AE record.",
+            "attributes": [
+                {"name": "usubjid", "domain": "string", "nullable": False},
+                {"name": "aeseq", "domain": "integer"},
+                {"name": "aeterm"},  # domain defaults to string
+            ],
+        },
+    )
+    assert r.ok and r.created_id
+    # created_id is the entity; created_ids is entity + each attribute, in order
+    assert r.created_ids[0] == r.created_id
+    assert len(r.created_ids) == 4
+    le = _load(tmp_path).logical_entities[r.created_id]
+    assert [a.name for a in le.attributes] == ["usubjid", "aeseq", "aeterm"]
+    assert le.attributes[0].nullable is False
+    assert le.attributes[1].domain == "integer"
+    assert le.attributes[2].domain == "string"  # defaulted
+    # the minted attribute ids match what came back (entity first)
+    assert [a.id for a in le.attributes] == r.created_ids[1:]
+    _clean(tmp_path)
+
+
+def test_add_attributes_bulk_to_existing_entity(tmp_path: Path):
+    ids = write_model(tmp_path)
+    before = len(_load(tmp_path).logical_entities[ids["le"]].attributes)
+    r = apply_command(
+        tmp_path,
+        "add_attributes",
+        {
+            "entity_id": ids["le"],
+            "attributes": [
+                {"name": "lei", "domain": "string"},
+                {"name": "incorporated_on", "domain": "date"},
+                {"name": "jurisdiction"},
+            ],
+        },
+    )
+    assert r.ok and len(r.created_ids) == 3
+    le = _load(tmp_path).logical_entities[ids["le"]]
+    assert len(le.attributes) == before + 3
+    names = {a.name for a in le.attributes}
+    assert {"lei", "incorporated_on", "jurisdiction"} <= names
+    _clean(tmp_path)
+
+
+def test_add_attributes_is_all_or_nothing_on_duplicate(tmp_path: Path):
+    """A duplicate name (vs an existing column OR earlier in the same batch) rejects the
+    WHOLE batch — nothing is written."""
+    ids = write_model(tmp_path)
+    existing = _load(tmp_path).logical_entities[ids["le"]].attributes
+    existing_name = existing[0].name
+    before = len(existing)
+    # duplicate against an existing column
+    with pytest.raises(CommandError, match="already exists"):
+        apply_command(
+            tmp_path,
+            "add_attributes",
+            {"entity_id": ids["le"], "attributes": [{"name": "fresh_one"}, {"name": existing_name}]},
+        )
+    assert len(_load(tmp_path).logical_entities[ids["le"]].attributes) == before
+    # duplicate WITHIN the batch
+    with pytest.raises(CommandError, match="already exists"):
+        apply_command(
+            tmp_path,
+            "add_attributes",
+            {"entity_id": ids["le"], "attributes": [{"name": "dup_x"}, {"name": "dup_x"}]},
+        )
+    assert len(_load(tmp_path).logical_entities[ids["le"]].attributes) == before
+    _clean(tmp_path)
+
+
+def test_add_attributes_rejects_empty_list(tmp_path: Path):
+    ids = write_model(tmp_path)
+    with pytest.raises(CommandError, match="non-empty list"):
+        apply_command(tmp_path, "add_attributes", {"entity_id": ids["le"], "attributes": []})
+
+
+def test_add_attributes_honours_supplied_ids(tmp_path: Path):
+    """A caller may pre-mint ids (preview/propose parity); add_attributes uses them."""
+    from mdl_core.ids import new_ulid
+
+    ids = write_model(tmp_path)
+    a, b = new_ulid(), new_ulid()
+    r = apply_command(
+        tmp_path,
+        "add_attributes",
+        {"entity_id": ids["le"], "attributes": [{"name": "c_a", "id": a}, {"name": "c_b", "id": b}]},
+    )
+    assert r.created_ids == [a, b]
+    _clean(tmp_path)

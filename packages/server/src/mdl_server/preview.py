@@ -112,7 +112,10 @@ def preview_model(
                 failed_index, error = i, str(e)
                 break
             if made:
-                created_ids[i] = made
+                # A bulk handler (create_entity with attributes, add_attributes) returns a
+                # LIST of ids; this map is change-index -> the change's primary new id, so
+                # record the first (the entity for create_entity), mirroring apply_command.
+                created_ids[i] = made[0] if isinstance(made, list) else made
 
             # Handlers mutate `raw` (the YAML nodes) but not `model` (the parsed
             # object graph the NEXT handler resolves ids against), and

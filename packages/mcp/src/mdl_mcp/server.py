@@ -221,11 +221,21 @@ def build_server(repo_dir: Path) -> FastMCP:
         definition: str | None = None,
         subject_area: str | None = None,
         layer: str | None = None,
+        attributes: list[dict[str, Any]] | None = None,
     ) -> str:
         """Create a conceptual + logical entity pair. Writes to the local model on
         disk (validated before it lands). `subject_area` is a subject-area ULID;
-        `layer` is one of industry|core|domain|specialised. Returns the new entity's
-        ULID or an error object."""
+        `layer` is one of industry|core|domain|specialised.
+
+        `attributes` optionally creates the entity's columns IN THE SAME CALL — pass a list
+        of {name, domain?, role?, nullable?} (domain defaults to "string", nullable to true).
+        Prefer this over create_entity + many add_attribute calls: a wide entity (e.g. 54
+        columns) is then one validated transaction, not 55 round trips. The whole create is
+        all-or-nothing — a duplicate column name fails before anything is written.
+
+        Returns the new entity's ULID as `created_id`; when `attributes` is given, the
+        minted attribute ULIDs follow in `created_ids` (entity first, then each column in
+        order), so you can reference them in create_key_group without a re-read."""
         return _write(
             repo_dir,
             "create_entity",
@@ -234,16 +244,23 @@ def build_server(repo_dir: Path) -> FastMCP:
                 "definition": definition,
                 "subject_area": subject_area,
                 "layer": layer,
+                "attributes": attributes,
             },
         )
 
     @mcp.tool()
     def update_entity(name: str, changes: dict[str, Any]) -> str:
         """Update an existing entity by name (or ULID). `changes` may contain:
-        `definition` (str), `rename` (str, the new name), `add_attribute`
-        ({name, domain?, definition?, nullable?}), or `subject_area` (ULID). Each is
-        applied through the validated command engine; the whole update is rejected
-        (nothing written) if any step is invalid. Returns ok or an error object."""
+        `definition` (str), `rename` (str, the new name), `add_attribute`, or
+        `subject_area` (ULID). Each is applied through the validated command engine; the
+        whole update is rejected (nothing written) if any step is invalid.
+
+        `add_attribute` accepts EITHER one column {name, domain?, role?, nullable?} OR a
+        LIST of them to add many columns at once. A list is one validated transaction, so
+        widening an entity by many columns is a single call (not one per column); its new
+        ids come back as `attribute_ids` (a single column still returns `attribute_id`).
+
+        Returns ok (with any created attribute ids) or an error object."""
         le = query._entity_by_name(_model(), name)  # noqa: SLF001 - shared helper
         if le is None:
             return _json({"error": f"no entity named {name!r}"})
@@ -390,6 +407,7 @@ def _apply_updates(
     applied: list[str] = []
     result = None
     attr_id: str | None = None
+    attr_ids: list[str] = []
     try:
         if "definition" in changes:
             if conceptual_id is None:
@@ -416,11 +434,23 @@ def _apply_updates(
             applied.append("subject_area")
         if "add_attribute" in changes:
             attr = changes["add_attribute"]
-            if not isinstance(attr, dict) or "name" not in attr:
-                return _json({"error": "add_attribute must be an object with at least a name"})
-            result = apply_command(repo_dir, "add_attribute", {"entity_id": entity_id, **attr})
-            attr_id = result.created_id
-            applied.append(f"add_attribute:{attr['name']}")
+            # Accept EITHER one attribute object or a LIST of them. A list adds all columns
+            # in one validated transaction (one load/save/validate), so widening an entity
+            # by many columns is a single call, not one per column.
+            if isinstance(attr, list):
+                if not attr or not all(isinstance(a, dict) and a.get("name") for a in attr):
+                    return _json({"error": "add_attribute list items must each have a name"})
+                result = apply_command(
+                    repo_dir, "add_attributes", {"entity_id": entity_id, "attributes": attr}
+                )
+                attr_ids = result.created_ids
+                applied += [f"add_attribute:{a['name']}" for a in attr]
+            elif isinstance(attr, dict) and attr.get("name"):
+                result = apply_command(repo_dir, "add_attribute", {"entity_id": entity_id, **attr})
+                attr_id = result.created_id
+                applied.append(f"add_attribute:{attr['name']}")
+            else:
+                return _json({"error": "add_attribute must be an object (or list) with a name"})
     except StaleModelError as e:
         return _json({"error": f"model changed on disk mid-update: {e}", "applied": applied})
     except (CommandError, FileNotFoundError, ValueError) as e:
@@ -431,6 +461,9 @@ def _apply_updates(
     if attr_id is not None:
         # so the agent can reference the new column in create_key_group without a re-read
         out["attribute_id"] = attr_id
+    if attr_ids:
+        # bulk add_attribute: every new column id, in list order
+        out["attribute_ids"] = attr_ids
     if result is not None:
         out["diagnostics"] = result.diagnostics
         hints = _domain_hints(result.diagnostics)
@@ -463,6 +496,10 @@ def _write(repo_dir: Path, op: str, payload: dict) -> str:
         "diagnostics": result.diagnostics,
         "error": result.error,
     }
+    # Bulk creates (create_entity with attributes, add_attributes) mint several ids; expose
+    # them all so the agent can reference each new column without a re-read.
+    if len(result.created_ids) > 1:
+        out["created_ids"] = result.created_ids
     # Call out a foreign-key domain mismatch plainly — e.g. a create_relationship with
     # create_from_fk whose minted column's domain disagrees with the key it references.
     hints = _domain_hints(result.diagnostics)
