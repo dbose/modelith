@@ -175,4 +175,36 @@ export const EntityNode = memo(function EntityNode({ data, selected }: NodeProps
       </div>
     </div>
   );
-});
+}, entityNodePropsEqual);
+
+/** Re-render the card exactly when a field it actually renders changes. A bare `memo`
+ *  default-compares the whole `data` object by reference, which is fragile here: the
+ *  derivation hands React Flow a fresh `data` object on every model refresh, yet the
+ *  subject-area accent could still paint stale (a membership change only moves `color`).
+ *  Comparing the render-affecting fields explicitly guarantees the accent — and the
+ *  hover/search/expand state — repaint when, and only when, they change. `color` is the
+ *  one this fixes: a node moved into or out of a subject area recolours in place without
+ *  any reflow. Sets are compared by identity (the derivation makes a new Set on a real
+ *  change), which is what the lightweight hover effect already relies on. */
+export function entityNodePropsEqual(
+  a: NodeProps<EntityNodeData>,
+  b: NodeProps<EntityNodeData>,
+): boolean {
+  if (a.selected !== b.selected) return false;
+  const x = a.data;
+  const y = b.data;
+  return (
+    x.entity === y.entity &&
+    x.color === y.color &&
+    x.dimmed === y.dimmed &&
+    x.highlighted === y.highlighted &&
+    x.showTypes === y.showTypes &&
+    x.collapseDetail === y.collapseDetail &&
+    x.expanded === y.expanded &&
+    x.endpointAttrs === y.endpointAttrs &&
+    x.highlightAttrs === y.highlightAttrs &&
+    x.dimAttrs === y.dimAttrs &&
+    x.onToggleExpand === y.onToggleExpand &&
+    x.onHoverAttr === y.onHoverAttr
+  );
+}
