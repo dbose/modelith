@@ -68,6 +68,15 @@ mdl = "mdl_cli.main:main"
 # example (in a separate enterprise package's pyproject, NOT here):
 #   mdl = "modelith_enterprise.registry:MdlResolver"
 
+# Plugin seam for new `mdl` subcommands: a package can add top-level commands (e.g. the
+# paid `mdl ci` drift gate) by exposing a `register(app)` callable here. The loader
+# (mdl_cli.plugins.load_command_plugins) runs it against the root Typer app at startup, so
+# the command appears in `mdl --help` with no change to the open CLI. Failures are
+# swallowed — a broken plugin never bricks the free CLI. Modelith ships none.
+[project.entry-points."modelith.commands"]
+# example (in a separate enterprise package's pyproject, NOT here):
+#   ci = "modelith_enterprise.ci:register"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
