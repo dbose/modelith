@@ -533,9 +533,36 @@ export function ModelCanvas({
         }
       }
       layoutedRef.current = true;
-      // Only auto-fit when there is NO saved layout — a restored arrangement must not
-      // be re-zoomed away.
-      if (!hasSaved) requestAnimationFrame(() => fitView({ padding: 0.15, duration: 300 }));
+      // Fit the viewport to what the user is actually looking at.
+      //  - Filtering: ALWAYS frame just the visible subset. Every entity is still in the
+      //    node array (hidden ones flagged), each keeping its full-model position, so a
+      //    plain fitView() zooms to the whole 79-node extent and leaves the handful of
+      //    filtered cards as specks in a corner (onlyRenderVisibleElements can even cull
+      //    them). We bound the VISIBLE nodes from their positions — same approach as the
+      //    search-framing effect — because fitView({nodes}) can't measure an off-screen
+      //    (culled) node, whereas a rect built from positions works regardless.
+      //  - Not filtering: fit all, but only when there is NO saved layout — a restored
+      //    arrangement must not be re-zoomed away.
+      if (filtering) {
+        const vis = merged.filter((n) => !n.hidden);
+        if (vis.length) {
+          let minX = Infinity;
+          let minY = Infinity;
+          let maxX = -Infinity;
+          let maxY = -Infinity;
+          for (const n of vis) {
+            const h = nodeHeight(n.data.entity);
+            minX = Math.min(minX, n.position.x);
+            minY = Math.min(minY, n.position.y);
+            maxX = Math.max(maxX, n.position.x + NODE_WIDTH);
+            maxY = Math.max(maxY, n.position.y + h);
+          }
+          const rect = { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+          requestAnimationFrame(() => fitBounds(rect, { padding: 0.2, duration: 300 }));
+        }
+      } else if (!hasSaved) {
+        requestAnimationFrame(() => fitView({ padding: 0.15, duration: 300 }));
+      }
       emitEdges(merged);
       return merged;
     });
@@ -554,6 +581,7 @@ export function ModelCanvas({
     activeAreas,
     endpointAttrsByEntity,
     fitView,
+    fitBounds,
     layoutStore,
     onRouteCommit,
     onAnchorCommit,

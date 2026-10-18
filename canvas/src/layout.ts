@@ -99,6 +99,10 @@ function dagrePass(
     marginx: 24,
     marginy: 24,
     ranker: "network-simplex",
+    // ER graphs routinely have FK cycles (self-refs, mutual references). Without a
+    // feedback-arc-set pass dagre's rank assignment degrades on a cyclic subgraph; greedy
+    // acyclic-ing keeps the layered "sources higher, derived lower" hierarchy readable.
+    acyclicer: "greedy",
   });
   g.setDefaultEdgeLabel(() => ({}));
 
