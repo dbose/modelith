@@ -3948,6 +3948,13 @@ def main() -> None:
     """
     _force_utf8_output()
 
+    # Apply subcommand plugins (e.g. the paid modelith-enterprise's `mdl ci`). Runs after
+    # the built-in commands are declared at import time and before the app is invoked, so a
+    # plugin sees them. Entirely fail-soft — a broken plugin never blocks the free CLI.
+    from mdl_cli.plugins import load_command_plugins
+
+    load_command_plugins(app)
+
     # Catch Typer's control-flow exceptions by the classes Typer ACTUALLY raises. This is
     # version-sensitive: older Typer vendors its own Click, so a parse error like
     # `NoSuchOption` derives from `typer._click.exceptions.UsageError` — a DIFFERENT class
