@@ -169,3 +169,136 @@ def test_naming_is_reproducible_and_valid_xml():
     """Deterministic GUIDs -> identical output for the same model (golden-friendly)."""
     m = _source_model()
     assert emit_erwin(m) == emit_erwin(m)
+
+
+# --- GUID preservation (Part C: re-import updates, not duplicates) ----------------
+
+
+def test_import_preserves_the_erwin_guid():
+    """Every imported object carries its original erwin GUID in `erwin_id`, so a later export
+    can re-emit it and erwin matches the object instead of duplicating it."""
+    m = _source_model()
+    assert all(le.erwin_id for le in m.logical_entities.values())
+    assert all(a.erwin_id for le in m.logical_entities.values() for a in le.attributes)
+    assert all(kg.erwin_id for kg in m.key_groups.values())
+    assert all(r.erwin_id for r in m.relationships.values())
+    assert all(sa.erwin_id for sa in m.subject_areas.values())
+    assert all(d.erwin_id for d in m.domains.values())
+
+
+def test_export_re_emits_the_original_guid():
+    """The preserved GUID appears verbatim in the export (stable identity across the round-trip)."""
+    m = _source_model()
+    xml = emit_erwin(m)
+    le = next(iter(m.logical_entities.values()))
+    sa = next(iter(m.subject_areas.values()))
+    assert f'id="{le.erwin_id}"' in xml
+    assert f'id="{sa.erwin_id}"' in xml
+
+
+# --- scoped export (Parts A + B) --------------------------------------------------
+
+
+def _two_sa_model():
+    """A mart with two subject areas and a CROSS-SA FK: Events.ae (SA1) -> Reference.dim (SA2).
+    All objects carry erwin_id so we can assert GUID preservation in the slice too."""
+    from mdl_core.ids import new_ulid
+    from mdl_core.ir import (
+        Attribute,
+        ConceptualEntity,
+        KeyGroup,
+        LogicalEntity,
+        Model,
+        ProjectConfig,
+        Relationship,
+        RelationshipEnd,
+        SubjectArea,
+    )
+
+    m = Model(ProjectConfig(name="mart"))
+    # SA2: shared dimension, NOT in SA1
+    dim_ce = ConceptualEntity(id=new_ulid(), name="DimSubject")
+    m.add(dim_ce)
+    dim_bk = Attribute(id=new_ulid(), name="usubjid", role="business_key", nullable=False,
+                       domain="string", erwin_id="{DIM-A}")
+    dim = LogicalEntity(id=new_ulid(), name="dim_subject", physical_name="DIM_SUBJECT",
+                        realises=dim_ce.id, attributes=[dim_bk], erwin_id="{DIM}")
+    m.add(dim)
+    m.add(KeyGroup(id=new_ulid(), entity=dim.id, name="pk_dim", type="pk",
+                   members=[dim_bk.id], erwin_id="{DIM-KG}"))
+    m.add(SubjectArea(id=new_ulid(), name="Reference", members=[dim_ce.id], erwin_id="{SA2}"))
+    # SA1: ae with a cross-SA FK to dim_subject
+    ae_ce = ConceptualEntity(id=new_ulid(), name="Ae")
+    m.add(ae_ce)
+    ae_bk = Attribute(id=new_ulid(), name="aeseq", role="business_key", nullable=False,
+                      domain="integer", erwin_id="{AE-A1}")
+    ae_fk = Attribute(id=new_ulid(), name="usubjid", role="attribute", nullable=False,
+                      domain="string", erwin_id="{AE-A2}")
+    ae = LogicalEntity(id=new_ulid(), name="ae", physical_name="AE", realises=ae_ce.id,
+                       attributes=[ae_bk, ae_fk], erwin_id="{AE}")
+    m.add(ae)
+    m.add(KeyGroup(id=new_ulid(), entity=ae.id, name="pk_ae", type="pk",
+                   members=[ae_bk.id], erwin_id="{AE-KG}"))
+    m.add(SubjectArea(id=new_ulid(), name="Events", members=[ae_ce.id], erwin_id="{SA1}"))
+    m.add(Relationship(
+        id=new_ulid(), name="ae_for_subject",
+        **{"from": RelationshipEnd(entity=ae.id, attributes=[ae_fk.id])},
+        to=RelationshipEnd(entity=dim.id, attributes=[dim_bk.id]),
+        cardinality="many_to_one", verb_phrase="describes", erwin_id="{REL}"))
+    return m
+
+
+def _entity_attr_counts(xml):
+    import re
+
+    out = {}
+    for mm in re.finditer(r"<Entity id=\"[^\"]+\">.*?</Entity>", xml, re.S):
+        block = mm.group(0)
+        name = re.search(r"<Name>([^<]+)</Name>", block).group(1)
+        out[name] = block.count("<Attribute id")
+    return out
+
+
+def test_scoped_export_includes_the_area_and_keeps_cross_sa_fk():
+    m = _two_sa_model()
+    xml = emit_erwin(m, subject_area="Events")
+    counts = _entity_attr_counts(xml)
+    # ae exported FULL (both its columns); dim_subject pulled in as a STUB (BK only)
+    assert counts.get("Ae") == 2
+    assert counts.get("DimSubject") == 1  # business key only
+    # the cross-SA FK is retained
+    assert "ae_for_subject" in xml
+
+
+def test_scoped_export_stub_keeps_the_original_guid():
+    """The out-of-area neighbour (dim) is emitted with its ORIGINAL erwin GUID, so a re-import
+    into the mart matches the real dimension instead of creating a duplicate."""
+    m = _two_sa_model()
+    xml = emit_erwin(m, subject_area="Events")
+    assert 'id="{DIM}"' in xml  # the stub carries dim's real GUID
+    assert 'id="{AE}"' in xml  # ae too
+
+
+@pytest.mark.skipif(not _XSD.exists(), reason="erwin XSDs not present (gitignored)")
+@pytest.mark.skipif(shutil.which("xmllint") is None, reason="xmllint not installed")
+def test_scoped_export_is_xsd_valid_and_round_trips(tmp_path):
+    from mdl_reverse.erwin import import_erwin
+
+    m = _two_sa_model()
+    xml = emit_erwin(m, subject_area="Events")
+    out = tmp_path / "slice.erwin.xml"
+    out.write_text(xml, encoding="utf-8")
+    r = subprocess.run(["xmllint", "--noout", "--schema", str(_XSD), str(out)],
+                       capture_output=True, text=True, check=False)
+    assert r.returncode == 0, r.stderr
+    # round-trips with the FK intact, no dangling-ref error
+    rt = import_erwin(xml).model
+    assert len(rt.relationships) == 1
+    errs = [d for d in validate(rt).items if d.severity == Severity.error]
+    assert not errs, [f"{d.code} {d.message}" for d in errs]
+
+
+def test_unscoped_export_unchanged_by_the_scope_feature():
+    """Guard: emit_erwin(m) with no subject_area is identical to emit_erwin(m, subject_area=None)."""
+    m = _source_model()
+    assert emit_erwin(m) == emit_erwin(m, subject_area=None)

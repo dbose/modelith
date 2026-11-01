@@ -67,15 +67,23 @@ _CARD = {
 }
 
 
-def _guid(ulid: str) -> str:
-    """A stable erwin-shaped GUID {8-4-4-4-12} derived from a ULID, so output is reproducible.
+def _guid(key: str) -> str:
+    """A stable erwin-shaped GUID {8-4-4-4-12} derived from a key, so output is reproducible.
 
-    The importer only uses GUIDs as intra-document join keys, so any stable unique mapping
-    works; we fold the 26-char ULID into 32 hex-ish chars deterministically."""
+    Used for synthetic keys (the model root, key-group members) and as the fallback for an
+    object with no preserved erwin GUID — any stable unique mapping works since the importer
+    only uses GUIDs as intra-document join keys."""
     import hashlib
 
-    h = hashlib.sha1(ulid.encode("utf-8")).hexdigest()  # noqa: S324 - not security, just a stable id
+    h = hashlib.sha1(key.encode("utf-8")).hexdigest()  # noqa: S324 - not security, just a stable id
     return f"{{{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}}}"
+
+
+def _oid(obj) -> str:
+    """The erwin GUID for a model object: its PRESERVED original `erwin_id` when the object came
+    from an erwin import (so a re-import matches/updates it, no duplicate), else a stable
+    synthetic GUID from its ULID (a Modelith-native object erwin will treat as new)."""
+    return getattr(obj, "erwin_id", None) or _guid(obj.id)
 
 
 def _apply_naming(name: str, cfg: ErwinNaming, which: str) -> str:
@@ -119,11 +127,34 @@ def _ref_array(parent: ET.Element, array_tag: str, item_tag: str, guids: list[st
         el.text = g
 
 
-def emit_erwin(model: Model, *, naming: ErwinNaming | None = None) -> str:
-    """Serialize `model` to an erwin XML document string (XSD-valid; round-trips via the
-    erwin importer). `naming` applies a team convention to logical/display names; when None
-    (the default) names are emitted verbatim."""
+def _scope_entity_ids(model: Model, subject_area: str) -> set[str]:
+    """The logical-entity ids that belong to `subject_area` (its name or id). SubjectArea.members
+    are CONCEPTUAL ids, so map each to the logical entity that realises it."""
+    le_by_ce = {le.realises: le.id for le in model.logical_entities.values() if le.realises}
+    ids: set[str] = set()
+    for sa in model.subject_areas.values():
+        if sa.name == subject_area or sa.id == subject_area:
+            for m in sa.members:
+                if m in le_by_ce:
+                    ids.add(le_by_ce[m])
+    return ids
+
+
+def emit_erwin(
+    model: Model, *, naming: ErwinNaming | None = None, subject_area: str | None = None
+) -> str:
+    """Serialize `model` to an erwin XML document string (XSD-valid; round-trips via the erwin
+    importer).
+
+    `naming` applies a team convention to logical/display names (None = verbatim).
+
+    `subject_area` (a name or id) scopes the export to ONE subject area: only that area's member
+    entities are emitted in full. A relationship from an in-scope entity to an entity OUTSIDE the
+    area is KEPT, and the outside entity is emitted as a minimal STUB (its GUID + name + business
+    key only) so the FK resolves — in erwin that neighbour is auto-included in the area's view.
+    None = the whole model (unchanged)."""
     cfg = naming or ErwinNaming()
+    scope = _scope_entity_ids(model, subject_area) if subject_area else None
 
     root = ET.Element("erwin")
     root.set("xmlns", _NS)
@@ -137,12 +168,67 @@ def emit_erwin(model: Model, *, naming: ErwinNaming | None = None) -> str:
     _sub(mdl, "ModelEnvProps")
     _sub(mdl, "ModelProps")
 
-    # --- domains (attributes reference them by GUID) ---------------------------------
+    # conceptual lookup, PK membership, and GUID maps (GUIDs prefer the preserved erwin_id).
+    ce_by_le: dict[str, ConceptualEntity] = {}
+    for ce in model.conceptual_entities.values():
+        for le in model.logical_entities.values():
+            if le.realises == ce.id:
+                ce_by_le[le.id] = ce
+    pk_members_by_le: dict[str, set[str]] = {}
+    for kg in model.key_groups.values():
+        if kg.type == "pk":
+            pk_members_by_le.setdefault(kg.entity, set()).update(kg.members)
+    entity_guid: dict[str, str] = {le.id: _oid(le) for le in model.logical_entities.values()}
+    attr_guid: dict[str, str] = {}
+    for le in model.logical_entities.values():
+        for a in le.attributes:
+            attr_guid[a.id] = _oid(a)
+
+    # Which relationships are in scope, and which OUT-of-scope entities they drag in as stubs.
+    in_scope_rels = []
+    stub_ids: set[str] = set()
+    for r in model.relationships.values():
+        c, pnt = r.from_.entity, r.to.entity
+        if c not in entity_guid or pnt not in entity_guid:
+            continue
+        if scope is None or c in scope or pnt in scope:
+            in_scope_rels.append(r)
+            if scope is not None:
+                for end in (c, pnt):
+                    if end not in scope:
+                        stub_ids.add(end)
+    # subtype (Category) relationships also pull neighbours into scope
+    in_scope_cats = []
+    for cat in model.categories.values():
+        if cat.supertype not in entity_guid:
+            continue
+        subs = [s for s in cat.subtypes if s in entity_guid]
+        if scope is None or cat.supertype in scope or any(s in scope for s in subs):
+            in_scope_cats.append(cat)
+            if scope is not None:
+                for e in (cat.supertype, *subs):
+                    if e not in scope:
+                        stub_ids.add(e)
+
+    def _emit(le):
+        return scope is None or le.id in scope
+
+    # --- domains (only those referenced by an EXPORTED attribute) --------------------
+    exported_domains: set[str] = set()
+    if scope is None:
+        exported_domains = {d.name for d in model.domains.values()}
+    else:
+        for le in model.logical_entities.values():
+            if _emit(le):
+                for a in le.attributes:
+                    if a.domain:
+                        exported_domains.add(a.domain)
     domain_guid_by_name: dict[str, str] = {}
-    if model.domains:
+    doms = [d for d in model.domains.values() if d.name in exported_domains]
+    if doms:
         grp = _sub(mdl, "Domain_Groups")
-        for dom in model.domains.values():
-            g = _guid(dom.id)
+        for dom in doms:
+            g = _oid(dom)
             domain_guid_by_name[dom.name] = g
             el = _sub(grp, "Domain")
             el.set("id", g)
@@ -151,49 +237,38 @@ def emit_erwin(model: Model, *, naming: ErwinNaming | None = None) -> str:
             _prop(p, "Logical_Data_Type", _BASE_TO_ERWIN.get(dom.base_type, "VARCHAR"))
             _prop(p, "Definition", dom.definition)
 
-    # --- entities (fold conceptual + logical back into one <Entity>) -----------------
-    # precompute, per logical entity: its conceptual, its pk member attribute-ids, and a
-    # GUID for each of its attributes (relationships reference attributes by GUID).
-    ce_by_le: dict[str, ConceptualEntity] = {}
-    for ce in model.conceptual_entities.values():
-        for le in model.logical_entities.values():
-            if le.realises == ce.id:
-                ce_by_le[le.id] = ce
-
-    pk_members_by_le: dict[str, set[str]] = {}
-    for kg in model.key_groups.values():
-        if kg.type == "pk":
-            pk_members_by_le.setdefault(kg.entity, set()).update(kg.members)
-
-    entity_guid: dict[str, str] = {le.id: _guid(le.id) for le in model.logical_entities.values()}
-    attr_guid: dict[str, str] = {}
-    for le in model.logical_entities.values():
-        for a in le.attributes:
-            attr_guid[a.id] = _guid(a.id)
-
-    if model.logical_entities:
+    # --- entities (full for in-scope; stubs for cross-boundary neighbours) -----------
+    full_les = [le for le in model.logical_entities.values() if _emit(le)]
+    stub_les = [le for le in model.logical_entities.values()
+                if le.id in stub_ids and not _emit(le)]
+    if full_les or stub_les:
         egrp = _sub(mdl, "Entity_Groups")
-        for le in model.logical_entities.values():
+        for le in full_les:
             _emit_entity(egrp, le, ce_by_le.get(le.id), model, cfg,
                          entity_guid, attr_guid, pk_members_by_le, domain_guid_by_name)
+        for le in stub_les:
+            _emit_entity_stub(egrp, le, ce_by_le.get(le.id), cfg, entity_guid, attr_guid,
+                              pk_members_by_le)
 
     # --- relationships (FK + subtype-from-Category) ----------------------------------
     rels = _sub(mdl, "Relationship_Groups")
-    _emit_fk_relationships(rels, model, entity_guid, attr_guid)
-    _emit_subtype_relationships(rels, model, entity_guid, attr_guid)
+    for r in in_scope_rels:
+        _emit_fk_relationship(rels, r, entity_guid, attr_guid)
+    for cat in in_scope_cats:
+        _emit_subtype_relationship(rels, cat, entity_guid, attr_guid)
     if not list(rels):
         mdl.remove(rels)
 
-    # --- subject areas ----------------------------------------------------------------
-    if model.subject_areas:
+    # --- subject areas (the scoped one, or all) --------------------------------------
+    le_by_ce: dict[str, str] = {le.realises: le.id for le in model.logical_entities.values()
+                                if le.realises}
+    sas = [sa for sa in model.subject_areas.values()
+           if subject_area is None or sa.name == subject_area or sa.id == subject_area]
+    if sas:
         sgrp = _sub(mdl, "Subject_Area_Groups")
-        # members are conceptual-entity ids; map each to its entity GUID (importer resolves
-        # a subject-area member ref against the entity's conceptual id).
-        le_by_ce: dict[str, str] = {le.realises: le.id for le in model.logical_entities.values()
-                                    if le.realises}
-        for sa in model.subject_areas.values():
+        for sa in sas:
             el = _sub(sgrp, "Subject_Area")
-            el.set("id", _guid(sa.id))
+            el.set("id", _oid(sa))
             p = _sub(el, "Subject_AreaProps")
             _prop(p, "Name", sa.name)
             _prop(p, "Definition", sa.definition)
@@ -228,7 +303,7 @@ def _emit_entity(egrp, le: LogicalEntity, ce, model, cfg, entity_guid, attr_guid
         kgrp = _sub(el, "Key_Group_Groups")
         for kg in kgs:
             kel = _sub(kgrp, "Key_Group")
-            kel.set("id", _guid(kg.id))
+            kel.set("id", _oid(kg))
             kp = _sub(kel, "Key_GroupProps")
             _prop(kp, "Name", kg.name)
             _prop(kp, "Key_Group_Type", _KG_TYPE.get(kg.type, "Alternate_Key"))
@@ -263,43 +338,56 @@ def _emit_attribute(agrp, a: Attribute, cfg, attr_guid, is_pk: bool, domain_guid
     _prop(p, "Null_Option_Type", "NOT_NULL" if not a.nullable else "NULL")
 
 
-def _emit_fk_relationships(rels, model, entity_guid, attr_guid) -> None:
-    for r in model.relationships.values():
-        child = r.from_.entity  # from = child/many side
-        parent = r.to.entity  # to = parent/one side
-        if child not in entity_guid or parent not in entity_guid:
+def _emit_entity_stub(egrp, le: LogicalEntity, ce, cfg, entity_guid, attr_guid,
+                      pk_members_by_le) -> None:
+    """A cross-boundary neighbour: emit just enough for the FK to resolve — the entity's GUID
+    (its original erwin_id, so erwin matches the real mart entity), name, and its business-key
+    attribute(s) only (NOT the full attribute list). No key groups, no non-key columns."""
+    el = _sub(egrp, "Entity")
+    el.set("id", entity_guid[le.id])
+    p = _sub(el, "EntityProps")
+    display = ce.name if ce else le.name
+    _prop(p, "Name", _apply_naming(display, cfg, "entity"))
+    _prop(p, "Physical_Name", le.physical_name or le.name)
+    pk_ids = pk_members_by_le.get(le.id, set())
+    bk = [a for a in le.attributes if a.role == "business_key" or a.id in pk_ids]
+    if bk:
+        agrp = _sub(el, "Attribute_Groups")
+        for a in bk:
+            _emit_attribute(agrp, a, cfg, attr_guid, True, {})
+
+
+def _emit_fk_relationship(rels, r, entity_guid, attr_guid) -> None:
+    child = r.from_.entity  # from = child/many side
+    parent = r.to.entity  # to = parent/one side
+    el = _sub(rels, "Relationship")
+    el.set("id", _oid(r))
+    p = _sub(el, "RelationshipProps")
+    _prop(p, "Name", r.name)
+    _prop(p, "Definition", r.definition)
+    _prop(p, "Type", "Identifying" if r.identifying else "Non_Identifying")
+    _prop(p, "Cardinality", _CARD.get(r.cardinality, "Zero_One_or_More"))
+    _prop(p, "Parent_To_Child_Verb_Phrase", r.verb_phrase)
+    _prop(p, "Child_To_Parent_Verb_Phrase", r.inverse_verb_phrase)
+    _ref(p, "Parent_Entity_Ref", entity_guid[parent])
+    _ref(p, "Child_Entity_Ref", entity_guid[child])
+
+
+def _emit_subtype_relationship(rels, cat, entity_guid, attr_guid) -> None:
+    """Re-emit a Category as subtype relationships (supertype -> each subtype), carrying the
+    discriminator, so the importer rebuilds the Category."""
+    for sub_id in cat.subtypes:
+        if sub_id not in entity_guid:
             continue
         el = _sub(rels, "Relationship")
-        el.set("id", _guid(r.id))
+        el.set("id", _guid(f"{cat.id}:{sub_id}"))
         p = _sub(el, "RelationshipProps")
-        _prop(p, "Name", r.name)
-        _prop(p, "Definition", r.definition)
-        _prop(p, "Type", "Identifying" if r.identifying else "Non_Identifying")
-        _prop(p, "Cardinality", _CARD.get(r.cardinality, "Zero_One_or_More"))
-        _prop(p, "Parent_To_Child_Verb_Phrase", r.verb_phrase)
-        _prop(p, "Child_To_Parent_Verb_Phrase", r.inverse_verb_phrase)
-        _ref(p, "Parent_Entity_Ref", entity_guid[parent])
-        _ref(p, "Child_Entity_Ref", entity_guid[child])
-
-
-def _emit_subtype_relationships(rels, model, entity_guid, attr_guid) -> None:
-    """Re-emit each Category as subtype relationships (supertype -> each subtype), carrying the
-    discriminator, so the importer rebuilds the Category."""
-    for cat in model.categories.values():
-        if cat.supertype not in entity_guid:
-            continue
-        for sub_id in cat.subtypes:
-            if sub_id not in entity_guid:
-                continue
-            el = _sub(rels, "Relationship")
-            el.set("id", _guid(f"{cat.id}:{sub_id}"))
-            p = _sub(el, "RelationshipProps")
-            _prop(p, "Name", f"{cat.name}_{sub_id[-6:]}")
-            _prop(p, "Type", "Subtype_Complete" if cat.complete else "Subtype_Incomplete")
-            _ref(p, "Parent_Entity_Ref", entity_guid[cat.supertype])  # supertype = parent
-            _ref(p, "Child_Entity_Ref", entity_guid[sub_id])  # subtype = child
-            if cat.discriminator and cat.discriminator in attr_guid:
-                _ref(p, "Subtype_Discriminator_Ref", attr_guid[cat.discriminator])
+        _prop(p, "Name", f"{cat.name}_{sub_id[-6:]}")
+        _prop(p, "Type", "Subtype_Complete" if cat.complete else "Subtype_Incomplete")
+        _ref(p, "Parent_Entity_Ref", entity_guid[cat.supertype])  # supertype = parent
+        _ref(p, "Child_Entity_Ref", entity_guid[sub_id])  # subtype = child
+        if cat.discriminator and cat.discriminator in attr_guid:
+            _ref(p, "Subtype_Discriminator_Ref", attr_guid[cat.discriminator])
 
 
 def _pretty(root: ET.Element) -> str:

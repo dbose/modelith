@@ -210,9 +210,10 @@ def create_app(
     # the client previews and proposes (it does not write the model itself).
 
     @app.get("/api/export/{fmt}")
-    def export_model(fmt: str, dialect: str = "postgres"):
+    def export_model(fmt: str, dialect: str = "postgres", subject_area: str = None):
         """Export the model to an interchange format. Returns text/plain (or CSV) so
-        the browser can offer it as a download."""
+        the browser can offer it as a download. `subject_area` (erwin only) scopes the export
+        to one subject area."""
         from fastapi.responses import PlainTextResponse
         from mdl_emit_erd import emit_csv, emit_dbml, emit_erwin, emit_mermaid, emit_sql_ddl
 
@@ -226,7 +227,11 @@ def create_app(
                 text, media, ext = emit_dbml(model), "text/plain", "dbml"
             elif fmt == "erwin":
                 # the team naming convention (if any) travels in the project config, same as the CLI
-                text = emit_erwin(model, naming=model.config.export.erwin.naming)
+                text = emit_erwin(
+                    model,
+                    naming=model.config.export.erwin.naming,
+                    subject_area=subject_area or None,
+                )
                 media, ext = "application/xml", "xml"
             elif fmt == "csv":
                 text, media, ext = emit_csv(model), "text/csv", "csv"

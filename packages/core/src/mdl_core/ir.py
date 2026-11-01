@@ -216,6 +216,7 @@ class SubjectArea(_Base):
     name: str
     definition: str | None = None
     members: list[ULID] = Field(default_factory=list)
+    erwin_id: str | None = None  # original erwin GUID (see the note on other objects)
 
 
 class ConceptualEntity(_OntologyMixin, _Base):
@@ -234,6 +235,8 @@ class ConceptualEntity(_OntologyMixin, _Base):
     # Derived, not authored: logical entities that realise this concept.
     realised_by: list[ULID] = Field(default_factory=list)
     udp: Udp | None = None  # user-defined properties (erwin UDPs)
+    # NOTE: the erwin GUID for an entity lives on the LogicalEntity, not here — the importer
+    # splits one erwin <Entity> into a conceptual + logical pair, and export folds them back.
 
 
 class Term(_OntologyMixin, _Base):
@@ -266,6 +269,10 @@ class Domain(_Base):
     allowed_values: list[str | int] | None = None  # inline enumeration
     value_set: str | None = None  # name-ref to a CodeSet for shared enumerations
     udp: Udp | None = None  # user-defined properties (erwin UDPs)
+    # The original erwin GUID, preserved on import so a later `mdl export erwin` re-emits the
+    # SAME id and erwin matches (updates) the object instead of creating a duplicate. None for
+    # objects not sourced from erwin (export then mints a stable synthetic GUID).
+    erwin_id: str | None = None
 
 
 class CodeValue(_Base):
@@ -301,6 +308,10 @@ class Attribute(_OntologyMixin, _Base):
     ontology: OntologyAlignment | None = None  # legacy, migrated on load
     term_map: TermMap | None = None  # R2RML predicate/datatype override (KG mapping)
     udp: Udp | None = None  # user-defined properties (erwin UDPs)
+    # The original erwin GUID, preserved on import so a later `mdl export erwin` re-emits the
+    # SAME id and erwin matches (updates) the object instead of creating a duplicate. None for
+    # objects not sourced from erwin (export then mints a stable synthetic GUID).
+    erwin_id: str | None = None
 
 
 class LogicalEntity(_Base):
@@ -320,6 +331,10 @@ class LogicalEntity(_Base):
     unmanaged: bool | None = None
     term_map: TermMap | None = None  # R2RML subject/class override (KG mapping)
     udp: Udp | None = None  # user-defined properties (erwin UDPs)
+    # The original erwin GUID, preserved on import so a later `mdl export erwin` re-emits the
+    # SAME id and erwin matches (updates) the object instead of creating a duplicate. None for
+    # objects not sourced from erwin (export then mints a stable synthetic GUID).
+    erwin_id: str | None = None
 
 
 class RelationshipEnd(_Base):
@@ -349,6 +364,10 @@ class Relationship(_Base):
     inverse_verb_phrase: str | None = None
     enforce: RelationshipEnforce = Field(default_factory=RelationshipEnforce)
     udp: Udp | None = None  # user-defined properties (erwin UDPs)
+    # The original erwin GUID, preserved on import so a later `mdl export erwin` re-emits the
+    # SAME id and erwin matches (updates) the object instead of creating a duplicate. None for
+    # objects not sourced from erwin (export then mints a stable synthetic GUID).
+    erwin_id: str | None = None
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
@@ -371,6 +390,10 @@ class KeyGroup(_Base):
     type: KeyGroupType = "pk"
     members: list[ULID] = Field(default_factory=list)  # ordered attribute ULIDs
     udp: Udp | None = None  # user-defined properties (erwin UDPs)
+    # The original erwin GUID, preserved on import so a later `mdl export erwin` re-emits the
+    # SAME id and erwin matches (updates) the object instead of creating a duplicate. None for
+    # objects not sourced from erwin (export then mints a stable synthetic GUID).
+    erwin_id: str | None = None
 
 
 class Category(_Base):
@@ -394,6 +417,7 @@ class Category(_Base):
     exclusive: bool = True  # disjoint subtypes (an instance is exactly one)
     materialization: CategoryMaterialization = "single_table"
     udp: Udp | None = None
+    erwin_id: str | None = None  # original erwin GUID (see the note on other objects)
 
 
 class PhysicalColumn(_Base):
