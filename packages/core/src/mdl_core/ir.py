@@ -569,6 +569,39 @@ class ScaffoldConfig(_Base):
     dbt_project_dir: str | None = None
 
 
+class ErwinNaming(_Base):
+    """Team naming convention applied to LOGICAL/display names when exporting erwin XML
+    (`mdl export erwin`). erwin does not enforce naming at the schema level, so a convention
+    is the exporter's job. All default to a no-op, so export is verbatim unless a team opts in.
+
+    Only the entity/attribute DISPLAY names (erwin `Name`) are rewritten; `Physical_Name`
+    always stays the raw snake-case physical identifier for the database.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    entity_case: Literal["verbatim", "title", "upper", "lower"] = "verbatim"
+    attribute_case: Literal["verbatim", "title", "upper", "lower"] = "verbatim"
+    # replace '_' with ' ' in the display name (e.g. adverse_event -> "Adverse Event")
+    replace_underscore_with_space: bool = False
+
+
+class ErwinExportConfig(_Base):
+    """Settings for `mdl export erwin`."""
+
+    model_config = ConfigDict(extra="allow")
+
+    naming: ErwinNaming = Field(default_factory=ErwinNaming)
+
+
+class ExportConfig(_Base):
+    """Per-format export settings. Today only erwin has options; others may follow."""
+
+    model_config = ConfigDict(extra="allow")
+
+    erwin: ErwinExportConfig = Field(default_factory=ErwinExportConfig)
+
+
 class ProjectConfig(_Base):
     model_config = ConfigDict(extra="allow")
 
@@ -590,6 +623,8 @@ class ProjectConfig(_Base):
     # How this project was bootstrapped (import/init layout). Default `model`; recorded so
     # a re-run reproduces the layout. See ScaffoldConfig.
     scaffold: ScaffoldConfig = Field(default_factory=ScaffoldConfig)
+    # Per-format export settings (e.g. the erwin naming convention). See ExportConfig.
+    export: ExportConfig = Field(default_factory=ExportConfig)
 
 
 # --- The in-memory graph ---------------------------------------------------
