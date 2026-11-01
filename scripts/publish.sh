@@ -44,8 +44,18 @@ uv cache clean modelith-dbt >/dev/null 2>&1 || true
 rm -rf dist
 uv build
 
-read -rsp "PyPI token: " TOKEN < /dev/tty; echo
-UV_PUBLISH_USERNAME=__token__ UV_PUBLISH_PASSWORD="$TOKEN" uv publish dist/*
+# A clear, unmistakable prompt so this never looks like a hang after the build output.
+# (UV_PUBLISH_TOKEN in the environment skips the prompt entirely.)
+if [ -n "${UV_PUBLISH_TOKEN:-}" ]; then
+  echo "==> publishing to PyPI (token from UV_PUBLISH_TOKEN)"
+  uv publish dist/*
+else
+  echo ""
+  echo "==> ready to publish ${VERSION} to PyPI. Paste your PyPI token and press Enter."
+  echo "    (input is hidden; nothing will echo as you type)"
+  read -rsp "    PyPI token: " TOKEN < /dev/tty; echo
+  UV_PUBLISH_USERNAME=__token__ UV_PUBLISH_PASSWORD="$TOKEN" uv publish dist/*
+fi
 
 # Only tag once the upload succeeded, so a failed publish leaves no tag behind.
 echo "==> committing and tagging v$VERSION"
