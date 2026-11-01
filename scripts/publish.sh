@@ -15,11 +15,30 @@ done
 
 echo "==> releasing modelith-dbt $VERSION"
 sed -i '' -E "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
+# Keep uv.lock's recorded version in step with pyproject (a past release bumped pyproject
+# but not the lock, leaving them inconsistent). Cheap no-op when already in sync.
+uv lock >/dev/null 2>&1 || true
 
 # The canvas bundle is a committed build output; uv build does not run vite.
-# vite needs Node 18+ (default node 16 fails on crypto.getRandomValues).
-export PATH="$HOME/.nvm/versions/node/v20.20.1/bin:$PATH"
-(cd canvas && npx vite build >/dev/null)
+# vite needs Node 18+ (older node fails on crypto.getRandomValues). Prefer an installed
+# Node 20 via nvm when present, else use whatever `node` is on PATH — but require >=18 and
+# fail loudly rather than build under a too-old node. (A hardcoded nvm path silently fell
+# back to the default node when that exact version wasn't installed, which hung the build.)
+if [ -s "$HOME/.nvm/nvm.sh" ]; then
+  # shellcheck disable=SC1091
+  . "$HOME/.nvm/nvm.sh"
+  nvm use 20 >/dev/null 2>&1 || nvm use node >/dev/null 2>&1 || true
+fi
+NODE_MAJOR="$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)"
+if [ "$NODE_MAJOR" -lt 18 ]; then
+  echo "error: node >=18 required to build the canvas (found $(node -v 2>/dev/null || echo none));" >&2
+  echo "       install one, e.g. 'nvm install 20', then re-run." >&2
+  exit 1
+fi
+echo "    building canvas bundle with node $(node -v)"
+# Use the package's own build script (local vite binary) rather than `npx vite`, which can
+# block on an install prompt. Output is shown so a build failure is visible, not a silent hang.
+(cd canvas && npm run build)
 
 uv cache clean modelith-dbt >/dev/null 2>&1 || true
 rm -rf dist
