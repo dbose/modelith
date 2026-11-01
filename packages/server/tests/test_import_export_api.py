@@ -31,7 +31,18 @@ def client(model_dir):
 def test_export_formats_list(client):
     body = client.get("/api/export").json()
     ids = {f["id"] for f in body["formats"]}
-    assert {"sql", "mermaid", "dbml", "csv"} <= ids
+    assert {"sql", "mermaid", "dbml", "erwin", "csv"} <= ids
+
+
+def test_export_erwin(client):
+    """The Export menu's erwin option serves a downloadable erwin XML document."""
+    r = client.get("/api/export/erwin")
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("application/xml")
+    assert 'filename="' in r.headers["content-disposition"] and ".xml" in (
+        r.headers["content-disposition"]
+    )
+    assert r.text.lstrip().startswith("<?xml") and 'Format="erwin"' in r.text
 
 
 def test_export_sql(client):

@@ -214,7 +214,7 @@ def create_app(
         """Export the model to an interchange format. Returns text/plain (or CSV) so
         the browser can offer it as a download."""
         from fastapi.responses import PlainTextResponse
-        from mdl_emit_erd import emit_csv, emit_dbml, emit_mermaid, emit_sql_ddl
+        from mdl_emit_erd import emit_csv, emit_dbml, emit_erwin, emit_mermaid, emit_sql_ddl
 
         model = _load().model
         try:
@@ -224,6 +224,10 @@ def create_app(
                 text, media, ext = emit_mermaid(model), "text/plain", "mmd"
             elif fmt == "dbml":
                 text, media, ext = emit_dbml(model), "text/plain", "dbml"
+            elif fmt == "erwin":
+                # the team naming convention (if any) travels in the project config, same as the CLI
+                text = emit_erwin(model, naming=model.config.export.erwin.naming)
+                media, ext = "application/xml", "xml"
             elif fmt == "csv":
                 text, media, ext = emit_csv(model), "text/csv", "csv"
             elif fmt == "contract":
@@ -260,6 +264,7 @@ def create_app(
                     },
                     {"id": "mermaid", "label": "Mermaid erDiagram"},
                     {"id": "dbml", "label": "DBML (dbdiagram.io)"},
+                    {"id": "erwin", "label": "erwin XML"},
                     {"id": "csv", "label": "CSV (spreadsheet)"},
                     {"id": "contract", "label": "Data contract (ODCS)"},
                     {"id": "cypher", "label": "Neo4j Cypher"},
