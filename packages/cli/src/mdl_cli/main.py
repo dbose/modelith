@@ -3011,18 +3011,30 @@ def export_dbml_cmd(
 def export_erwin_cmd(
     model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
     out: Path = typer.Option(None, "--out", "-o"),
+    subject_area: str = typer.Option(
+        None,
+        "--subject-area",
+        "-s",
+        help="Export only this subject area (name or id); FKs to entities outside it are kept, "
+        "and those entities are emitted as stubs so the FK resolves. Default: the whole model.",
+    ),
 ) -> None:
     """Export erwin XML (validates against the erwin XSD; round-trips via `mdl import erwin`).
 
     Targets the published erwin XSD and Modelith's own importer; real erwin Data Modeler
     open-ability is not guaranteed. A team naming convention for the exported display names is
     opt-in via the `export.erwin.naming` block in mdl-project.yaml (off by default = verbatim).
+
+    With --subject-area, exports just that area's slice for merging back into the mart. An erwin
+    GUID preserved on import is re-emitted, so erwin UPDATES the matching object rather than
+    creating a duplicate (objects authored in Modelith have no GUID and come in as new).
     """
     from mdl_emit_erd import emit_erwin
 
     repo = _load(model_dir)
     naming = repo.model.config.export.erwin.naming
-    _emit_text(emit_erwin(repo.model, naming=naming), out, "erwin.xml")
+    xml = emit_erwin(repo.model, naming=naming, subject_area=subject_area)
+    _emit_text(xml, out, "erwin.xml")
 
 
 @export_app.command("csv")

@@ -52,3 +52,15 @@ def test_export_erwin_honours_the_naming_config(tmp_path):
     # logical/display name got underscores -> spaces; physical stayed raw
     assert "<Name>counterparty id</Name>" in xml
     assert "<Physical_Name>COUNTERPARTY</Physical_Name>" in xml
+
+
+def test_export_erwin_scoped_to_subject_area(tmp_path):
+    """`-s <SA>` exports just that subject area's slice."""
+    model = _import_model(tmp_path)
+    dst = tmp_path / "slice.erwin.xml"
+    r = runner.invoke(app, ["export", "erwin", "-m", str(model), "-s", "Trading", "-o", str(dst)])
+    assert r.exit_code == 0, r.output
+    xml = dst.read_text()
+    assert 'Format="erwin"' in xml and "<Subject_Area " in xml
+    # the Trading area's entities are present
+    assert "<Name>Counterparty</Name>" in xml

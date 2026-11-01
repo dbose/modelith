@@ -381,6 +381,7 @@ def import_erwin(source: str | Path, *, project_name: str | None = None) -> Erwi
                 ),
                 definition=obj.props.get("Definition"),
                 udp=_resolve_udp(obj, udp_name_by_def_id),
+                erwin_id=obj.id,
             )
         )
 
@@ -421,6 +422,7 @@ def import_erwin(source: str | Path, *, project_name: str | None = None) -> Erwi
                 role="business_key" if is_key else "attribute",
                 nullable=_nullable(a.props.get("Null_Option_Type"), is_key),
                 udp=_resolve_udp(a, udp_name_by_def_id),
+                erwin_id=a.id,
             )
             attrs.append(attr)
             attr_le_by_erwin_id[a.id] = attr.id
@@ -441,6 +443,7 @@ def import_erwin(source: str | Path, *, project_name: str | None = None) -> Erwi
             definition=obj.props.get("Definition"),
             attributes=attrs,
             udp=_resolve_udp(obj, udp_name_by_def_id),
+            erwin_id=obj.id,  # the erwin <Entity> GUID; export folds conceptual+logical back to it
         )
         model.add(le)
         le_by_erwin_id[obj.id] = le
@@ -464,6 +467,7 @@ def import_erwin(source: str | Path, *, project_name: str | None = None) -> Erwi
                     type=_key_group_ir_type(kg),
                     members=members,
                     udp=_resolve_udp(kg, udp_name_by_def_id),
+                    erwin_id=kg.id,
                 )
             )
 
@@ -563,6 +567,7 @@ def _build_relationships(
                 verb_phrase=obj.props.get("Parent_To_Child_Verb_Phrase"),
                 inverse_verb_phrase=obj.props.get("Child_To_Parent_Verb_Phrase"),
                 udp=_resolve_udp(obj, udp_name_by_def_id),
+                erwin_id=obj.id,
             )
         )
 
@@ -625,6 +630,7 @@ def _build_subject_areas(ordered, model, ce_id_by_entity, warnings) -> None:
                 name=sname,
                 definition=obj.props.get("Definition"),
                 members=members,
+                erwin_id=obj.id,
             )
         )
 
