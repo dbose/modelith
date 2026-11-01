@@ -121,6 +121,27 @@ def test_round_trip_preserves_relationship_verb_phrases():
     assert rt_vp == src_vp
 
 
+def _subject_area_membership(m):
+    """Each subject area's name -> sorted member ENTITY names. Membership is stored as
+    conceptual-entity ids, so resolve each back to its logical entity name."""
+    le_by_ce = {le.realises: le for le in m.logical_entities.values() if le.realises}
+    return {
+        sa.name: sorted(le_by_ce[mem].name for mem in sa.members if mem in le_by_ce)
+        for sa in m.subject_areas.values()
+    }
+
+
+def test_round_trip_preserves_subject_area_membership():
+    """Not just that the subject area survives, but that it keeps exactly its member entities."""
+    src = _source_model()
+    membership = _subject_area_membership(src)
+    assert membership and any(members for members in membership.values()), (
+        "fixture must have a subject area with members for this test to mean anything"
+    )
+    rt = _reimport(emit_erwin(src))
+    assert _subject_area_membership(rt) == membership
+
+
 # --- naming convention ------------------------------------------------------------
 
 
