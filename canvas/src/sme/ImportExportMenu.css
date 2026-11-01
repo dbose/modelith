@@ -103,6 +103,11 @@
   color: var(--text-dim);
   margin: 0;
 }
+/* the "· filtered area only" note on the erwin export item when a single SA is filtered */
+.ie-scope {
+  font-size: 11px;
+  color: var(--text-dim);
+}
 .ie-textarea {
   width: 100%;
   font-family: var(--mono);

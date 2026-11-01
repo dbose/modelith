@@ -50,6 +50,7 @@ export function TopBar({
   onToggleDrawer,
   drawerOpen,
   filterCount,
+  scopeSubjectArea,
 }: {
   doc: ModelDoc;
   diagnostics: DiagnosticsDoc | null;
@@ -83,6 +84,7 @@ export function TopBar({
   drawerOpen: boolean;
   /** number of subject areas currently filtered to (0 = showing all) — badges the hamburger */
   filterCount: number;
+  scopeSubjectArea: string | null;
 }) {
   const errors = diagnostics?.items.filter((d) => d.severity === "error").length ?? 0;
   const warnings = diagnostics?.items.filter((d) => d.severity === "warning").length ?? 0;
@@ -251,6 +253,7 @@ export function TopBar({
             buttonClass="grp-btn"
             applyBatch={onImportBatch}
             openImport={openImport}
+            scopeSubjectArea={scopeSubjectArea}
           />
         </div>
       </div>

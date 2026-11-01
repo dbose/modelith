@@ -26,6 +26,7 @@ export function ImportExportMenu({
   openImport = false,
   prefillImport = "",
   onPreview,
+  scopeSubjectArea = null,
 }: {
   exec: Exec;
   canEdit: boolean;
@@ -49,6 +50,9 @@ export function ImportExportMenu({
    *  reveals the canvas with `?import=1`, so the same wizard the toolbar button
    *  opens is already up when the panel appears. */
   openImport?: boolean;
+  /** when a single subject area is filtered on the canvas, the erwin export is scoped to it
+   *  (its id); null = export the whole model. Other formats ignore it. */
+  scopeSubjectArea?: string | null;
 }) {
   const [open, setOpen] = useState<"export" | "import" | null>(
     openImport && canEdit ? "import" : null,
@@ -112,19 +116,25 @@ export function ImportExportMenu({
               </select>
             </label>
           )}
-          {formats.map((f) => (
-            <a
-              key={f.id}
-              className="ie-item"
-              href={exportUrl(f.id, f.id === "sql" ? dialect : undefined)}
-              // download attribute lets the browser save rather than navigate; the
-              // server also sets Content-Disposition: attachment as a belt-and-braces.
-              download
-              onClick={() => setOpen(null)}
-            >
-              {f.label}
-            </a>
-          ))}
+          {formats.map((f) => {
+            // erwin export honours a single active subject-area filter (exports just that
+            // slice); every other format always exports the whole model.
+            const scoped = f.id === "erwin" ? scopeSubjectArea : null;
+            return (
+              <a
+                key={f.id}
+                className="ie-item"
+                href={exportUrl(f.id, f.id === "sql" ? dialect : undefined, scoped)}
+                // download attribute lets the browser save rather than navigate; the
+                // server also sets Content-Disposition: attachment as a belt-and-braces.
+                download
+                onClick={() => setOpen(null)}
+              >
+                {f.label}
+                {scoped && <span className="ie-scope"> · filtered area only</span>}
+              </a>
+            );
+          })}
         </div>
       )}
 
