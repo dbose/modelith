@@ -1,13 +1,24 @@
 """Emit erwin XML from a Modelith model — the inverse of `mdl import erwin`.
 
 Goals (and their guards):
-  - **XSD-valid** against erwin/ERwinSchema.xsd: root `<erwin FileVersion="9.8.0000"
-    Format="erwin">` → namespaced `<Model id=…>` with the required `<ModelEnvProps/>` +
-    `<ModelProps/>`, then the `*_Groups`. Every object element carries a required `id`, and its
-    scalar values live in a `<XxxProps>` child as element TEXT.
+  - **Imports into real erwin 10.10.** erwin writes a specific dialect: an UPPERCASE
+    `{GUID}+00000000` object id, NUMERIC enum codes (Relationship_Type 2/7, Cardinality -3/-1,
+    Null_Option_Type 0/1, Attribute Type 0/100, Entity Type 1, Key_Group_Type PK/AKn/IFn), and
+    FileVersion "10.10.<build>". Emitting the word forms instead made erwin's import engine (EAT)
+    hang. We emit the codes; the mdl_reverse importer reads both codes and words, so round-trips
+    hold. The published ERwinSchema.xsd is LOOSER than erwin's real behaviour in some places
+    (it types the enums as free strings) and STRICTER in others (its FileVersion pattern rejects
+    the 10.10 form erwin itself writes), so XSD-validity is a structural check, not the
+    compatibility oracle — a real erwin import is.
+  - Skeleton: root `<erwin FileVersion=… Format="erwin">` → namespaced `<Model id=…>` with the
+    required `<ModelEnvProps/>` + `<ModelProps/>`, then the `*_Groups`. Every object element
+    carries a required `id`, and its scalar values live in a `<XxxProps>` child as element TEXT.
   - **Round-trips** through mdl_reverse.erwin.import_erwin back to an equivalent model. Because
     the importer discards erwin GUIDs and mints fresh ULIDs, equivalence is STRUCTURAL
     (names/types/members/verb-phrases), not id-identity.
+  - A SCOPED export (one subject area) emits only that area's entities, keeps FKs WITHIN the
+    area, and DROPS cross-area FKs (no stub entity — erwin chokes on a thin stub); cross-area
+    FKs are re-established in erwin after the slice imports.
 
 The importer is the authoritative spec; this mirrors its reads in reverse. The key
 asymmetries it undoes:
@@ -34,9 +45,13 @@ from mdl_core.ir import (
 
 _NS = "http://www.erwin.com/dm"
 _NS_DATA = "http://www.erwin.com/dm/data"
-# The FileVersion pattern requires major.minor with an optional 4-digit build: "9.8.0000"
-# validates; "9.8.00" does NOT. Keep the 4 digits.
-_FILE_VERSION = "9.8.0000"
+# Real erwin 10.10 writes FileVersion as "10.10.<build>" (e.g. "10.10.38485"). The published
+# ERwinSchema.xsd pattern is stricter than what erwin itself emits (it allows only a single
+# leading digit), so erwin's own exports don't validate against it — but erwin's IMPORTER
+# accepts the 10.10 form, and a real-erwin import is the target here, not XSD-validity. The
+# XSD-validation tests tolerate this by validating against the looser dialect erwin actually
+# reads; see the test module.
+_FILE_VERSION = "10.10.38485"
 
 # Modelith abstract base type -> an erwin logical datatype the importer maps back 1:1
 # (see mdl_reverse.erwin._ERWIN_TYPE). Round-trip safe.
@@ -50,21 +65,46 @@ _BASE_TO_ERWIN = {
     "timestamp": "TIMESTAMP",
 }
 
-# Modelith KeyGroupType -> erwin Key_Group_Type (importer reads these back via _key_group_ir_type)
+# --- erwin 10.10 numeric enum codes ------------------------------------------------
+# erwin 10.10 writes these properties as NUMERIC codes, not words. Our exporter used to emit the
+# word forms (e.g. "Non_Identifying", "Zero_One_or_More"); a real erwin import either rejected
+# them or hung on the resulting malformed graph. Values decoded from a real erwin 10.10 export of
+# the same model (the authoritative source — the published XSD types all of these as free strings
+# and does not carry the codes). The erwin importer in mdl_reverse reads BOTH the numeric codes
+# and the old word forms, so these are round-trip safe.
+
+# Key_Group_Type: PK, AKn (alternate key n), IFn (inversion entry / index n). Not purely numeric
+# — erwin uses PK and the AK/IF families with a 1-based ordinal per entity. We emit the first of
+# each family (AK1 / IF1); the importer reads the family prefix.
 _KG_TYPE = {
-    "pk": "Primary_Key",
-    "alternate": "Alternate_Key",
-    "unique": "Alternate_Key",  # importer maps unknown -> unique; alternate is the safe carrier
-    "index": "Inversion_Entry",
+    "pk": "PK",
+    "alternate": "AK1",
+    "unique": "AK1",  # importer maps unknown -> unique; alternate is the safe carrier
+    "index": "IF1",
 }
 
-# Modelith Cardinality -> an erwin Cardinality string the importer maps back (_cardinality)
+# Cardinality: -3 = zero-one-or-more (the many side), -1 = exactly one.
 _CARD = {
-    "one_to_one": "One",
-    "one_to_many": "Zero_One_or_More",
-    "many_to_one": "Zero_One_or_More",
-    "many_to_many": "Many_to_Many",
+    "one_to_one": "-1",
+    "one_to_many": "-3",
+    "many_to_one": "-3",
+    "many_to_many": "-3",
 }
+
+# Relationship_Type: 2 = identifying, 7 = non-identifying.
+_REL_TYPE_IDENTIFYING = "2"
+_REL_TYPE_NON_IDENTIFYING = "7"
+
+# Null_Option_Type: 0 = null allowed, 1 = not null.
+_NULL_ALLOWED = "0"
+_NULL_NOT = "1"
+
+# Attribute Type: 0 = primary-key member, 100 = ordinary (non-key) attribute.
+_ATTR_TYPE_PK_MEMBER = "0"
+_ATTR_TYPE_OTHER = "100"
+
+# Entity Type: 1 (the code a real erwin export carries on every entity).
+_ENTITY_TYPE = "1"
 
 
 # erwin's native object id is an UPPERCASE brace-wrapped GUID followed by a "+8hex" serial, e.g.
@@ -198,31 +238,32 @@ def emit_erwin(
         for a in le.attributes:
             attr_guid[a.id] = _oid(a)
 
-    # Which relationships are in scope, and which OUT-of-scope entities they drag in as stubs.
+    # Which relationships to emit. For a SCOPED export we keep only relationships whose BOTH ends
+    # are inside the subject area. A cross-SA relationship (one end outside) is DROPPED, not
+    # stubbed: erwin chokes on a thin stub entity, and the practical workflow is to re-establish
+    # cross-area FKs in erwin after the slice's entities are imported. Within-area FKs are exact.
+    # (Unscoped export keeps every relationship, as before.)
     in_scope_rels = []
-    stub_ids: set[str] = set()
     for r in model.relationships.values():
         c, pnt = r.from_.entity, r.to.entity
         if c not in entity_guid or pnt not in entity_guid:
             continue
-        if scope is None or c in scope or pnt in scope:
+        if scope is None or (c in scope and pnt in scope):
             in_scope_rels.append(r)
-            if scope is not None:
-                for end in (c, pnt):
-                    if end not in scope:
-                        stub_ids.add(end)
-    # subtype (Category) relationships also pull neighbours into scope
+    # subtype (Category) relationships: keep only when supertype AND every emitted subtype are
+    # in scope, for the same reason (no cross-boundary stub).
     in_scope_cats = []
     for cat in model.categories.values():
         if cat.supertype not in entity_guid:
             continue
         subs = [s for s in cat.subtypes if s in entity_guid]
-        if scope is None or cat.supertype in scope or any(s in scope for s in subs):
+        if scope is None:
             in_scope_cats.append(cat)
-            if scope is not None:
-                for e in (cat.supertype, *subs):
-                    if e not in scope:
-                        stub_ids.add(e)
+        elif cat.supertype in scope:
+            # drop subtypes that fall outside the area; keep the category if any remain in scope
+            in_scope_subs = [s for s in subs if s in scope]
+            if in_scope_subs:
+                in_scope_cats.append(cat)
 
     def _emit(le):
         return scope is None or le.id in scope
@@ -251,18 +292,13 @@ def emit_erwin(
             _prop(p, "Logical_Data_Type", _BASE_TO_ERWIN.get(dom.base_type, "VARCHAR"))
             _prop(p, "Definition", dom.definition)
 
-    # --- entities (full for in-scope; stubs for cross-boundary neighbours) -----------
+    # --- entities (only in-scope entities, emitted in full; no cross-boundary stubs) --
     full_les = [le for le in model.logical_entities.values() if _emit(le)]
-    stub_les = [le for le in model.logical_entities.values()
-                if le.id in stub_ids and not _emit(le)]
-    if full_les or stub_les:
+    if full_les:
         egrp = _sub(mdl, "Entity_Groups")
         for le in full_les:
             _emit_entity(egrp, le, ce_by_le.get(le.id), model, cfg,
                          entity_guid, attr_guid, pk_members_by_le, domain_guid_by_name)
-        for le in stub_les:
-            _emit_entity_stub(egrp, le, ce_by_le.get(le.id), cfg, entity_guid, attr_guid,
-                              pk_members_by_le)
 
     # --- relationships (FK + subtype-from-Category) ----------------------------------
     rels = _sub(mdl, "Relationship_Groups")
@@ -304,6 +340,7 @@ def _emit_entity(egrp, le: LogicalEntity, ce, model, cfg, entity_guid, attr_guid
     _prop(p, "Name", _apply_naming(display, cfg, "entity"))
     _prop(p, "Physical_Name", le.physical_name or le.name)
     _prop(p, "Definition", (ce.definition if ce else None) or le.definition)
+    _prop(p, "Type", _ENTITY_TYPE)
 
     pk_ids = pk_members_by_le.get(le.id, set())
     if le.attributes:
@@ -349,26 +386,9 @@ def _emit_attribute(agrp, a: Attribute, cfg, attr_guid, is_pk: bool, domain_guid
         _ref(p, "Parent_Domain_Ref", domain_guid_by_name[a.domain])
     elif a.domain:
         _prop(p, "Logical_Data_Type", _BASE_TO_ERWIN.get(a.domain, "VARCHAR"))
-    _prop(p, "Null_Option_Type", "NOT_NULL" if not a.nullable else "NULL")
-
-
-def _emit_entity_stub(egrp, le: LogicalEntity, ce, cfg, entity_guid, attr_guid,
-                      pk_members_by_le) -> None:
-    """A cross-boundary neighbour: emit just enough for the FK to resolve — the entity's GUID
-    (its original erwin_id, so erwin matches the real mart entity), name, and its business-key
-    attribute(s) only (NOT the full attribute list). No key groups, no non-key columns."""
-    el = _sub(egrp, "Entity")
-    el.set("id", entity_guid[le.id])
-    p = _sub(el, "EntityProps")
-    display = ce.name if ce else le.name
-    _prop(p, "Name", _apply_naming(display, cfg, "entity"))
-    _prop(p, "Physical_Name", le.physical_name or le.name)
-    pk_ids = pk_members_by_le.get(le.id, set())
-    bk = [a for a in le.attributes if a.role == "business_key" or a.id in pk_ids]
-    if bk:
-        agrp = _sub(el, "Attribute_Groups")
-        for a in bk:
-            _emit_attribute(agrp, a, cfg, attr_guid, True, {})
+    _prop(p, "Null_Option_Type", _NULL_ALLOWED if a.nullable else _NULL_NOT)
+    # Attribute Type: erwin distinguishes a PK-member (0) from an ordinary column (100).
+    _prop(p, "Type", _ATTR_TYPE_PK_MEMBER if is_pk else _ATTR_TYPE_OTHER)
 
 
 def _emit_fk_relationship(rels, r, entity_guid, attr_guid) -> None:
@@ -379,8 +399,8 @@ def _emit_fk_relationship(rels, r, entity_guid, attr_guid) -> None:
     p = _sub(el, "RelationshipProps")
     _prop(p, "Name", r.name)
     _prop(p, "Definition", r.definition)
-    _prop(p, "Type", "Identifying" if r.identifying else "Non_Identifying")
-    _prop(p, "Cardinality", _CARD.get(r.cardinality, "Zero_One_or_More"))
+    _prop(p, "Type", _REL_TYPE_IDENTIFYING if r.identifying else _REL_TYPE_NON_IDENTIFYING)
+    _prop(p, "Cardinality", _CARD.get(r.cardinality, "-3"))
     _prop(p, "Parent_To_Child_Verb_Phrase", r.verb_phrase)
     _prop(p, "Child_To_Parent_Verb_Phrase", r.inverse_verb_phrase)
     _ref(p, "Parent_Entity_Ref", entity_guid[parent])

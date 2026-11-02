@@ -27,7 +27,7 @@ def test_export_erwin_writes_a_document(tmp_path):
     r = runner.invoke(app, ["export", "erwin", "-m", str(model), "-o", str(dst)])
     assert r.exit_code == 0, r.output
     xml = dst.read_text()
-    assert 'FileVersion="9.8.0000"' in xml and 'Format="erwin"' in xml
+    assert 'FileVersion="10.10.38485"' in xml and 'Format="erwin"' in xml
     assert "<Entity " in xml
 
 
