@@ -173,9 +173,12 @@ export const fetchExportFormats = () =>
 
 /** A same-origin URL the browser can open to download an export (the endpoint sets
  *  Content-Disposition: attachment). Respects the /view/<slug> catalog prefix. */
-export const exportUrl = (fmt: string, dialect?: string): string => {
-  const q = dialect ? `?dialect=${encodeURIComponent(dialect)}` : "";
-  return `${API_BASE}/api/export/${encodeURIComponent(fmt)}${q}`;
+export const exportUrl = (fmt: string, dialect?: string, subjectArea?: string | null): string => {
+  const params = new URLSearchParams();
+  if (dialect) params.set("dialect", dialect);
+  if (subjectArea) params.set("subject_area", subjectArea);
+  const q = params.toString();
+  return `${API_BASE}/api/export/${encodeURIComponent(fmt)}${q ? `?${q}` : ""}`;
 };
 
 export interface ImportResult {

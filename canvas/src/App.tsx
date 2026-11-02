@@ -285,6 +285,9 @@ function Canvas() {
         onToggleDrawer={() => setDrawerOpen((v) => !v)}
         drawerOpen={drawerOpen}
         filterCount={activeAreas.size}
+        // Scoped erwin export: when EXACTLY one subject area is filtered, the erwin export is
+        // scoped to it (passes ?subject_area=). Zero or several selected -> whole model.
+        scopeSubjectArea={activeAreas.size === 1 ? [...activeAreas][0] : null}
       />
       )}
       <div className="canvas-wrap">
