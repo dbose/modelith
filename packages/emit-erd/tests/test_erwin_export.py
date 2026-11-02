@@ -302,3 +302,53 @@ def test_unscoped_export_unchanged_by_the_scope_feature():
     """Guard: emit_erwin(m) with no subject_area is identical to emit_erwin(m, subject_area=None)."""
     m = _source_model()
     assert emit_erwin(m) == emit_erwin(m, subject_area=None)
+
+
+# --- erwin-native id shape ("{UPPERCASE-GUID}+00000000") ---------------------------
+# erwin's import engine (EAT) HANGS on a lowercase or suffix-less brace GUID (observed against a
+# real erwin 10.10 export, whose ids are "{UPPERCASE-GUID}+8hex"). Every id we MINT must be an
+# UPPERCASE GUID carrying the "+00000000" new-object serial; a preserved erwin_id is emitted
+# verbatim. These guard the exact regression that hung a real GHG mart import.
+
+import re  # noqa: E402
+
+# a minted erwin id: UPPERCASE {8-4-4-4-12} then "+00000000"
+_MINTED_ID = re.compile(r'id="\{[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\}\+00000000"')
+
+
+def test_minted_model_root_id_is_uppercase_with_the_erwin_serial():
+    """The model root id is always minted (no erwin source), so it must be an UPPERCASE GUID
+    ending with +00000000 — the exact shape erwin's import requires."""
+    xml = emit_erwin(_source_model())
+    assert _MINTED_ID.search(xml), "a minted id is not {UPPERCASE-GUID}+00000000"
+
+
+def test_no_minted_id_is_lowercase_or_suffixless():
+    """A model with NO erwin_id anywhere -> every emitted object id is minted. None may be a
+    LOWERCASE brace GUID, and none may be a brace GUID without a +NNNNNNNN serial — both shapes
+    hang erwin's EAT import."""
+    from mdl_core.ids import new_ulid
+    from mdl_core.ir import Attribute, ConceptualEntity, LogicalEntity, Model, ProjectConfig
+
+    m = Model(ProjectConfig(name="native"))
+    ce = ConceptualEntity(id=new_ulid(), name="Thing")
+    m.add(ce)
+    bk = Attribute(id=new_ulid(), name="thing_id", domain="string")
+    m.add(LogicalEntity(id=new_ulid(), name="thing", realises=ce.id, attributes=[bk]))
+
+    xml = emit_erwin(m)
+    # any brace GUID containing a lowercase hex digit is wrong (erwin writes them uppercase)
+    lower = re.findall(r"\{[0-9A-Fa-f-]*[a-f][0-9A-Fa-f-]*\}", xml)
+    assert not lower, f"{len(lower)} lowercase brace GUID(s) emitted (erwin ids are uppercase)"
+    # any brace GUID (ids AND refs) not followed by a +NNNNNNNN serial is wrong
+    bare = re.findall(r"\{[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}\}(?!\+)", xml)
+    assert not bare, f"{len(bare)} brace GUID(s) emitted without a +NNNNNNNN serial"
+
+
+def test_preserved_erwin_id_keeps_its_own_serial_verbatim():
+    """A preserved erwin_id (which, for a real mart, already includes its serial) is emitted
+    UNCHANGED -- the serial fix only ever appends to ids we mint, never rewrites a preserved one."""
+    m = _two_sa_model()
+    xml = emit_erwin(m)
+    le = next(iter(m.logical_entities.values()))
+    assert f'id="{le.erwin_id}"' in xml  # verbatim, no extra serial appended

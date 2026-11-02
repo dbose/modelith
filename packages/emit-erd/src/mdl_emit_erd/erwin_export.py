@@ -67,16 +67,30 @@ _CARD = {
 }
 
 
+# erwin's native object id is an UPPERCASE brace-wrapped GUID followed by a "+8hex" serial, e.g.
+# "{0007EEEF-A625-4777-B5CB-6BCF63932FF4}+00000000" (observed in a real erwin 10.10 export). A
+# freshly minted object starts at serial 0 -> "+00000000". erwin's import engine (EAT) validates
+# this exact shape and HANGS on a lowercase or suffix-less id, which is what our Modelith-native
+# objects used to emit. Both parts matter: the GUID must be UPPERCASE and carry the serial.
+# Preserved ids (an erwin-origin object's `erwin_id`) already have this shape and are emitted
+# verbatim by `_oid`, so the normalisation here only ever touches ids we mint ourselves.
+_ERWIN_SERIAL = "+00000000"
+
+
 def _guid(key: str) -> str:
-    """A stable erwin-shaped GUID {8-4-4-4-12} derived from a key, so output is reproducible.
+    """A stable erwin-native id {UPPERCASE-8-4-4-4-12}+00000000 derived from a key, so output is
+    reproducible.
 
     Used for synthetic keys (the model root, key-group members) and as the fallback for an
-    object with no preserved erwin GUID — any stable unique mapping works since the importer
-    only uses GUIDs as intra-document join keys."""
+    object with no preserved erwin GUID (a Modelith-native object erwin treats as new). The
+    UPPERCASE GUID and the "+00000000" serial are BOTH REQUIRED: erwin's import engine hangs on a
+    lowercase or bare brace GUID. The importer only uses ids as intra-document join keys and is
+    case-insensitive on them, so any stable unique value round-trips through Modelith; the exact
+    erwin shape matters only for real erwin's own import."""
     import hashlib
 
-    h = hashlib.sha1(key.encode("utf-8")).hexdigest()  # noqa: S324 - not security, just a stable id
-    return f"{{{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}}}"
+    h = hashlib.sha1(key.encode("utf-8")).hexdigest().upper()  # noqa: S324 - stable id, not security
+    return f"{{{h[:8]}-{h[8:12]}-{h[12:16]}-{h[16:20]}-{h[20:32]}}}{_ERWIN_SERIAL}"
 
 
 def _oid(obj) -> str:
