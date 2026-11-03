@@ -2975,12 +2975,22 @@ def export_sql_cmd(
     model_dir: Path = typer.Option(Path("."), "--model-dir", "-m"),
     out: Path = typer.Option(None, "--out", "-o"),
     dialect: str = typer.Option("postgres", "--dialect", help="postgres|snowflake|duckdb|..."),
+    subject_area: str = typer.Option(
+        None,
+        "--subject-area",
+        "-s",
+        help="Export only this subject area (name or id). Cross-area FKs are dropped (no stub "
+        "table for the out-of-area neighbour); re-establish them by hand in the target model. "
+        "Default: the whole model.",
+    ),
 ) -> None:
     """Export CREATE TABLE DDL (PK/FK/UNIQUE/NOT NULL) for a chosen SQL dialect."""
     from mdl_emit_erd import emit_sql_ddl
 
     repo = _load(model_dir)
-    _emit_text(emit_sql_ddl(repo.model, dialect=dialect), out, "sql")
+    _emit_text(
+        emit_sql_ddl(repo.model, dialect=dialect, subject_area=subject_area or None), out, "sql"
+    )
 
 
 @export_app.command("mermaid")

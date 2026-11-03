@@ -48,13 +48,26 @@ class Table:
     pk_columns: list[str] = field(default_factory=list)  # ordered
 
 
+def _dedupe(ids: list[str]) -> list[str]:
+    """Order-preserving de-duplication. A key group whose members list the same attribute twice
+    (seen in real erwin-imported models) would otherwise emit `PRIMARY KEY (col, col)`, which
+    erwin's DDL importer rejects with 'Cannot add the same Attribute to Key'."""
+    seen: set[str] = set()
+    out: list[str] = []
+    for i in ids:
+        if i not in seen:
+            seen.add(i)
+            out.append(i)
+    return out
+
+
 def _pk_attr_ids(model: Model, le: LogicalEntity) -> list[str]:
-    """Ordered PK attribute ids: a `pk` KeyGroup wins (member order preserved), else
-    the `role: business_key` attributes. Mirrors the dbt emitter."""
+    """Ordered, de-duplicated PK attribute ids: a `pk` KeyGroup wins (member order preserved),
+    else the `role: business_key` attributes. Mirrors the dbt emitter."""
     for kg in model.key_groups.values():
         if kg.entity == le.id and kg.type == "pk":
-            return list(kg.members)
-    return [a.id for a in le.attributes if a.role == "business_key"]
+            return _dedupe(list(kg.members))
+    return _dedupe([a.id for a in le.attributes if a.role == "business_key"])
 
 
 def _single_unique_attr_ids(model: Model, le: LogicalEntity) -> set[str]:
@@ -65,12 +78,34 @@ def _single_unique_attr_ids(model: Model, le: LogicalEntity) -> set[str]:
     return out
 
 
-def build_tables(model: Model, adapter) -> list[Table]:
+def _scope_entity_ids(model: Model, subject_area: str) -> set[str]:
+    """The logical-entity ids that belong to `subject_area` (its name or id). SubjectArea.members
+    are CONCEPTUAL ids, so map each to the logical entity that realises it."""
+    le_by_ce = {le.realises: le.id for le in model.logical_entities.values() if le.realises}
+    ids: set[str] = set()
+    for sa in model.subject_areas.values():
+        if sa.name == subject_area or sa.id == subject_area:
+            for m in sa.members:
+                if m in le_by_ce:
+                    ids.add(le_by_ce[m])
+    return ids
+
+
+def build_tables(model: Model, adapter, *, subject_area: str | None = None) -> list[Table]:
     """Project the model's logical entities into ER tables with columns, PKs, and FKs.
 
     `adapter` is a dbt PlatformAdapter (from mdl_emit_dbt.platforms.get_adapter) used
-    only for domain -> SQL type mapping, so DDL types match what dbt would emit."""
-    ent_by_id = model.logical_entities
+    only for domain -> SQL type mapping, so DDL types match what dbt would emit.
+
+    `subject_area` (a name or id) scopes the projection to ONE subject area, like erwin's
+    export: only that area's entities become tables, and a relationship with an end OUTSIDE
+    the area is DROPPED (no stub table for the neighbour). The neighbours already exist in the
+    target model; cross-area FKs are re-established there by hand. None = the whole model."""
+    scope = _scope_entity_ids(model, subject_area) if subject_area else None
+    ent_by_id = {
+        eid: le for eid, le in model.logical_entities.items()
+        if scope is None or eid in scope
+    }
     name_by_id = {le.id: le.name for le in ent_by_id.values()}
     tables: dict[str, Table] = {}
 
@@ -112,6 +147,14 @@ def build_tables(model: Model, adapter) -> list[Table]:
         parent_ent = ent_by_id.get(rel.to.entity)
         c_names = _resolve_names(child_ent, rel.from_.attributes)
         p_names = _resolve_names(parent_ent, rel.to.attributes) if parent_ent else []
+        # A FK must reference the PARENT's key, or erwin refuses to create it ("there is not a
+        # primary or unique key in table '<parent>' that contains column ..."). When the
+        # relationship doesn't name the parent columns, default to the parent's PK so the
+        # REFERENCES points at a real key.
+        if not p_names and parent_ent is not None:
+            pk_ids = _pk_attr_ids(model, parent_ent)
+            by_id = {a.id: a.name for a in parent_ent.attributes}
+            p_names = [by_id[i] for i in pk_ids if i in by_id]
         if not c_names:
             continue  # nothing concrete to anchor a FK to
         child_unique = rel.cardinality in ("one_to_one",) or _cols_unique(model, child_ent, c_names)
@@ -132,7 +175,9 @@ def _resolve_names(entity, attr_ids: list[str]) -> list[str]:
     if entity is None:
         return []
     by_id = {a.id: a.name for a in entity.attributes}
-    return [by_id[i] for i in attr_ids if i in by_id]
+    # de-dupe: a FK column set with a repeated member would emit `FOREIGN KEY (col, col)`,
+    # which erwin rejects the same way a duplicated PK column does.
+    return _dedupe([by_id[i] for i in attr_ids if i in by_id])
 
 
 def _cols_unique(model: Model, entity, col_names: list[str]) -> bool:
