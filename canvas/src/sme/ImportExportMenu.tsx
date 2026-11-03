@@ -117,9 +117,10 @@ export function ImportExportMenu({
             </label>
           )}
           {formats.map((f) => {
-            // erwin export honours a single active subject-area filter (exports just that
-            // slice); every other format always exports the whole model.
-            const scoped = f.id === "erwin" ? scopeSubjectArea : null;
+            // erwin and SQL DDL export honour a single active subject-area filter (export just
+            // that slice, like erwin's own subject-area export); every other format always
+            // exports the whole model.
+            const scoped = f.id === "erwin" || f.id === "sql" ? scopeSubjectArea : null;
             return (
               <a
                 key={f.id}
