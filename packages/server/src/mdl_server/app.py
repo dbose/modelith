@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -53,6 +53,21 @@ def _cache_on_align(model_dir: Path, op: str, payload: dict) -> None:
         cache_from_registry(model_dir, reg, ref)
     except Exception:  # noqa: BLE001 - caching is an optimisation, not a guarantee
         return
+
+
+def _remembered_template_bytes(model, model_dir: Path) -> bytes | None:
+    """The bytes of the erwin template this model was imported from (export.erwin.template_path),
+    resolved relative to the model dir or absolute. None if unset or the file is gone, so the
+    caller falls back to the self-built envelope."""
+    stored = model.config.export.erwin.template_path
+    if not stored:
+        return None
+    p = Path(stored)
+    cand = p if p.is_absolute() else (Path(model_dir) / p)
+    try:
+        return cand.read_bytes() if cand.is_file() else None
+    except OSError:
+        return None
 
 
 def _dir_fingerprint(model_dir: Path) -> tuple:
@@ -230,11 +245,17 @@ def create_app(
             elif fmt == "dbml":
                 text, media, ext = emit_dbml(model), "text/plain", "dbml"
             elif fmt == "erwin":
-                # the team naming convention (if any) travels in the project config, same as the CLI
+                # the team naming convention (if any) travels in the project config, like the CLI.
+                # Auto-clone the remembered erwin template (the file this model was imported from)
+                # so the download opens in real erwin; if its path is gone, fall back to the
+                # self-built envelope. The POST route takes an uploaded template and overrides this.
+                tmpl = _remembered_template_bytes(model, model_dir)
                 text = emit_erwin(
                     model,
                     naming=model.config.export.erwin.naming,
                     subject_area=subject_area or None,
+                    template=tmpl,
+                    model_name=model.config.name if tmpl else None,
                 )
                 media, ext = "application/xml", "xml"
             elif fmt == "csv":
@@ -260,11 +281,51 @@ def create_app(
             headers={"Content-Disposition": f'attachment; filename="{name}"'},
         )
 
+    @app.post("/api/export/erwin")
+    async def export_erwin_templated(
+        template: UploadFile = File(...),
+        subject_area: str = Form(None),
+    ):
+        """Export erwin XML by CLONING an uploaded native erwin export (the template).
+
+        The template (a 7-10 MB native erwin 10.10 export of the target mart) is too large for a
+        query param, so the canvas POSTs it here as multipart. This is the path that opens in real
+        erwin Data Modeler; the GET route emits the self-built envelope (round-trips through
+        Modelith, not guaranteed to open in erwin). `subject_area` scopes to one area."""
+        from fastapi.responses import PlainTextResponse
+        from mdl_emit_erd import emit_erwin
+
+        model = _load().model
+        data = await template.read()
+        if not data:
+            raise HTTPException(status_code=422, detail="empty template file")
+        try:
+            text = emit_erwin(
+                model,
+                naming=model.config.export.erwin.naming,
+                subject_area=subject_area or None,
+                template=data,
+                model_name=model.config.name,
+            )
+        except Exception as e:  # noqa: BLE001 - a bad model/template shouldn't 500 opaquely
+            raise HTTPException(status_code=422, detail=str(e)) from e
+        name = f"{model.config.name}.xml"
+        return PlainTextResponse(
+            text,
+            media_type="application/xml",
+            headers={"Content-Disposition": f'attachment; filename="{name}"'},
+        )
+
     @app.get("/api/export")
     def export_formats() -> JSONResponse:
         """The export formats this build offers, for the toolbar menu."""
+        # whether a remembered erwin template is resolvable right now, so the erwin item can show
+        # that the plain export is already erwin-ready (it auto-clones it).
+        model = _load().model
+        erwin_ready = _remembered_template_bytes(model, model_dir) is not None
         return JSONResponse(
             {
+                "erwinTemplateRemembered": erwin_ready,
                 "formats": [
                     {
                         "id": "sql",
@@ -277,7 +338,7 @@ def create_app(
                     {"id": "csv", "label": "CSV (spreadsheet)"},
                     {"id": "contract", "label": "Data contract (ODCS)"},
                     {"id": "cypher", "label": "Neo4j Cypher"},
-                ]
+                ],
             }
         )
 

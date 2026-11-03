@@ -180,6 +180,9 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+# tools/ holds standalone reference scripts kept verbatim (erwin-verified ground truth), not
+# package code; they are not linted to the package style.
+extend-exclude = ["tools"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

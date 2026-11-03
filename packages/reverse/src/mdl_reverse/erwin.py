@@ -301,22 +301,35 @@ def _key_group_ir_type(kg: _Obj) -> str:
     t = (kg.props.get("Key_Group_Type") or "").strip().lower()
     if t in {"primary_key", "pk", "0", "primary"}:
         return "pk"
-    if t in {"alternate_key", "ak", "alternate"}:
+    # erwin 10.10 uses the AKn / IFn families (AK1, AK2, IF1 ... IF12); match the prefix.
+    if t.startswith("ak") or t in {"alternate_key", "alternate"}:
         return "alternate"
-    if t in {"inversion_entry", "inversion", "index"}:
+    if t.startswith("if") or t in {"inversion_entry", "inversion", "index"}:
         return "index"
     return "unique"
 
 
 def _cardinality(v: str | None) -> str:
     m = (v or "").strip().lower()
-    if m in {"zero_or_one", "one", "1:1", "exactly_one"}:
+    # erwin 10.10 numeric codes: -1 = exactly one, -3 = zero-one-or-more (the many side).
+    if m in {"zero_or_one", "one", "1:1", "exactly_one", "-1"}:
         return "one_to_one"
-    if m in {"one_or_more", "zero_one_or_more", "many", "1:n", "1:m"}:
+    if m in {"one_or_more", "zero_one_or_more", "many", "1:n", "1:m", "-3"}:
         return "many_to_one"
     if m in {"many_to_many", "m:n", "m:m"}:
         return "many_to_many"
     return "many_to_one"
+
+
+def _is_identifying(rtype: str) -> bool:
+    """erwin Relationship_Type: word form carries 'identifying'; the 10.10 numeric form is
+    2 = identifying, 7 = non-identifying. Read both (our exporter emits the codes)."""
+    t = (rtype or "").strip().lower()
+    if t == "2":
+        return True
+    if t == "7":
+        return False
+    return "identifying" in t and "non_identifying" not in t and "non-identifying" not in t
 
 
 def _nullable(null_option: str | None, is_key: bool) -> bool:
@@ -563,7 +576,7 @@ def _build_relationships(
                 },
                 to=RelationshipEnd(entity=p_le.id, attributes=[to_bk] if to_bk else []),
                 cardinality=_cardinality(obj.props.get("Cardinality")),
-                identifying="identifying" in rtype,
+                identifying=_is_identifying(rtype),
                 verb_phrase=obj.props.get("Parent_To_Child_Verb_Phrase"),
                 inverse_verb_phrase=obj.props.get("Child_To_Parent_Verb_Phrase"),
                 udp=_resolve_udp(obj, udp_name_by_def_id),

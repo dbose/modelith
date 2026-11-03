@@ -57,8 +57,14 @@ def _reimport(xml: str):
 
 @pytest.mark.skipif(not _XSD.exists(), reason="erwin XSDs not present (gitignored)")
 @pytest.mark.skipif(shutil.which("xmllint") is None, reason="xmllint not installed")
-def test_export_validates_against_the_erwin_xsd(tmp_path):
-    xml = emit_erwin(_source_model())
+def test_export_structure_validates_against_the_erwin_xsd(tmp_path):
+    """The document STRUCTURE validates against the published XSD. The real FileVersion we emit
+    ("10.10.<build>") is deliberately what erwin 10.10 itself writes, which the published XSD's
+    stricter pattern rejects (it allows only a single leading digit) even though erwin's own
+    exports use it and its importer accepts it. So we validate the structure against a
+    schema-acceptable FileVersion; the real-erwin import, not the XSD, is the compatibility
+    oracle. This still fails loudly on any STRUCTURAL regression (a bad element, a dangling ref)."""
+    xml = emit_erwin(_source_model()).replace('FileVersion="10.10.38485"', 'FileVersion="9.8.0000"')
     out = tmp_path / "out.erwin.xml"
     out.write_text(xml, encoding="utf-8")
     r = subprocess.run(
@@ -67,14 +73,13 @@ def test_export_validates_against_the_erwin_xsd(tmp_path):
         text=True,
         check=False,
     )
-    assert r.returncode == 0, f"xmllint rejected the export:\n{r.stderr}"
+    assert r.returncode == 0, f"xmllint rejected the export structure:\n{r.stderr}"
 
 
-def test_file_version_is_xsd_valid_and_skeleton_present():
-    """Guards the two things that silently fail xmllint: the FileVersion build digits and the
-    required Model id + ModelEnvProps/ModelProps."""
+def test_file_version_and_skeleton_present():
+    """Guards the erwin-10.10 FileVersion and the required Model id + ModelEnvProps/ModelProps."""
     xml = emit_erwin(_source_model())
-    assert 'FileVersion="9.8.0000"' in xml  # 9.8.00 would be INVALID (needs 4 build digits)
+    assert 'FileVersion="10.10.38485"' in xml  # what real erwin 10.10 writes and imports
     assert 'Format="erwin"' in xml
     assert "<ModelEnvProps/>" in xml and "<ModelProps/>" in xml
     assert "<Model " in xml and "id=" in xml
@@ -161,8 +166,8 @@ def test_naming_convention_rewrites_logical_names_only():
     assert "<Name>counterparty id</Name>" in xml
     # ...while physical names stay raw (never rewritten)
     assert "<Physical_Name>COUNTERPARTY</Physical_Name>" in xml
-    # and the output is still XSD-shaped (skeleton intact)
-    assert 'FileVersion="9.8.0000"' in xml
+    # and the output is still erwin-shaped (skeleton intact)
+    assert 'FileVersion="10.10.38485"' in xml
 
 
 def test_naming_is_reproducible_and_valid_xml():
@@ -200,8 +205,9 @@ def test_export_re_emits_the_original_guid():
 
 
 def _two_sa_model():
-    """A mart with two subject areas and a CROSS-SA FK: Events.ae (SA1) -> Reference.dim (SA2).
-    All objects carry erwin_id so we can assert GUID preservation in the slice too."""
+    """A mart with two subject areas, a CROSS-SA FK (Events.ae -> Reference.dim) AND a
+    WITHIN-SA FK (Events.ae_detail -> Events.ae). A scoped export of "Events" keeps the
+    within-SA FK and DROPS the cross-SA one (no stub). All objects carry erwin_id."""
     from mdl_core.ids import new_ulid
     from mdl_core.ir import (
         Attribute,
@@ -239,12 +245,32 @@ def _two_sa_model():
     m.add(ae)
     m.add(KeyGroup(id=new_ulid(), entity=ae.id, name="pk_ae", type="pk",
                    members=[ae_bk.id], erwin_id="{AE-KG}"))
-    m.add(SubjectArea(id=new_ulid(), name="Events", members=[ae_ce.id], erwin_id="{SA1}"))
+    # SA1: a second Events entity with a WITHIN-SA FK to ae
+    det_ce = ConceptualEntity(id=new_ulid(), name="AeDetail")
+    m.add(det_ce)
+    det_bk = Attribute(id=new_ulid(), name="aedetseq", role="business_key", nullable=False,
+                       domain="integer", erwin_id="{DET-A1}")
+    det_fk = Attribute(id=new_ulid(), name="aeseq", role="attribute", nullable=False,
+                       domain="integer", erwin_id="{DET-A2}")
+    det = LogicalEntity(id=new_ulid(), name="ae_detail", physical_name="AE_DETAIL",
+                        realises=det_ce.id, attributes=[det_bk, det_fk], erwin_id="{DET}")
+    m.add(det)
+    m.add(KeyGroup(id=new_ulid(), entity=det.id, name="pk_det", type="pk",
+                   members=[det_bk.id], erwin_id="{DET-KG}"))
+    m.add(SubjectArea(id=new_ulid(), name="Events", members=[ae_ce.id, det_ce.id],
+                      erwin_id="{SA1}"))
+    # cross-SA FK: ae (Events) -> dim_subject (Reference) -- DROPPED by a scoped Events export
     m.add(Relationship(
         id=new_ulid(), name="ae_for_subject",
         **{"from": RelationshipEnd(entity=ae.id, attributes=[ae_fk.id])},
         to=RelationshipEnd(entity=dim.id, attributes=[dim_bk.id]),
         cardinality="many_to_one", verb_phrase="describes", erwin_id="{REL}"))
+    # within-SA FK: ae_detail (Events) -> ae (Events) -- KEPT by a scoped Events export
+    m.add(Relationship(
+        id=new_ulid(), name="detail_of_ae",
+        **{"from": RelationshipEnd(entity=det.id, attributes=[det_fk.id])},
+        to=RelationshipEnd(entity=ae.id, attributes=[ae_bk.id]),
+        cardinality="many_to_one", verb_phrase="details", erwin_id="{REL2}"))
     return m
 
 
@@ -259,39 +285,50 @@ def _entity_attr_counts(xml):
     return out
 
 
-def test_scoped_export_includes_the_area_and_keeps_cross_sa_fk():
+def test_scoped_export_emits_only_in_area_entities_in_full():
     m = _two_sa_model()
     xml = emit_erwin(m, subject_area="Events")
     counts = _entity_attr_counts(xml)
-    # ae exported FULL (both its columns); dim_subject pulled in as a STUB (BK only)
+    # both Events entities exported FULL; the out-of-area DimSubject is NOT emitted at all
     assert counts.get("Ae") == 2
-    assert counts.get("DimSubject") == 1  # business key only
-    # the cross-SA FK is retained
-    assert "ae_for_subject" in xml
+    assert counts.get("AeDetail") == 2
+    assert "DimSubject" not in counts
+    assert 'id="{DIM}"' not in xml  # no stub for the cross-SA neighbour
 
 
-def test_scoped_export_stub_keeps_the_original_guid():
-    """The out-of-area neighbour (dim) is emitted with its ORIGINAL erwin GUID, so a re-import
-    into the mart matches the real dimension instead of creating a duplicate."""
+def test_scoped_export_keeps_within_sa_fk_drops_cross_sa_fk():
+    """A within-area FK (ae_detail -> ae) is kept; a cross-area FK (ae -> dim_subject) is DROPPED
+    rather than stubbed, because erwin chokes on a thin stub entity. Cross-area FKs are
+    re-established in erwin after the slice imports."""
     m = _two_sa_model()
     xml = emit_erwin(m, subject_area="Events")
-    assert 'id="{DIM}"' in xml  # the stub carries dim's real GUID
-    assert 'id="{AE}"' in xml  # ae too
+    assert "detail_of_ae" in xml  # within-SA FK retained
+    assert "ae_for_subject" not in xml  # cross-SA FK dropped
+
+
+def test_scoped_export_in_area_entities_keep_their_guids():
+    m = _two_sa_model()
+    xml = emit_erwin(m, subject_area="Events")
+    assert 'id="{AE}"' in xml
+    assert 'id="{DET}"' in xml
 
 
 @pytest.mark.skipif(not _XSD.exists(), reason="erwin XSDs not present (gitignored)")
 @pytest.mark.skipif(shutil.which("xmllint") is None, reason="xmllint not installed")
-def test_scoped_export_is_xsd_valid_and_round_trips(tmp_path):
+def test_scoped_export_structure_is_xsd_valid_and_round_trips(tmp_path):
     from mdl_reverse.erwin import import_erwin
 
     m = _two_sa_model()
     xml = emit_erwin(m, subject_area="Events")
+    # validate STRUCTURE against the published XSD with a schema-acceptable FileVersion
+    # (real erwin's 10.10.<build> is looser than the published pattern; see the structure test).
+    structural = xml.replace('FileVersion="10.10.38485"', 'FileVersion="9.8.0000"')
     out = tmp_path / "slice.erwin.xml"
-    out.write_text(xml, encoding="utf-8")
+    out.write_text(structural, encoding="utf-8")
     r = subprocess.run(["xmllint", "--noout", "--schema", str(_XSD), str(out)],
                        capture_output=True, text=True, check=False)
     assert r.returncode == 0, r.stderr
-    # round-trips with the FK intact, no dangling-ref error
+    # round-trips with the within-SA FK intact (the cross-SA one is dropped), no dangling ref
     rt = import_erwin(xml).model
     assert len(rt.relationships) == 1
     errs = [d for d in validate(rt).items if d.severity == Severity.error]

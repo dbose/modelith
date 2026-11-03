@@ -4,7 +4,7 @@ version = "0.1.1"
 description = "Modelith ER interchange emitters: SQL DDL, Mermaid erDiagram, DBML"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
-dependencies = ["modelith-core", "modelith-emit-dbt", "sqlglot>=25"]
+dependencies = ["modelith-core", "modelith-emit-dbt", "sqlglot>=25", "lxml>=5"]
 
 [build-system]
 requires = ["hatchling"]

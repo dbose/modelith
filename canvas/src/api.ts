@@ -169,7 +169,7 @@ export interface ExportFormat {
 }
 
 export const fetchExportFormats = () =>
-  get<{ formats: ExportFormat[] }>("/api/export");
+  get<{ formats: ExportFormat[]; erwinTemplateRemembered?: boolean }>("/api/export");
 
 /** A same-origin URL the browser can open to download an export (the endpoint sets
  *  Content-Disposition: attachment). Respects the /view/<slug> catalog prefix. */
@@ -180,6 +180,36 @@ export const exportUrl = (fmt: string, dialect?: string, subjectArea?: string | 
   const q = params.toString();
   return `${API_BASE}/api/export/${encodeURIComponent(fmt)}${q ? `?${q}` : ""}`;
 };
+
+/** POST a native erwin export (the template) and download the cloned erwin XML. The template is
+ *  7-10 MB so it can't ride a query param; it goes up as multipart. Returns the filename saved.
+ *  This is the export that opens in real erwin (the GET exportUrl path is the self-built envelope). */
+export async function exportErwinWithTemplate(
+  template: File,
+  subjectArea?: string | null,
+): Promise<void> {
+  const form = new FormData();
+  form.append("template", template);
+  if (subjectArea) form.append("subject_area", subjectArea);
+  const res = await fetch(`${API_BASE}/api/export/erwin`, { method: "POST", body: form });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(detail || `erwin export failed (${res.status})`);
+  }
+  // mirror the browser's attachment download using the server's Content-Disposition filename
+  const cd = res.headers.get("Content-Disposition") || "";
+  const match = cd.match(/filename="?([^"]+)"?/);
+  const name = match ? match[1] : "model.xml";
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
 export interface ImportResult {
   ok: boolean;
