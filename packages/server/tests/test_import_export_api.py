@@ -45,6 +45,46 @@ def test_export_erwin(client):
     assert r.text.lstrip().startswith("<?xml") and 'Format="erwin"' in r.text
 
 
+# A minimal native-erwin-shaped template the POST route can clone (envelope + content to strip).
+_TEMPLATE = """<?xml version="1.0" encoding="UTF-8"?>
+<erwin xmlns="http://www.erwin.com/dm" FileVersion="10.10.38485" Format="erwin">
+  <Model xmlns="http://www.erwin.com/dm/data" id="{OLD}+00000001" name="Mart">
+    <ModelEnvProps><Locator>C:/m.erwin</Locator><Persistence_Unit_Id>{U}+01000000</Persistence_Unit_Id></ModelEnvProps>
+    <ModelProps><Name>Mart</Name><Long_Id>{OLD}+00000001</Long_Id></ModelProps>
+    <Domain_Groups>
+      <Domain id="{DS}+00000000"><DomainProps><Name>String</Name></DomainProps></Domain>
+      <Domain id="{DN}+00000000"><DomainProps><Name>Number</Name></DomainProps></Domain>
+    </Domain_Groups>
+    <Entity_Groups/>
+    <Relationship_Groups/>
+    <Subject_Area_Groups/>
+  </Model>
+</erwin>
+"""
+
+
+def test_export_erwin_with_template_clones_and_downloads(client):
+    """POST /api/export/erwin clones an uploaded native erwin template and returns erwin XML."""
+    r = client.post(
+        "/api/export/erwin",
+        files={"template": ("mart.xml", _TEMPLATE, "application/xml")},
+    )
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("application/xml")
+    assert "attachment" in r.headers["content-disposition"]
+    # the template's domains survive (the envelope is cloned), the model is reminted
+    assert "<Name>String</Name>" in r.text and "<Name>Number</Name>" in r.text
+    assert 'Format="erwin"' in r.text
+
+
+def test_export_erwin_with_empty_template_422(client):
+    r = client.post(
+        "/api/export/erwin",
+        files={"template": ("mart.xml", "", "application/xml")},
+    )
+    assert r.status_code == 422
+
+
 def test_export_sql(client):
     r = client.get("/api/export/sql", params={"dialect": "postgres"})
     assert r.status_code == 200

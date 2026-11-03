@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   type ExportFormat,
   type ImportPreviewDoc,
+  exportErwinWithTemplate,
   exportUrl,
   fetchExportFormats,
   importModel,
@@ -59,7 +60,27 @@ export function ImportExportMenu({
   );
   const [formats, setFormats] = useState<ExportFormat[]>([]);
   const [dialect, setDialect] = useState("postgres");
+  const [erwinBusy, setErwinBusy] = useState(false);
+  const [erwinError, setErwinError] = useState<string | null>(null);
   const wrapRef = useRef<HTMLDivElement | null>(null);
+  const templateInputRef = useRef<HTMLInputElement | null>(null);
+
+  // erwin's "erwin-ready" export clones a native erwin export (the mart) as a template, so it opens
+  // in real erwin Data Modeler. The user picks that mart file; we POST it and download the result.
+  const onTemplatePicked = async (file: File | null) => {
+    if (!file) return;
+    setErwinBusy(true);
+    setErwinError(null);
+    try {
+      await exportErwinWithTemplate(file, scopeSubjectArea);
+      setOpen(null);
+    } catch (e) {
+      setErwinError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setErwinBusy(false);
+      if (templateInputRef.current) templateInputRef.current.value = "";
+    }
+  };
 
   useEffect(() => {
     fetchExportFormats()
@@ -135,6 +156,29 @@ export function ImportExportMenu({
               </a>
             );
           })}
+          {/* erwin-ready: clone a native erwin export so the file opens in real erwin Data
+              Modeler. The plain "erwin XML" item above is the self-built envelope (round-trips
+              through Modelith, not guaranteed to open in erwin). */}
+          {formats.some((f) => f.id === "erwin") && (
+            <button
+              type="button"
+              className="ie-item ie-item-btn"
+              disabled={erwinBusy}
+              onClick={() => templateInputRef.current?.click()}
+              title="Pick a native erwin export of the target mart to clone its settings from"
+            >
+              {erwinBusy ? "Building…" : "erwin XML (erwin-ready) — pick mart…"}
+              {scopeSubjectArea && <span className="ie-scope"> · filtered area only</span>}
+            </button>
+          )}
+          <input
+            ref={templateInputRef}
+            type="file"
+            accept=".xml"
+            style={{ display: "none" }}
+            onChange={(e) => onTemplatePicked(e.target.files?.[0] ?? null)}
+          />
+          {erwinError && <p className="ie-error">{erwinError}</p>}
         </div>
       )}
 

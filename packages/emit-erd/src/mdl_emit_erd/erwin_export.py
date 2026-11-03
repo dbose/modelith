@@ -195,18 +195,41 @@ def _scope_entity_ids(model: Model, subject_area: str) -> set[str]:
 
 
 def emit_erwin(
-    model: Model, *, naming: ErwinNaming | None = None, subject_area: str | None = None
+    model: Model,
+    *,
+    naming: ErwinNaming | None = None,
+    subject_area: str | None = None,
+    template: str | bytes | None = None,
+    model_name: str | None = None,
 ) -> str:
-    """Serialize `model` to an erwin XML document string (XSD-valid; round-trips via the erwin
-    importer).
+    """Serialize `model` to an erwin XML document string.
 
     `naming` applies a team convention to logical/display names (None = verbatim).
 
     `subject_area` (a name or id) scopes the export to ONE subject area: only that area's member
-    entities are emitted in full. A relationship from an in-scope entity to an entity OUTSIDE the
-    area is KEPT, and the outside entity is emitted as a minimal STUB (its GUID + name + business
-    key only) so the FK resolves — in erwin that neighbour is auto-included in the area's view.
-    None = the whole model (unchanged)."""
+    entities are emitted, FKs within the area are kept, and cross-area FKs are DROPPED (no stub —
+    erwin chokes on a thin stub; the neighbours already exist in the target mart). None = the
+    whole model.
+
+    `template` is a native erwin 10.10 XML export (a path string or its raw bytes) to CLONE the
+    model-level envelope from — ModelProps, domains, themes, images, page setup. This is the only
+    path PROVEN to open in real erwin Data Modeler 10.10: a from-scratch envelope opens empty and
+    freezes erwin's import engine. When `template` is given, this delegates to
+    `emit_erwin_from_template` (which also writes the full FK key-group structure erwin needs).
+    When `template` is None, the self-built envelope below is emitted: XSD-valid and round-trips
+    through Modelith's own importer, but NOT guaranteed to open in real erwin. `model_name` names
+    the cloned model (template path only; default "Modelith")."""
+    if template is not None:
+        from mdl_emit_erd.erwin_template import emit_erwin_from_template
+
+        return emit_erwin_from_template(
+            model,
+            template,
+            naming=naming,
+            subject_area=subject_area,
+            model_name=model_name,
+        )
+
     cfg = naming or ErwinNaming()
     scope = _scope_entity_ids(model, subject_area) if subject_area else None
 

@@ -3015,15 +3015,36 @@ def export_erwin_cmd(
         None,
         "--subject-area",
         "-s",
-        help="Export only this subject area (name or id); FKs to entities outside it are kept, "
-        "and those entities are emitted as stubs so the FK resolves. Default: the whole model.",
+        help="Export only this subject area (name or id); FKs within it are kept, cross-area FKs "
+        "are dropped (re-establish them in erwin after import). Default: the whole model.",
+    ),
+    template: Path = typer.Option(
+        None,
+        "--template",
+        "-t",
+        help="A native erwin 10.10 XML export of the target mart to CLONE the model-level "
+        "envelope from (domains, themes, images, page setup). REQUIRED for a file that opens in "
+        "real erwin Data Modeler: the from-scratch envelope (no --template) is XSD-valid and "
+        "round-trips through Modelith, but freezes erwin's import engine. The template is read at "
+        "runtime and never modified.",
+    ),
+    model_name: str = typer.Option(
+        None,
+        "--name",
+        help="Name for the exported model (template mode only; default: the mart's name).",
     ),
 ) -> None:
-    """Export erwin XML (validates against the erwin XSD; round-trips via `mdl import erwin`).
+    """Export erwin XML.
 
-    Targets the published erwin XSD and Modelith's own importer; real erwin Data Modeler
-    open-ability is not guaranteed. A team naming convention for the exported display names is
-    opt-in via the `export.erwin.naming` block in mdl-project.yaml (off by default = verbatim).
+    With --template <native-erwin-export.xml>, clones that mart's model envelope and injects this
+    model's entities/relationships/subject areas, writing the full erwin FK key-group structure
+    (Key_Group_Ref, child IFn key groups, Parent_Attribute_Ref). This is the path that opens in
+    real erwin Data Modeler 10.10. Without --template, a self-built envelope is emitted that
+    validates against the erwin XSD and round-trips via `mdl import erwin`, but is NOT guaranteed
+    to open in erwin.
+
+    A team naming convention for the exported display names is opt-in via the
+    `export.erwin.naming` block in mdl-project.yaml (off by default = verbatim).
 
     With --subject-area, exports just that area's slice for merging back into the mart. An erwin
     GUID preserved on import is re-emitted, so erwin UPDATES the matching object rather than
@@ -3033,7 +3054,16 @@ def export_erwin_cmd(
 
     repo = _load(model_dir)
     naming = repo.model.config.export.erwin.naming
-    xml = emit_erwin(repo.model, naming=naming, subject_area=subject_area)
+    if template is not None and not template.is_file():
+        typer.secho(f"template not found: {template}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
+    xml = emit_erwin(
+        repo.model,
+        naming=naming,
+        subject_area=subject_area,
+        template=str(template) if template else None,
+        model_name=model_name,
+    )
     _emit_text(xml, out, "erwin.xml")
 
 

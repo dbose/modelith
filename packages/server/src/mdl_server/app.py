@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -253,6 +253,41 @@ def create_app(
         return PlainTextResponse(
             text,
             media_type=media,
+            headers={"Content-Disposition": f'attachment; filename="{name}"'},
+        )
+
+    @app.post("/api/export/erwin")
+    async def export_erwin_templated(
+        template: UploadFile = File(...),
+        subject_area: str = Form(None),
+    ):
+        """Export erwin XML by CLONING an uploaded native erwin export (the template).
+
+        The template (a 7-10 MB native erwin 10.10 export of the target mart) is too large for a
+        query param, so the canvas POSTs it here as multipart. This is the path that opens in real
+        erwin Data Modeler; the GET route emits the self-built envelope (round-trips through
+        Modelith, not guaranteed to open in erwin). `subject_area` scopes to one area."""
+        from fastapi.responses import PlainTextResponse
+        from mdl_emit_erd import emit_erwin
+
+        model = _load().model
+        data = await template.read()
+        if not data:
+            raise HTTPException(status_code=422, detail="empty template file")
+        try:
+            text = emit_erwin(
+                model,
+                naming=model.config.export.erwin.naming,
+                subject_area=subject_area or None,
+                template=data,
+                model_name=model.config.name,
+            )
+        except Exception as e:  # noqa: BLE001 - a bad model/template shouldn't 500 opaquely
+            raise HTTPException(status_code=422, detail=str(e)) from e
+        name = f"{model.config.name}.xml"
+        return PlainTextResponse(
+            text,
+            media_type="application/xml",
             headers={"Content-Disposition": f'attachment; filename="{name}"'},
         )
 
