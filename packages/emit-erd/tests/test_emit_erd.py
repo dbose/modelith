@@ -49,6 +49,81 @@ def test_sql_ddl_has_tables_pk_and_fk(model):
     assert "REFERENCES" in ddl
 
 
+def test_ddl_dedupes_a_duplicated_pk_member():
+    """A `pk` key group with the same attribute listed twice (seen in real erwin-imported
+    models) must NOT emit `PRIMARY KEY (col, col)` — erwin's DDL importer rejects that with
+    'Cannot add the same Attribute to Key'. The column appears exactly once."""
+    from mdl_core.ids import new_ulid
+    from mdl_core.ir import (
+        Attribute,
+        ConceptualEntity,
+        KeyGroup,
+        LogicalEntity,
+        Model,
+        ProjectConfig,
+    )
+
+    m = Model(ProjectConfig(name="dup"))
+    ce = ConceptualEntity(id=new_ulid(), name="Account")
+    m.add(ce)
+    acc_id = Attribute(id=new_ulid(), name="account_id", role="business_key", nullable=False,
+                       domain="integer")
+    le = LogicalEntity(id=new_ulid(), name="account", realises=ce.id, attributes=[acc_id])
+    m.add(le)
+    # the bug condition: the PK key group lists account_id TWICE
+    m.add(KeyGroup(id=new_ulid(), entity=le.id, name="pk_account", type="pk",
+                   members=[acc_id.id, acc_id.id]))
+
+    ddl = emit_sql_ddl(m, dialect="postgres")
+    pk_line = next(ln for ln in ddl.splitlines() if "PRIMARY KEY" in ln)
+    assert pk_line.count("account_id") == 1, pk_line
+
+
+def test_ddl_fk_defaults_to_parent_pk_when_unspecified():
+    """When a relationship doesn't name the parent columns, the FK REFERENCES the parent's PK
+    (not nothing), so erwin can actually create the key instead of dropping it with 'there is
+    not a primary or unique key in table ... that contains column'."""
+    from mdl_core.ids import new_ulid
+    from mdl_core.ir import (
+        Attribute,
+        ConceptualEntity,
+        KeyGroup,
+        LogicalEntity,
+        Model,
+        ProjectConfig,
+        Relationship,
+        RelationshipEnd,
+    )
+
+    m = Model(ProjectConfig(name="fk"))
+    pce = ConceptualEntity(id=new_ulid(), name="Account")
+    m.add(pce)
+    pk_attr = Attribute(id=new_ulid(), name="account_id", role="business_key", nullable=False,
+                        domain="integer")
+    parent = LogicalEntity(id=new_ulid(), name="account", realises=pce.id, attributes=[pk_attr])
+    m.add(parent)
+    m.add(KeyGroup(id=new_ulid(), entity=parent.id, name="pk_account", type="pk",
+                   members=[pk_attr.id]))
+    cce = ConceptualEntity(id=new_ulid(), name="Trade")
+    m.add(cce)
+    c_pk = Attribute(id=new_ulid(), name="trade_id", role="business_key", nullable=False,
+                     domain="integer")
+    c_fk = Attribute(id=new_ulid(), name="account_id", role="attribute", nullable=False,
+                     domain="integer")
+    child = LogicalEntity(id=new_ulid(), name="trade", realises=cce.id, attributes=[c_pk, c_fk])
+    m.add(child)
+    # relationship names the CHILD FK column but NOT the parent column
+    m.add(Relationship(
+        id=new_ulid(), name="trade_for_account",
+        **{"from": RelationshipEnd(entity=child.id, attributes=[c_fk.id])},
+        to=RelationshipEnd(entity=parent.id, attributes=[]),
+        cardinality="many_to_one"))
+
+    ddl = emit_sql_ddl(m, dialect="postgres")
+    fk_line = next(ln for ln in ddl.splitlines() if "FOREIGN KEY" in ln)
+    assert "REFERENCES account (account_id)" in fk_line, fk_line
+
+
 def test_mermaid_is_an_erdiagram_with_markers(model):
     mer = emit_mermaid(model)
     assert mer.startswith("erDiagram")
