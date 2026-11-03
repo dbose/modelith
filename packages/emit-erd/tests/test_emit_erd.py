@@ -124,6 +124,78 @@ def test_ddl_fk_defaults_to_parent_pk_when_unspecified():
     assert "REFERENCES account (account_id)" in fk_line, fk_line
 
 
+def test_sql_ddl_scopes_to_a_subject_area_and_drops_cross_area_fk():
+    """A scoped DDL export emits only the subject area's tables, keeps within-area FKs, and
+    DROPS cross-area FKs with NO stub table for the out-of-area neighbour (it already exists in
+    the target model; the FK is re-established there by hand)."""
+    from mdl_core.ids import new_ulid
+    from mdl_core.ir import (
+        Attribute,
+        ConceptualEntity,
+        KeyGroup,
+        LogicalEntity,
+        Model,
+        ProjectConfig,
+        Relationship,
+        RelationshipEnd,
+        SubjectArea,
+    )
+
+    m = Model(ProjectConfig(name="mart"))
+    # out-of-area neighbour
+    acc_ce = ConceptualEntity(id=new_ulid(), name="Account")
+    m.add(acc_ce)
+    acc_pk = Attribute(id=new_ulid(), name="account_id", role="business_key", nullable=False,
+                       domain="integer")
+    acc = LogicalEntity(id=new_ulid(), name="account", realises=acc_ce.id, attributes=[acc_pk])
+    m.add(acc)
+    m.add(KeyGroup(id=new_ulid(), entity=acc.id, name="pk_acc", type="pk", members=[acc_pk.id]))
+    m.add(SubjectArea(id=new_ulid(), name="Core", members=[acc_ce.id]))
+    # in-area entities: trade (pk) and trade_leg (within-area FK to trade), plus a cross-area
+    # FK trade -> account
+    t_ce = ConceptualEntity(id=new_ulid(), name="Trade")
+    m.add(t_ce)
+    t_pk = Attribute(id=new_ulid(), name="trade_id", role="business_key", nullable=False,
+                     domain="integer")
+    t_fk = Attribute(id=new_ulid(), name="account_id", role="attribute", nullable=False,
+                     domain="integer")
+    trade = LogicalEntity(id=new_ulid(), name="trade", realises=t_ce.id, attributes=[t_pk, t_fk])
+    m.add(trade)
+    m.add(KeyGroup(id=new_ulid(), entity=trade.id, name="pk_trade", type="pk",
+                   members=[t_pk.id]))
+    leg_ce = ConceptualEntity(id=new_ulid(), name="TradeLeg")
+    m.add(leg_ce)
+    leg_pk = Attribute(id=new_ulid(), name="leg_id", role="business_key", nullable=False,
+                       domain="integer")
+    leg_fk = Attribute(id=new_ulid(), name="trade_id", role="attribute", nullable=False,
+                       domain="integer")
+    leg = LogicalEntity(id=new_ulid(), name="trade_leg", realises=leg_ce.id,
+                        attributes=[leg_pk, leg_fk])
+    m.add(leg)
+    m.add(KeyGroup(id=new_ulid(), entity=leg.id, name="pk_leg", type="pk", members=[leg_pk.id]))
+    m.add(SubjectArea(id=new_ulid(), name="Trading", members=[t_ce.id, leg_ce.id]))
+    # within-area FK: trade_leg -> trade
+    m.add(Relationship(
+        id=new_ulid(), name="leg_of_trade",
+        **{"from": RelationshipEnd(entity=leg.id, attributes=[leg_fk.id])},
+        to=RelationshipEnd(entity=trade.id, attributes=[t_pk.id]), cardinality="many_to_one"))
+    # cross-area FK: trade -> account (Core)
+    m.add(Relationship(
+        id=new_ulid(), name="trade_for_account",
+        **{"from": RelationshipEnd(entity=trade.id, attributes=[t_fk.id])},
+        to=RelationshipEnd(entity=acc.id, attributes=[acc_pk.id]), cardinality="many_to_one"))
+
+    ddl = emit_sql_ddl(m, dialect="postgres", subject_area="Trading")
+    # only the Trading tables are present; the Core neighbour is NOT emitted (no stub)
+    assert "CREATE TABLE trade (" in ddl
+    assert "CREATE TABLE trade_leg (" in ddl
+    assert "CREATE TABLE account" not in ddl
+    # the within-area FK survives; the cross-area FK CONSTRAINT to account is dropped (the
+    # account_id COLUMN on trade stays as an ordinary attribute).
+    assert "REFERENCES trade (" in ddl
+    assert "REFERENCES account" not in ddl
+
+
 def test_mermaid_is_an_erdiagram_with_markers(model):
     mer = emit_mermaid(model)
     assert mer.startswith("erDiagram")

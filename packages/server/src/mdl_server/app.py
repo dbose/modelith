@@ -212,15 +212,19 @@ def create_app(
     @app.get("/api/export/{fmt}")
     def export_model(fmt: str, dialect: str = "postgres", subject_area: str = None):
         """Export the model to an interchange format. Returns text/plain (or CSV) so
-        the browser can offer it as a download. `subject_area` (erwin only) scopes the export
-        to one subject area."""
+        the browser can offer it as a download. `subject_area` (erwin and sql) scopes the
+        export to one subject area."""
         from fastapi.responses import PlainTextResponse
         from mdl_emit_erd import emit_csv, emit_dbml, emit_erwin, emit_mermaid, emit_sql_ddl
 
         model = _load().model
         try:
             if fmt == "sql":
-                text, media, ext = emit_sql_ddl(model, dialect=dialect), "text/plain", "sql"
+                text, media, ext = (
+                    emit_sql_ddl(model, dialect=dialect, subject_area=subject_area or None),
+                    "text/plain",
+                    "sql",
+                )
             elif fmt == "mermaid":
                 text, media, ext = emit_mermaid(model), "text/plain", "mmd"
             elif fmt == "dbml":

@@ -78,12 +78,34 @@ def _single_unique_attr_ids(model: Model, le: LogicalEntity) -> set[str]:
     return out
 
 
-def build_tables(model: Model, adapter) -> list[Table]:
+def _scope_entity_ids(model: Model, subject_area: str) -> set[str]:
+    """The logical-entity ids that belong to `subject_area` (its name or id). SubjectArea.members
+    are CONCEPTUAL ids, so map each to the logical entity that realises it."""
+    le_by_ce = {le.realises: le.id for le in model.logical_entities.values() if le.realises}
+    ids: set[str] = set()
+    for sa in model.subject_areas.values():
+        if sa.name == subject_area or sa.id == subject_area:
+            for m in sa.members:
+                if m in le_by_ce:
+                    ids.add(le_by_ce[m])
+    return ids
+
+
+def build_tables(model: Model, adapter, *, subject_area: str | None = None) -> list[Table]:
     """Project the model's logical entities into ER tables with columns, PKs, and FKs.
 
     `adapter` is a dbt PlatformAdapter (from mdl_emit_dbt.platforms.get_adapter) used
-    only for domain -> SQL type mapping, so DDL types match what dbt would emit."""
-    ent_by_id = model.logical_entities
+    only for domain -> SQL type mapping, so DDL types match what dbt would emit.
+
+    `subject_area` (a name or id) scopes the projection to ONE subject area, like erwin's
+    export: only that area's entities become tables, and a relationship with an end OUTSIDE
+    the area is DROPPED (no stub table for the neighbour). The neighbours already exist in the
+    target model; cross-area FKs are re-established there by hand. None = the whole model."""
+    scope = _scope_entity_ids(model, subject_area) if subject_area else None
+    ent_by_id = {
+        eid: le for eid, le in model.logical_entities.items()
+        if scope is None or eid in scope
+    }
     name_by_id = {le.id: le.name for le in ent_by_id.values()}
     tables: dict[str, Table] = {}
 
