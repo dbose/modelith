@@ -28,6 +28,9 @@ _USER_OWNED_CONFIG = (
     # How the project was bootstrapped (import/init layout). Recorded once; a re-import
     # must reproduce, not rewrite, it.
     "scaffold",
+    # Per-format export settings (erwin naming, the remembered erwin template path). Hand-set
+    # policy; a re-import preserves it rather than wiping it.
+    "export",
 )
 
 

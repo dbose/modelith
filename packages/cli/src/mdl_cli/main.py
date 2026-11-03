@@ -526,6 +526,27 @@ def _nonclobbering_out(out: Path) -> Path:
     return cand
 
 
+def _remember_template_path(src: Path, model_root: Path) -> str:
+    """The path to store for a remembered erwin template: relative to the model root when the file
+    lives under it (portable within the repo), else the resolved absolute path."""
+    src = Path(src).resolve()
+    root = Path(model_root).resolve()
+    try:
+        return src.relative_to(root).as_posix()
+    except ValueError:
+        return str(src)
+
+
+def _resolve_template_path(stored: str, model_dir: Path) -> Path | None:
+    """Resolve a stored template path (relative to the model dir, or absolute) to an existing file,
+    or None if it no longer exists."""
+    if not stored:
+        return None
+    p = Path(stored)
+    cand = p if p.is_absolute() else (Path(model_dir) / p)
+    return cand if cand.is_file() else None
+
+
 @app.command()
 def reverse(
     project: Path = typer.Option(
@@ -2959,6 +2980,10 @@ def import_erwin_cmd(
 
     if not force:
         write_target = _nonclobbering_out(write_target)
+    # Remember the erwin file we imported from, so `mdl export erwin` clones it as the template
+    # automatically (the path, not a blob — see ErwinExportConfig.template_path). Store it relative
+    # to the model root when the file lives under it, else absolute, so re-export finds it.
+    result.model.config.export.erwin.template_path = _remember_template_path(file, write_target)
     write_reversed(result.model, write_target)
     typer.secho(
         f"imported {len(result.model.logical_entities)} entities, "
@@ -3034,9 +3059,16 @@ def export_erwin_cmd(
         "-t",
         help="A native erwin 10.10 XML export of the target mart to CLONE the model-level "
         "envelope from (domains, themes, images, page setup). REQUIRED for a file that opens in "
-        "real erwin Data Modeler: the from-scratch envelope (no --template) is XSD-valid and "
-        "round-trips through Modelith, but freezes erwin's import engine. The template is read at "
-        "runtime and never modified.",
+        "real erwin Data Modeler: the from-scratch envelope is XSD-valid and round-trips through "
+        "Modelith, but freezes erwin's import engine. The template is read at runtime and never "
+        "modified. If the model was imported from an erwin export, that file is remembered and "
+        "used automatically; --template overrides it.",
+    ),
+    no_template: bool = typer.Option(
+        False,
+        "--no-template",
+        help="Ignore a remembered erwin template and emit the self-built envelope (round-trips "
+        "through Modelith; not guaranteed to open in real erwin).",
     ),
     model_name: str = typer.Option(
         None,
@@ -3046,12 +3078,15 @@ def export_erwin_cmd(
 ) -> None:
     """Export erwin XML.
 
-    With --template <native-erwin-export.xml>, clones that mart's model envelope and injects this
-    model's entities/relationships/subject areas, writing the full erwin FK key-group structure
-    (Key_Group_Ref, child IFn key groups, Parent_Attribute_Ref). This is the path that opens in
-    real erwin Data Modeler 10.10. Without --template, a self-built envelope is emitted that
-    validates against the erwin XSD and round-trips via `mdl import erwin`, but is NOT guaranteed
-    to open in erwin.
+    Clones a native erwin export (the TEMPLATE) and injects this model's entities/relationships/
+    subject areas, writing the full erwin FK key-group structure (Key_Group_Ref, child IFn key
+    groups, Parent_Attribute_Ref). This is the path that opens in real erwin Data Modeler 10.10.
+
+    The template is resolved in this order: --template <file>; else, unless --no-template, the file
+    this model was imported from (remembered in export.erwin.template_path); else none, which emits
+    the self-built envelope (XSD-valid, round-trips via `mdl import erwin`, but NOT guaranteed to
+    open in erwin). A remembered template whose file has moved is reported, and export falls back
+    to the self-built envelope.
 
     A team naming convention for the exported display names is opt-in via the
     `export.erwin.naming` block in mdl-project.yaml (off by default = verbatim).
@@ -3064,14 +3099,31 @@ def export_erwin_cmd(
 
     repo = _load(model_dir)
     naming = repo.model.config.export.erwin.naming
-    if template is not None and not template.is_file():
-        typer.secho(f"template not found: {template}", fg=typer.colors.RED, err=True)
-        raise typer.Exit(code=1)
+    # resolve the template: explicit flag wins; else the remembered import path (if not disabled).
+    resolved_template: str | None = None
+    if template is not None:
+        if not template.is_file():
+            typer.secho(f"template not found: {template}", fg=typer.colors.RED, err=True)
+            raise typer.Exit(code=1)
+        resolved_template = str(template)
+    elif not no_template and repo.model.config.export.erwin.template_path:
+        stored = repo.model.config.export.erwin.template_path
+        found = _resolve_template_path(stored, model_dir)
+        if found is not None:
+            resolved_template = str(found)
+            typer.secho(f"  cloning remembered erwin template: {found}", fg=typer.colors.CYAN)
+        else:
+            typer.secho(
+                f"  remembered erwin template is gone ({stored}); emitting the self-built "
+                "envelope (pass --template <file> for one that opens in erwin)",
+                fg=typer.colors.YELLOW,
+                err=True,
+            )
     xml = emit_erwin(
         repo.model,
         naming=naming,
         subject_area=subject_area,
-        template=str(template) if template else None,
+        template=resolved_template,
         model_name=model_name,
     )
     _emit_text(xml, out, "erwin.xml")

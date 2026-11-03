@@ -616,6 +616,12 @@ class ErwinExportConfig(_Base):
     model_config = ConfigDict(extra="allow")
 
     naming: ErwinNaming = Field(default_factory=ErwinNaming)
+    # The native erwin export this model was imported from, remembered so a re-export clones it
+    # as the template automatically (the file that opens in real erwin — see erwin_template.py).
+    # Set at `mdl import erwin` time; a path on disk (not a committed blob), so re-export reads it
+    # live. `mdl export erwin --template <file>` overrides it; `--no-template` ignores it. If the
+    # file has since moved, export warns and falls back to the self-built envelope.
+    template_path: str | None = None
 
 
 class ExportConfig(_Base):

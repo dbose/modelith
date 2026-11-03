@@ -169,7 +169,7 @@ export interface ExportFormat {
 }
 
 export const fetchExportFormats = () =>
-  get<{ formats: ExportFormat[] }>("/api/export");
+  get<{ formats: ExportFormat[]; erwinTemplateRemembered?: boolean }>("/api/export");
 
 /** A same-origin URL the browser can open to download an export (the endpoint sets
  *  Content-Disposition: attachment). Respects the /view/<slug> catalog prefix. */

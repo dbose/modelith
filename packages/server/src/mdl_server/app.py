@@ -55,6 +55,21 @@ def _cache_on_align(model_dir: Path, op: str, payload: dict) -> None:
         return
 
 
+def _remembered_template_bytes(model, model_dir: Path) -> bytes | None:
+    """The bytes of the erwin template this model was imported from (export.erwin.template_path),
+    resolved relative to the model dir or absolute. None if unset or the file is gone, so the
+    caller falls back to the self-built envelope."""
+    stored = model.config.export.erwin.template_path
+    if not stored:
+        return None
+    p = Path(stored)
+    cand = p if p.is_absolute() else (Path(model_dir) / p)
+    try:
+        return cand.read_bytes() if cand.is_file() else None
+    except OSError:
+        return None
+
+
 def _dir_fingerprint(model_dir: Path) -> tuple:
     """Cheap change detector: (count, max mtime, total size) over model YAML files.
     Git stays the source of truth — any on-disk edit changes the fingerprint and
@@ -230,11 +245,17 @@ def create_app(
             elif fmt == "dbml":
                 text, media, ext = emit_dbml(model), "text/plain", "dbml"
             elif fmt == "erwin":
-                # the team naming convention (if any) travels in the project config, same as the CLI
+                # the team naming convention (if any) travels in the project config, like the CLI.
+                # Auto-clone the remembered erwin template (the file this model was imported from)
+                # so the download opens in real erwin; if its path is gone, fall back to the
+                # self-built envelope. The POST route takes an uploaded template and overrides this.
+                tmpl = _remembered_template_bytes(model, model_dir)
                 text = emit_erwin(
                     model,
                     naming=model.config.export.erwin.naming,
                     subject_area=subject_area or None,
+                    template=tmpl,
+                    model_name=model.config.name if tmpl else None,
                 )
                 media, ext = "application/xml", "xml"
             elif fmt == "csv":
@@ -298,8 +319,13 @@ def create_app(
     @app.get("/api/export")
     def export_formats() -> JSONResponse:
         """The export formats this build offers, for the toolbar menu."""
+        # whether a remembered erwin template is resolvable right now, so the erwin item can show
+        # that the plain export is already erwin-ready (it auto-clones it).
+        model = _load().model
+        erwin_ready = _remembered_template_bytes(model, model_dir) is not None
         return JSONResponse(
             {
+                "erwinTemplateRemembered": erwin_ready,
                 "formats": [
                     {
                         "id": "sql",
@@ -312,7 +338,7 @@ def create_app(
                     {"id": "csv", "label": "CSV (spreadsheet)"},
                     {"id": "contract", "label": "Data contract (ODCS)"},
                     {"id": "cypher", "label": "Neo4j Cypher"},
-                ]
+                ],
             }
         )
 

@@ -62,6 +62,9 @@ export function ImportExportMenu({
   const [dialect, setDialect] = useState("postgres");
   const [erwinBusy, setErwinBusy] = useState(false);
   const [erwinError, setErwinError] = useState<string | null>(null);
+  // true when the server remembers the erwin file this model was imported from: the plain erwin
+  // export then auto-clones it (erwin-ready) and the picker below just overrides it.
+  const [erwinReady, setErwinReady] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const templateInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -84,7 +87,10 @@ export function ImportExportMenu({
 
   useEffect(() => {
     fetchExportFormats()
-      .then((d) => setFormats(d.formats))
+      .then((d) => {
+        setFormats(d.formats);
+        setErwinReady(!!d.erwinTemplateRemembered);
+      })
       .catch(() => setFormats([]));
   }, []);
 
@@ -153,13 +159,20 @@ export function ImportExportMenu({
                 onClick={() => setOpen(null)}
               >
                 {f.label}
+                {/* when the model was imported from erwin, the plain erwin export auto-clones that
+                    remembered file, so it already opens in real erwin. */}
+                {f.id === "erwin" && erwinReady && (
+                  <span className="ie-scope"> · erwin-ready</span>
+                )}
                 {scoped && <span className="ie-scope"> · filtered area only</span>}
               </a>
             );
           })}
-          {/* erwin-ready: clone a native erwin export so the file opens in real erwin Data
-              Modeler. The plain "erwin XML" item above is the self-built envelope (round-trips
-              through Modelith, not guaranteed to open in erwin). */}
+          {/* Clone a native erwin export so the file opens in real erwin Data Modeler. When a
+              template is already remembered (erwinReady) the plain "erwin XML" item above
+              auto-clones it, and this picker just OVERRIDES it with a different mart. Otherwise it
+              is the only way to get an erwin-ready file (the plain item is the self-built envelope,
+              which round-trips through Modelith but is not guaranteed to open in erwin). */}
           {formats.some((f) => f.id === "erwin") && (
             <button
               type="button"
@@ -168,7 +181,11 @@ export function ImportExportMenu({
               onClick={() => templateInputRef.current?.click()}
               title="Pick a native erwin export of the target mart to clone its settings from"
             >
-              {erwinBusy ? "Building…" : "erwin XML (erwin-ready) — pick mart…"}
+              {erwinBusy
+                ? "Building…"
+                : erwinReady
+                  ? "erwin XML — clone a different mart…"
+                  : "erwin XML (erwin-ready) — pick mart…"}
               {scopeSubjectArea && <span className="ie-scope"> · filtered area only</span>}
             </button>
           )}

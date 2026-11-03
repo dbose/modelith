@@ -85,6 +85,52 @@ def test_export_erwin_with_empty_template_422(client):
     assert r.status_code == 422
 
 
+def test_get_export_erwin_auto_clones_remembered_template(model_dir):
+    """The GET route auto-clones a remembered template (export.erwin.template_path) so the plain
+    'erwin XML' download opens in erwin without re-picking the mart file."""
+    import re
+
+    from fastapi.testclient import TestClient
+    from mdl_server import create_app
+
+    # drop a template file in the model dir and point the config at it (relative path)
+    (model_dir / "mart.xml").write_text(_TEMPLATE, encoding="utf-8")
+    proj = model_dir / "mdl-project.yaml"
+    text = proj.read_text()
+    if re.search(r"^export:", text, re.M):
+        text = re.sub(r"^export:.*(?:\n[ -].*)*", "export:\n  erwin:\n    template_path: mart.xml",
+                      text, flags=re.M)
+    else:
+        text += "\nexport:\n  erwin:\n    template_path: mart.xml\n"
+    proj.write_text(text)
+
+    r = TestClient(create_app(model_dir)).get("/api/export/erwin")
+    assert r.status_code == 200
+    # cloned from the template -> its domains survive
+    assert "<Name>String</Name>" in r.text and "<Name>Number</Name>" in r.text
+
+
+def test_get_export_erwin_remembered_template_gone_falls_back(model_dir):
+    """A remembered template whose file is missing falls back to the self-built envelope, no 500."""
+    import re
+
+    from fastapi.testclient import TestClient
+    from mdl_server import create_app
+
+    proj = model_dir / "mdl-project.yaml"
+    text = proj.read_text()
+    if re.search(r"^export:", text, re.M):
+        text = re.sub(r"^export:.*(?:\n[ -].*)*", "export:\n  erwin:\n    template_path: gone.xml",
+                      text, flags=re.M)
+    else:
+        text += "\nexport:\n  erwin:\n    template_path: gone.xml\n"
+    proj.write_text(text)
+
+    r = TestClient(create_app(model_dir)).get("/api/export/erwin")
+    assert r.status_code == 200
+    assert 'Format="erwin"' in r.text
+
+
 def test_export_sql(client):
     r = client.get("/api/export/sql", params={"dialect": "postgres"})
     assert r.status_code == 200
